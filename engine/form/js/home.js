@@ -47,7 +47,7 @@ function when(iso) {
   return d.toLocaleDateString([], { day: 'numeric', month: 'short', ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) }).toLowerCase();
 }
 
-export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, draft, update } = {}) {
+export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSignin, draft, update } = {}) {
   const sfx = n => { try { audio && audio.sfx && audio.sfx(n); } catch (e) { /* optional */ } };
   let alive = true, decks = [], page = 0, loaded = false, pollT = 0, idle = 0, fails = 0, showArchived = false, menuOpen = null, undoT = 0;
 
@@ -63,7 +63,8 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, draf
     h('span', { class: 'hm-cont-h' }, 'continue your draft'),
     h('span', { class: 'hm-cont-s' }, `you’re at step ${d.step}. pick up where you left off.`)) : null;
   if (contCard) contCard.addEventListener('click', () => { sfx('launch'); onResume && onResume(); });
-  // the Claude account: plan type and "switch account" (claude auth logout, then the sign-in flow)
+  // the Claude account: email + plan and "switch account". Switching signs Lumi's Claude out, then goes back to the
+  // loading screen, which runs the private-window sign-in and the "is this you?" confirmation (never a silent bind).
   const acctT = h('span', { class: 'hm-acct-t' }, 'claude account');
   const acctGo = h('button', { type: 'button', class: 'hm-acct-go', 'data-cursor-label': 'switch', 'data-nosfx': '' }, 'switch account');
   const acct = h('div', { class: 'hm-acct', hidden: true }, h('span', { class: 'hm-acct-dot', html: SVG.user }), acctT, acctGo);
@@ -71,10 +72,13 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, draf
     if (!st || st.cli === false) { acct.hidden = true; return; }
     const plan = String(st.subscriptionType || '').toLowerCase();
     acct.hidden = false;
-    acct.classList.toggle('is-free', !!plan && !['pro', 'max', 'team', 'enterprise'].includes(plan));
-    acctT.replaceChildren(...(st.signedIn ? [...(st.email ? [h('b', {}, st.email), ' · '] : []), 'claude ', h('b', {}, plan || 'signed in'), plan ? ' plan' : ''] : ['claude: not signed in']));
+    acct.classList.toggle('is-free', plan === 'free');
+    acct.title = plan === 'free' ? 'Lumi works, but Claude’s Free plan has very little Claude Code usage, so builds may stop early; Pro or higher is recommended.' : '';
+    const label = String(st.planLabel || (plan ? plan + ' plan' : 'signed in')).toLowerCase();
+    acctT.replaceChildren(...(st.signedIn ? [...(st.email ? [h('b', {}, st.email), ' · '] : []), h('b', {}, label)] : ['claude: not signed in']));
     acctGo.textContent = st.signedIn ? 'switch account' : 'sign in';
   }
+  const toSignin = () => { if (onSignin) onSignin(); };
   let acctArm = 0;
   acctGo.addEventListener('click', async () => {
     if (acctGo.disabled) return;
@@ -87,21 +91,10 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, draf
       if (!alive) return;
       if (r && r.ok === false) { acctGo.disabled = false; acctGo.textContent = 'switch account'; say(r.error === 'busy' ? 'claude is busy right now. try again when it’s done.' : 'couldn’t sign out. try again?'); return; }
     }
-    const r = await api.fix('signin');
-    if (!alive) return;
-    if (r && r.ok === false) { acctGo.disabled = false; paintAcct(await api.claude.status(true)); say('the sign-in window didn’t open. try again?'); return; }
-    acctGo.textContent = 'signing in…';
-    say('finish signing in in the window that opened. lumi notices by itself.');
-    const t0 = Date.now();
-    while (alive && Date.now() - t0 < 6 * 60 * 1000) {
-      await new Promise(res => setTimeout(res, 3000));
-      if (!alive) return;
-      const st = await api.claude.status(true);
-      if (st && st.signedIn) { sfx('success'); acctGo.disabled = false; paintAcct(st); say(`signed in. claude ${String(st.subscriptionType || '').toLowerCase()} plan.`); return; }
-    }
-    acctGo.disabled = false; paintAcct(await api.claude.status(true));
+    toSignin();
   });
-  api.claude.status().then(st => { if (alive) paintAcct(st); });
+  // a different account appeared while Lumi was open (or it was never confirmed): ask again on the loading screen
+  api.claude.status(true).then(st => { if (!alive) return; paintAcct(st); if (st && st.signedIn && st.confirmed === false) toSignin(); });
   const runUpdate = b => startUpdate('update', { say, sfx, alive: () => alive, button: b });
   // F-15: the soft custom pointer can be switched off for the normal Windows pointer (remembered on this computer)
   const pointerB = h('button', { type: 'button', class: 'hm-pointer', 'data-nosfx': '', 'aria-pressed': 'false', title: 'switch between lumi’s soft mouse pointer and the normal Windows pointer', 'aria-label': 'mouse pointer: switch between lumi’s soft pointer and the normal one' });

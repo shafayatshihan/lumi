@@ -1,11 +1,14 @@
 """Pack an Aura build folder into ONE self-contained offline HTML file in "4 - Your slides".
   .aura/venv/Scripts/python.exe .aura/engine/tools/pack_deck.py <build folder | index.html> [--title "Deck title"] [--out <folder>] [--replace]
 Inlines the runtime, stylesheets, scripts, fonts, pictures (resized and compressed with Pillow), videos and, when the deck
-uses 3D, three.js through an import map of data URLs. An older deck with the same name (and its PDF / PowerPoint /
+uses 3D, three.js through an import map of data URLs. A Blender slide's holder (<div class="bb-blender" data-blender="<sid>">)
+is filled from assets/blender/<sid>.png | <sid>.mp4 + <sid>-poster.png + <sid>.json (Lumi's server puts them there; see
+docs/blender-contract.md): the render is inlined LOSSLESS (its background must stay the exact slide colour) and the loop video
+as it is. An older deck with the same name (and its PDF / PowerPoint /
 notes backups) is moved to "4 - Your slides/Older versions" with its date first. Fails if anything needs the internet.
 --replace (small edits from the app's editor): overwrite the deck in place and leave its backups where they are; nothing
 moves to Older versions. Every attribute is kept as written, including the data-edit text ids the editor relies on."""
-import base64, datetime, io, mimetypes, os, re, shutil, sys
+import base64, datetime, html as htmllib, io, json, mimetypes, os, re, shutil, sys
 from pathlib import Path
 
 ENGINE = Path(__file__).resolve().parents[1]
@@ -47,7 +50,7 @@ class Packer:
         self.cache = {}
         self.problems = []          # things that block packing
         self.notes = []             # friendly info lines
-        self.stats = {'images': 0, 'fonts': 0, 'media': 0, 'css': 0, 'scripts': 0, 'saved': 0}
+        self.stats = {'images': 0, 'fonts': 0, 'media': 0, 'css': 0, 'scripts': 0, 'saved': 0, 'blender': 0}
 
     # ---------- single resources ----------
     def is_external(self, url):
@@ -77,7 +80,7 @@ class Packer:
             return self.cache[p] + frag
         ext = p.suffix.lower()
         if ext in ('.png', '.jpg', '.jpeg', '.webp', '.bmp'):
-            uri = self.image(p)
+            uri = self.image(p, lossless='blender' in p.parent.parts[-2:])
         elif ext == '.svg':
             uri = 'data:image/svg+xml;base64,' + base64.b64encode(p.read_bytes()).decode('ascii')
             self.stats['images'] += 1
@@ -93,7 +96,7 @@ class Packer:
         self.cache[p] = uri
         return uri + frag
 
-    def image(self, p: Path):
+    def image(self, p: Path, lossless=False):
         raw = p.read_bytes()
         self.stats['images'] += 1
         try:
@@ -112,7 +115,10 @@ class Packer:
                 alpha = im.getchannel('A').getextrema()[0] < 255
             few_colours = (im.convert('RGB').getcolors(4096) is not None) if max(im.size) <= 4096 else False
             out = io.BytesIO()
-            if few_colours:       # charts, logos, line art: lossless keeps them crisp
+            if lossless:          # a Blender render: the background is the exact slide colour, so never lossy
+                (im if alpha else im.convert('RGB')).save(out, 'WEBP', lossless=True, quality=100, method=4)
+                kind = 'image/webp'
+            elif few_colours:       # charts, logos, line art: lossless keeps them crisp
                 (im if alpha else im.convert('RGB')).save(out, 'PNG', optimize=True)
                 kind = 'image/png'
             else:                 # photos and rich illustrations
@@ -147,9 +153,46 @@ class Packer:
             return f'url({q}{self.data_uri(url, base, where)}{q})'
         return re.sub(r'url\(\s*([\'"]?)([^\'")]+?)\1\s*\)', u, text)
 
+    # ---------- Blender holders ----------
+    def blender_fill(self, html):
+        """Put the render of each <div class="bb-blender" data-blender="sid"> inside it (docs/blender-contract.md section 4): an
+        <img> (the still, or the loop's poster) and, for a loop, a muted looping <video> over it that the runtime plays only while
+        the slide is current. The holder's own children (projected labels) stay. data-draft marks a preview that is not the approved
+        render; data-anchors / data-fps carry where the labels sit on the picture."""
+        adir = self.base / 'assets' / 'blender'
+
+        def one(m):
+            tag = m.group(0)
+            sid = re.search(r'data-blender\s*=\s*["\']([^"\']+)["\']', tag)
+            if not sid or re.search(r'\sdata-filled\b', tag): return tag
+            sid = sid.group(1)
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+', sid): return tag
+            try: meta = json.loads((adir / f'{sid}.json').read_text(encoding='utf-8'))
+            except (OSError, ValueError): meta = None
+            png, mp4, poster = adir / f'{sid}.png', adir / f'{sid}.mp4', adir / f'{sid}-poster.png'
+            still = poster if mp4.is_file() else png
+            if not (meta and still.is_file()):
+                return tag[:-1] + ' data-pending="1">'
+            esc = lambda v: htmllib.escape(str(v), quote=True)
+            u = lambda f: self.data_uri('assets/blender/' + f.name, self.base, f'the Blender render of slide {sid}')
+            attrs = ' data-filled="1"' + (' data-draft="1"' if meta.get('draft') else '') + (' data-stale="1"' if meta.get('stale') else '')
+            if not re.search(r'\sdata-kind\s*=', tag): attrs += f' data-kind="{"animation" if mp4.is_file() else "still"}"'
+            if meta.get('fps'): attrs += f' data-fps="{esc(meta["fps"])}"'
+            lab = (meta.get('labels') or {}).get('anchors')
+            if lab: attrs += ' data-anchors="' + esc(json.dumps(lab, separators=(',', ':'))) + '"'
+            inner = f'<img class="bb-blender-img" src="{u(still)}" alt="" draggable="false">'
+            if mp4.is_file():
+                inner += (f'<video class="bb-blender-video" src="{u(mp4)}" poster="{u(still)}" muted loop playsinline preload="metadata" '
+                          'aria-hidden="true" disablepictureinpicture></video>')
+            if meta.get('draft'): inner += '<span class="bb-blender-tag" data-edit="no" data-aura-ui>preview</span>'
+            self.stats['blender'] = self.stats.get('blender', 0) + 1
+            return tag[:-1] + attrs + '>' + inner
+        return re.sub(r'<div\b[^>]*\bclass\s*=\s*["\'][^"\']*\bbb-blender\b[^"\']*["\'][^>]*>', one, html)
+
     # ---------- HTML ----------
     def pack(self):
         html = self.html_path.read_text(encoding='utf-8')
+        html = self.blender_fill(html)
         # 3D is used only when real code asks for it: the template's commented-out examples must not pull in three.js
         live = re.sub(r'<!--.*?-->|/\*.*?\*/', '', html, flags=re.S)
         uses_three = bool(re.search(r'Aura\.scene\s*\(|import\s*\(\s*[\'"]three[\'"]|from\s+[\'"]three[\'"]', live))
@@ -369,7 +412,7 @@ def main():
     s = p.stats
     print(f'  inlined: {s["css"]} stylesheets, {s["scripts"]} scripts, {s["fonts"]} fonts, {s["images"]} pictures'
           + (f' ({s["saved"] / 1048576:.1f} MB saved by compression)' if s['saved'] > 65536 else '')
-          + (f', {s["media"]} media files' if s['media'] else '') + (f', three.js for 3D ({p.three_kind})' if p.uses_three else ''))
+          + (f', {s["media"]} media files' if s['media'] else '') + (f', {s["blender"]} Blender render(s)' if s.get('blender') else '') + (f', three.js for 3D ({p.three_kind})' if p.uses_three else ''))
     ids = re.findall(r"""\sdata-edit\s*=\s*(?:"([^"]*)"|'([^']*)')""", visible, re.I)
     ids = [a or b for a, b in ids]
     ids = [i for i in ids if i.lower() not in ('no', 'off', 'false')]

@@ -113,7 +113,7 @@ lead 19 px (line-height 1.45), labels 15 px, inputs 20 px, badges 15 px, group n
 
 **Welcome screen** (full mode) follows the footer composition: left block (badge, headline, the 4 phase labels),
 centre-top wordmark at the footer logo position, right block (badge, two headline lines, note, then a big
-"let’s begin" pill and a tiny line "needs a Claude Pro, Max or Team plan"). The first click starts the music.
+"let’s begin" pill and a tiny line "works with any Claude plan · Pro recommended"). The first click starts the music.
 
 ## 5. Screens, groups and data keys
 
@@ -299,7 +299,7 @@ folders; **never pass user text on a command line** (Claude prompts go through s
 
 | Route | Does |
 |---|---|
-| `GET /api/health` | readiness checks: engine files, fonts, assets; Node + `engine/node_modules` (three, playwright-core); Edge; venv Python packages; Claude CLI; `claude auth status` (`loggedIn`, `subscriptionType`; free → needs Pro/Max/Team); free disk; app version vs latest GitHub release (cached, network optional) |
+| `GET /api/health` | readiness checks: engine files, fonts, assets; Node + `engine/node_modules` (three, playwright-core); Edge; venv Python packages; Claude CLI; `claude auth status` (`loggedIn`, `subscriptionType`, `email`; every plan is allowed, Free gets a gentle note, an unknown type is labelled; `confirmed` = this install's "yes, that's me" in `.aura/account.json`). Sign-in: `POST /api/fix/signin {browser: private|normal}` runs `claude auth login` with `BROWSER=engine/tools/signin-url.cmd` and opens the captured URL in `msedge --inprivate` (default) or the default browser; `GET /api/claude/signin` = what was opened; `POST /api/claude/confirm {email}`; free disk; app version vs latest GitHub release (cached, network optional) |
 | `POST /api/fix/<name>` | `npm` (npm install), `pip` (pip install), `signin` (`claude auth login` in a visible window, then poll), `update` (runs `AuraSlide.exe --update`), `claude` (reinstall via update) |
 | `GET /api/decks` | deck records from `.aura/decks/<id>.json`: `{id, title, file, look, quality, createdAt, updatedAt, sessionId, briefSavedAt, ...}` (existing decks in "4 - Your slides" are migrated into records). The list never carries `brief` or `plan` (F-02); `GET /api/decks/<id>` does. |
 | `POST /api/decks` | new deck from the current draft brief |

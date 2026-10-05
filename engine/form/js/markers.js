@@ -217,8 +217,12 @@ export function choiceCard(choices, { onSend, sfx = () => {}, sendLabel = 'send 
   const nav = stepped ? h('div', { class: 'ch-steps', role: 'tablist', 'aria-label': 'questions' }) : null;
   const back = stepped ? h('button', { type: 'button', class: 'ch-nav', 'data-nosfx': '', onclick: () => go(cur - 1) }, 'back') : null;
   const next = stepped ? h('button', { type: 'button', class: 'ch-nav ch-next', 'data-nosfx': '', onclick: () => { sfx('next'); go(cur + 1); } }, 'next question') : null;
+  // While Claude is still working the whole card is switched off (workshop.js: setEnabled(!running)). The suggested
+  // answers are already ticked, so without this note the person sees an answer chosen, a dead "next question" and no
+  // reason at all - a dead end that reads as a broken app. It reuses the .ch-stepof style, so it needs no new CSS.
+  const waitNote = h('span', { class: 'ch-stepof ch-wait', hidden: true }, 'claude is still working - you can answer in a moment');
   const el = h('div', { class: 'ch-card' + (stepped ? ' is-stepped' : '') }, nav, [...blocks.values()].map(b => b.el),
-    h('div', { class: 'ch-foot' }, back, free, next, send));
+    h('div', { class: 'ch-foot' }, back, free, waitNote, next, send));
   if (stepped) roving(nav, '[role=tab]', { orientation: 'horizontal' });
   function go(i) { cur = Math.max(0, Math.min(act.length - 1, i)); reached = Math.max(reached, cur); paint(); }
   let shown = '';
@@ -241,6 +245,12 @@ export function choiceCard(choices, { onSend, sfx = () => {}, sendLabel = 'send 
       next.hidden = last; next.disabled = locked || !enabled || !complete(here);
     }
     send.hidden = !last; send.disabled = locked || !enabled || !act.every(complete);
+    // The invariant: a card must never show an answer as chosen with every way forward dead and no reason given.
+    const stalled = !locked && !enabled;
+    el.classList.toggle('is-waiting', stalled);
+    waitNote.hidden = !stalled;
+    const why = stalled ? 'claude is still working, so answers wait until it stops' : '';
+    send.title = why; if (next) next.title = why;
     for (const { c, btns } of blocks.values()) {
       const set = picks.get(c.key);
       for (const { b, opt } of btns) {

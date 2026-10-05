@@ -8,7 +8,7 @@ import json, pathlib, zipfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 OUT = REPO / 'release' / 'Lumi-Setup.zip'
-TOP_SKIP = {'tools', 'docs', 'release', 'installer', '.git', '.github'}   # developer-only, at the repo top level only
+TOP_SKIP = {'tools', 'docs', 'release', 'installer', 'temp', '.git', '.github'}   # developer-only, at the repo top level only
 SKIP_DIRS = {'node_modules', '__pycache__'}                                  # anywhere
 SKIP_FILES = {'.gitignore', '.gitattributes', 'Publish to GitHub.bat', 'preview_sheet.png', 'lumi-preview.png'}
 EXE = REPO / 'release' / 'Lumi.exe'

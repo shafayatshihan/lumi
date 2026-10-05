@@ -64,7 +64,7 @@ restores them from its own record every time it reads your file, so writing them
 | `slides[].title` | you | ≤ 8 words (kept to 200 characters) |
 | `slides[].point` | you | one sentence |
 | `slides[].bullets` | you | **2–4** short lines, the words that will really be on the slide |
-| `slides[].visual` | you | `main`, `companions`, `detail`, `motion`, `phrase` (below); `phrase` is kept to 160 characters |
+| `slides[].visual` | you | `main`, `companions`, `detail`, `motion`, `phrase`, optional `engine` (below); `phrase` is kept to 160 characters |
 | `slides[].sources` | you | paths relative to `3 - Put your files here/` (empty if none); at most 6 kept (the page shows its picker for up to 3) |
 | `slides[].notes` | you | optional; kept so you can re-read it, never shown on the page |
 | `version`, `slides[].words` | app (derived) | `words` is counted from title + bullets; leave it out (an estimate you write is replaced). `version` is always 1 |
@@ -97,6 +97,10 @@ so get it right first time.
 - `detail` (`simple` | `detailed` | `showpiece`) and `motion` (`still` | `timed` | `physics-like` | `simulation`)
   are only for `3d` (use `null` otherwise). Suggest `showpiece` for one or two slides at most; `simulation` only when
   real equations drive the motion. The person changes these on the page.
+- `engine` (only for `3d`, optional): `"blender"` = a photoreal studio render (a still takes 1-2 min, an animation
+  10-60 min, no live interaction) or `"threejs"` = live 3D (instant, animated, editable). Leave it out to let Lumi
+  choose: in Bold Blue a still 3D figure becomes a Blender render when Blender is installed. Set it only when the brief
+  clearly asks for one; the person picks it on the page.
 - `photo`: only suggest it when the user has photos, or when a real photo is clearly the right picture; the build
   asks which photo each time.
 - `chart`: only from the user's data, or textbook / published values with a source; otherwise say "illustrative" in

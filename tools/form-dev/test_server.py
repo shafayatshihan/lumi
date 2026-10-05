@@ -78,9 +78,10 @@ def raw(lines):
 
 def start_server(**env_extra):
     env = dict(os.environ, AURA_HOME=str(AURA), AURA_FAKE_CLAUDE=str(FAKE), AURA_NO_LAUNCH='1', AURA_FAKE_DELAY='0.03',
-               AURA_NO_NETWORK='1', AURA_FAKE_FIX='1')
+               AURA_NO_NETWORK='1', AURA_FAKE_FIX='1', AURA_BLENDER='none')     # no Blender unless a suite asks (test_blender)
     for k in ('AURA_LATEST_VERSION', 'AURA_HEALTH_FAIL', 'AURA_FAKE_PLAN', 'AURA_FAKE_FIX_FAIL', 'AURA_FAKE_AUTH_FILE',
-              'AURA_FAKE_HELP_FAIL', 'AURA_FAKE_LOGGED_IN'): env.pop(k, None)
+              'AURA_FAKE_HELP_FAIL', 'AURA_FAKE_LOGGED_IN', 'AURA_FAKE_EMAIL', 'AURA_FAKE_AUTH_METHOD', 'AURA_FAKE_CALL_LOG',
+              'AURA_FAKE_EDGE', 'AURA_FAKE_LOGIN_SECONDS', 'BROWSER'): env.pop(k, None)
     for k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT'): env.pop(k, None)
     env.update({k: str(v) for k, v in env_extra.items()})
     p = subprocess.Popen([sys.executable, str(SERVER), '--port', str(PORT)], env=env, stdout=subprocess.DEVNULL,
@@ -164,6 +165,16 @@ def main():
         stop_server(srv)
     print('\n[health checks and fixes]')
     run_health_suite()
+    import test_blender                 # Blender batch 1: locator, render pipeline (fake blender), estimates, failures
+    test_blender.run(sys.modules[__name__])
+    import test_blender_deck            # Blender batch 2: renders in the deck (embed, pack, runtime, finalize) + the checker rules
+    test_blender_deck.run(sys.modules[__name__])
+    import test_blender_ui              # Blender batch 3: plan chips + estimates, defer, change on a finalized deck, finalize 409
+    test_blender_ui.run(sys.modules[__name__])
+    import test_blender_install         # Blender batch 4: the installer downloads, verifies and flattens the pinned portable Blender
+    test_blender_install.run(sys.modules[__name__])
+    import test_blender_timing          # batch 6 Part D: the per-deck timing record (Cycles, capture, encode, sizes)
+    test_blender_timing.run(sys.modules[__name__])
     print('\n[idle shutdown]')
     run_idle_suite()
     import test_instructions            # the instruction surface (markers, plan.json schema, step card, numbers): no server needed
@@ -1036,9 +1047,8 @@ def run_health_suite():
     try:
         j = jget('/api/health')[1]
         checks = {c['id']: c for c in j.get('checks') or []}
-        check('free plan -> premium message', checks['signin']['ok'] is False and 'Pro, Max or Team' in checks['signin']['label'], checks['signin'])
-        check('free plan is a warning, not a blocker', checks['signin'].get('blocking') is False and checks['signin'].get('free') is True,
-              checks['signin'])
+        check('free plan is allowed with a gentle note', checks['signin']['ok'] is True and checks['signin'].get('free') is True
+              and 'Pro or higher is recommended' in checks['signin'].get('note', ''), checks['signin'])
         check('newer release -> update offered', checks['version']['ok'] is False and checks['version'].get('fix') == 'update' and
               '9.9.0' in checks['version']['label'], checks['version'])
         check('simulated failure gets its fix', checks['modules']['ok'] is False and checks['modules'].get('fix') == 'npm', checks['modules'])
@@ -1074,6 +1084,8 @@ def run_health_suite():
     finally:
         stop_server(srv)
         auth.unlink(missing_ok=True)
+    import test_signin                      # sign-in fix: private window, confirmation per install, every plan allowed
+    test_signin.run(sys.modules[__name__])
     print('  [claude fixes and explains a failing check]')
     def help_run(body):
         s, j = jpost('/api/fix/claude', body)

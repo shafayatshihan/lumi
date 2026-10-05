@@ -14,7 +14,9 @@
 //          mkdir / New-Item / cp / Copy-Item / mv / Move-Item into the deck work folders (.aura/temp, .aura/decks).
 //          A hook "allow" also lifts Claude Code's "contains multiple operations" refusal (measured with claude -p).
 //   deny   any segment deletes files, uses git, the network, nested shells, package installers or Invoke-Expression, or
-//          writes into .aura/engine, .aura/venv or .claude. The reason goes back to Claude so it can take another way.
+//          writes into .aura/engine, .aura/venv, .aura/blender or .claude. The reason goes back to Claude so it can take another way.
+//   Blender: always allow or deny, never defer: only `blender -b -P <scene.py in the work folders> -- ...` on its own, from the
+//          bundled or an official install (blenderCmd below; docs/blender-contract.md section 11).
 //   (none) anything else: the normal permission rules decide (in Lumi's headless runs that means "refused").
 // Deny rules in settings.json always win over this hook's "allow" (Claude Code checks them first).
 //
@@ -48,14 +50,14 @@ const DENY = [
   [/^(powershell|powershell\.exe|pwsh|pwsh\.exe|cmd|cmd\.exe|bash|bash\.exe|sh|sh\.exe|zsh|wsl|wsl\.exe|eval|exec|source|\.)$/, 'Nested shells are switched off inside Lumi. Run the command directly (one tool call), for example `node .aura/engine/tools/deck_check.js <folder>`.'],
   [/^(npm|npm\.cmd|npx|npx\.cmd|pnpm|yarn|pip|pip3|pip\.exe|pipx|uv|conda|winget|choco|scoop|install-module|install-package)$/, 'Lumi installs everything it needs itself; Claude cannot install packages here. Use the tools already in .aura/engine/tools.'],
 ];
-const PROTECTED_REASON = 'Files under .aura/engine, .aura/venv and .claude are Lumi\'s own and read-only. Write into the deck build folder (.aura/temp/build/<slug>) or the deck folder (.aura/decks/<id>) instead.';
+const PROTECTED_REASON = 'Files under .aura/engine, .aura/venv, .aura/blender and .claude are Lumi\'s own and read-only. Write into the deck build folder (.aura/temp/build/<slug>) or the deck folder (.aura/decks/<id>) instead.';
 
 // ------------------------------------------------------------------ tokenizer
 // Returns {segs: [[{v, q}...]...], redirs: [{op, target}], bad: reason|null}. q = token had quotes (so it is never an operator).
 function tokenize(cmd, shell) {
   const ps = shell === 'ps';
   const segs = [[]], redirs = [];
-  let cur = null, quoted = false, i = 0;
+  let cur = null, quoted = false, i = 0, bgJob = false;
   const push = () => { if (cur !== null) segs[segs.length - 1].push({ v: cur, q: quoted }); cur = null; quoted = false; };
   const split = () => { push(); if (segs[segs.length - 1].length) segs.push([]); };
   const bad = r => ({ segs, redirs, bad: r });
@@ -111,7 +113,7 @@ function tokenize(cmd, shell) {
         if (!seg.length && cur === null) { seg.push({ v: '&', q: false }); i++; continue; }
         return bad('background job');
       }
-      split(); i++; continue;                 // bash: background, then a new command
+      bgJob = true; split(); i++; continue;   // bash: background, then a new command
     }
     if (!ps && c === '`') return bad('command substitution');
     if (c === '$') {
@@ -125,7 +127,7 @@ function tokenize(cmd, shell) {
     cur = (cur || '') + c; i++;
   }
   push();
-  return { segs: segs.filter(s => s.length), redirs, bad: null };
+  return { segs: segs.filter(s => s.length), redirs, bad: null, bgJob };
 }
 
 // ------------------------------------------------------------------ paths
@@ -158,8 +160,77 @@ function makeCtx(root, cwd) {
     tools: [C('.aura/engine/tools'), C('.aura/engine/rules')],
     venvPy: [C('.aura/venv/Scripts/python.exe'), C('.aura/venv/Scripts/python')],
     work: [C('.aura/temp'), C('.aura/decks')],
-    protect: [C('.aura/engine'), C('.aura/venv'), C('.claude'), canon(W.join(root, '.aura', 'engine'))],
+    protect: [C('.aura/engine'), C('.aura/venv'), C('.claude'), C('.aura/blender'), canon(W.join(root, '.aura', 'engine'))],
+    blenderDirs: blenderDirs(root),
   };
+}
+// Where a blender.exe may live (docs/blender-contract.md section 11): Lumi's bundled copy and the official installs.
+function blenderDirs(root) {
+  const e = process.env, out = [canon(W.join(root, '.aura', 'blender'))];
+  for (const base of [e.ProgramFiles || 'C:\\Program Files', e.ProgramW6432, e['ProgramFiles(x86)']]) if (base) out.push(canon(W.join(base, 'Blender Foundation')));
+  if (e.LOCALAPPDATA) out.push(canon(W.join(e.LOCALAPPDATA, 'Programs', 'Blender Foundation')));
+  return out;
+}
+
+// ------------------------------------------------------------------ Blender (docs/blender-contract.md section 11)
+// Claude may run Blender ONLY as `blender -b -P <scene.py in .aura/decks or .aura/temp> -- <script args>`: the bundled or an
+// official install, in any spelling (plain, .exe, quoted absolute path, `& "...\blender.exe"`). Anything else around Blender is
+// DENIED (never deferred), so the reason tells Claude the one form that works. No static allow rule exists for it on purpose.
+const BLENDER_FORM = 'Run Blender as ONE plain command and nothing else on the line, exactly: blender -b -P ' +
+  '.aura/decks/<id>/blender/<slide>/scene.py -- --out .aura/decks/<id>/blender/<slide>/scratch/check.png --preview ' +
+  '(no full path needed, no pipes, no redirection, no &, no $(...)). Lumi renders the preview and the full render itself.';
+const isBlenderExe = raw => /^blender(\.exe)?$/i.test(W.basename(toWin(raw)));
+// Blender hiding in a line that could not be tokenized. It has to be in COMMAND position (start of the line or straight
+// after ; && || | ( ` or $( ), or be a path to blender.exe. A folder NAMED blender is not Blender running: the deck's own
+// `.aura/decks/<id>/blender/<sid>` is such a folder, and a plain `mkdir -p .aura/decks/<id>/blender` used to be refused
+// with the Blender message, which told Claude nothing about the real problem (the `;` and the pipe on that line).
+const BLENDER_HIDDEN = /(?:^|[;&|(\n]|\$\(|`)\s*["']?(?:[^\s"'|;&]*[\\/])?blender(?:\.exe)?(?=["'\s]|$)/i;
+const BLENDER_EXE_ANYWHERE = /blender\.exe/i;
+const blenderHidden = cmd => BLENDER_HIDDEN.test(cmd) || BLENDER_EXE_ANYWHERE.test(cmd);
+function blenderSeg(seg, shell) {
+  const t = seg.filter((x, i) => !(i === 0 && shell === 'ps' && x.v === '&' && !x.q));
+  return !!t.length && isBlenderExe(t[0].v);
+}
+function blenderCmd(ctx, raw, args) {
+  const no = why => ({ v: 'deny', why: why + ' ' + BLENDER_FORM });
+  if (/[\\/]/.test(raw)) {
+    const p = resolveArg(ctx, raw);
+    if (!p || !inside(ctx, p, ctx.blenderDirs)) return no('Only Lumi\'s Blender (or an official install under Program Files) may run.');
+  }
+  if (args.length === 1 && /^(--version|-v)$/.test(args[0])) return { v: 'allow', why: 'blender version check' };
+  const dd = args.indexOf('--');
+  const pre = dd < 0 ? args : args.slice(0, dd), post = dd < 0 ? [] : args.slice(dd + 1);
+  let bg = false, script = null, nP = 0;
+  for (let k = 0; k < pre.length; k++) {
+    const a = pre[k];
+    if (a === '-b' || a === '--background') { bg = true; continue; }
+    if (a === '-P' || a === '--python') {
+      nP++;
+      if (!bg) return no('-b must come before -P.');
+      script = pre[++k]; continue;
+    }
+    if (['--factory-startup', '-noaudio', '-q', '--quiet'].includes(a)) continue;
+    if (['--python-exit-code', '-t', '--threads', '--log-level', '--log'].includes(a)) {
+      k++;
+      if (!/^[\w*,.^-]+$/.test(pre[k] || '')) return no(`Blender option ${a} needs a simple value.`);
+      continue;
+    }
+    if (/^--python-(expr|text|console|use-system-env)$/.test(a)) return no('Blender may only run a scene file, never inline Python.');
+    if (/\.blend\d*$/i.test(a)) return no('Blender may not open .blend files here.');
+    return no(`The Blender option "${a}" is not allowed in Lumi.`);
+  }
+  if (!bg || nP !== 1 || !script) return no('Blender must run in the background (-b) with exactly one scene file (-P).');
+  const sp = resolveArg(ctx, script);
+  if (!sp || !/\.py$/i.test(sp) || !inside(ctx, sp, ctx.work)) return no('The scene must be a .py file inside .aura/decks or .aura/temp.');
+  for (const a0 of post) {
+    let a = a0;
+    const m = /^--?[A-Za-z][\w-]*=(.*)$/.exec(a);
+    if (m) a = m[1]; else if (/^--?[A-Za-z][\w-]*$/.test(a)) continue;
+    if (/^-?[\d.]+$/.test(a) || /^[A-Za-z][\w-]*$/.test(a)) continue;             // numbers, plain words (--view hero)
+    const p = resolveArg(ctx, a);
+    if (!p || !inside(ctx, p, ctx.work)) return no('Blender may only write inside .aura/decks or .aura/temp.');
+  }
+  return { v: 'allow', why: 'Lumi Blender scene render' };
 }
 // resolve a path argument against the segment's cwd; null when it cannot be known
 function resolveArg(ctx, s) {
@@ -191,6 +262,7 @@ function segment(ctx, toks, shell) {
 
   for (const [re, why] of DENY) if (re.test(exe) || re.test(rawLow)) return { v: 'deny', why };
   if (/^(python|python3|py)(\.exe)?$/.test(exe) && args[0] === '-m' && /^(pip|ensurepip|venv)$/.test(args[1] || '')) return { v: 'deny', why: DENY[5][1] };
+  if (isBlenderExe(raw)) return blenderCmd(ctx, raw, args);
 
   // anything that writes: never into Lumi's own folders
   if (WRITERS.has(exe) && !COPY.has(exe)) {            // a copy only writes its destination (checked below)
@@ -296,8 +368,11 @@ function decide(tool, command, opts) {
   // either way: without an allow, Lumi's headless run refuses it)
   if (tk.bad) {
     for (const seg of tk.segs) { const r = segment(makeCtxCopy(ctx), seg, shell); if (r.v === 'deny') return { decision: 'deny', reason: r.why }; }
+    if (blenderHidden(cmd)) return { decision: 'deny', reason: 'Blender cannot run inside $(...), a variable or a subshell. ' + BLENDER_FORM };
     return { decision: null, reason: tk.bad };
   }
+  if (tk.segs.some(seg => blenderSeg(seg, shell)) && (tk.segs.length > 1 || tk.redirs.length || tk.bgJob))
+    return { decision: 'deny', reason: 'Blender must run on its own: no &&, ;, | or redirection around it. ' + BLENDER_FORM };
   for (const r of tk.redirs) {
     if (r.op === '>&') continue;
     if (isNull(r.target)) continue;

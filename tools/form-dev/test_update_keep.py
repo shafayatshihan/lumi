@@ -43,6 +43,12 @@ USER_FILES = {
     '4 - Your slides/Older versions/2026-09-01 Old deck.html': '<html>older</html>',
     '.claude/settings.local.json': '{"permissions": {"allow": ["Bash(echo:*)"]}}',
     '.aura/engine/node_modules/three/package.json': '{"name": "three"}',
+    # the bundled Blender (docs/blender-contract.md section 12): an update must NEVER re-download or delete it
+    '.aura/blender/blender.exe': 'MZ fake blender',
+    '.aura/blender/lumi-blender.json': '{"version": "5.2.2", "sha256": "abc"}',
+    '.aura/blender/COPYING-GPL-3.0.txt': 'GNU GENERAL PUBLIC LICENSE',
+    '.aura/blender/BLENDER-SOURCE.txt': 'https://download.blender.org/source/',
+    '.aura/blender/5.2/scripts/modules/bpy.py': '# bpy',
 }
 
 
@@ -76,6 +82,9 @@ def run(T=None):
         lost = [rel for rel in USER_FILES if not (root / rel).is_file() or sha(root / rel) != before[rel]]
         check('every user file is kept byte for byte (deck record, plan.json, packed deck, build folder, brief, uploads, '
               '4 - Your slides, venv, node_modules, settings.local.json)', not lost, lost)
+        blost = [rel for rel in USER_FILES if rel.startswith('.aura/blender/')
+                 and (not (root / rel).is_file() or sha(root / rel) != before[rel])]
+        check('update_keep: the bundled Blender (.aura/blender) survives an update untouched - no re-download', not blost, blost)
         new = root / '.claude' / 'settings.json'
         check('the new release\'s settings.json replaces the old one', new.is_file() and sha(new) == sha(NEW_SETTINGS))
         s = json.loads(new.read_text(encoding='utf-8')) if new.is_file() else {}

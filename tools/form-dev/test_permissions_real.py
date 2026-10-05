@@ -119,6 +119,59 @@ CASES = [
     ('Bash', "sed -i 's/26/12/' .aura/engine/rules/hard-rules.json", D),
     ('PowerShell', 'Start-Process notepad', D),
     ('PowerShell', 'Stop-Process -Name node', D),
+    # --- Blender (docs/blender-contract.md section 11): every spelling of the ONE allowed form, everything else denied
+    ('Bash', 'blender -b -P .aura/decks/abc/blender/s1/scene.py -- --out .aura/decks/abc/blender/s1/scratch/check.png --preview', A),
+    ('PowerShell', 'blender -b -P .aura/decks/abc/blender/s1/scene.py -- --out .aura/decks/abc/blender/s1/scratch/check.png --preview', A),
+    ('Bash', 'blender.exe -b -P .aura/decks/abc/blender/s1/scene.py -- --out .aura/decks/abc/blender/s1/scratch/check.png --res 30 --samples 16', A),
+    ('PowerShell', 'blender.exe -b -P .aura\\decks\\abc\\blender\\s1\\scene.py -- --out .aura\\decks\\abc\\blender\\s1\\scratch\\check.png --preview', A),
+    ('PowerShell', '& "{W}\\.aura\\blender\\blender.exe" -b -P "{W}\\.aura\\decks\\abc\\blender\\s1\\scene.py" -- --out "{W}\\.aura\\decks\\abc\\blender\\s1\\scratch\\check.png" --preview', A),
+    ('PowerShell', '& "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe" -b -P .aura\\decks\\abc\\blender\\s1\\scene.py -- --out .aura\\decks\\abc\\blender\\s1\\scratch\\check.png --preview', A),
+    ('PowerShell', '"C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe" -b -P .aura/decks/abc/blender/s1/scene.py -- --out .aura/decks/abc/blender/s1/scratch/c.png', A),
+    ('Bash', '"/c/Program Files/Blender Foundation/Blender 5.2/blender.exe" -b -P .aura/decks/abc/blender/s1/scene.py -- --out .aura/decks/abc/blender/s1/scratch/check.png', A),
+    ('Bash', '"C:/Program Files/Blender Foundation/Blender 5.2/blender.exe" -b --factory-startup -P {M}/.aura/temp/scratch/t.py -- --out={M}/.aura/temp/scratch/t.png', A),
+    ('Bash', '.aura/blender/blender.exe -b -P .aura/temp/x/scene.py -- --out .aura/temp/x/a.png --height 720 --anim --cpu', A),
+    ('Bash', '{U}/.aura/blender/blender.exe --background --python {U}/.aura/decks/abc/blender/s1/scene.py -- --out {U}/.aura/decks/abc/blender/s1/scratch/c.png', A),
+    ('Bash', 'blender --version', A),
+    ('Bash', 'cat .aura/decks/abc/blender/s1/scene.py | head -40', A),
+    ('Bash', 'blender -b --python-expr "import os; os.remove(1)"', D),
+    ('PowerShell', 'blender -b --python-expr "print(1)"', D),
+    ('Bash', 'blender -b -P /c/Users/Public/evil.py', D),
+    ('Bash', 'blender -b -P .aura/engine/deck/looks/bold-blue/blender/bench_scene.py -- --out .aura/temp/b.png', D),
+    ('Bash', 'blender -P .aura/decks/abc/blender/s1/scene.py -b', D),
+    ('Bash', 'blender -b .aura/decks/abc/x.blend -P .aura/decks/abc/blender/s1/scene.py', D),
+    ('Bash', 'blender -b -P .aura/decks/abc/blender/s1/scene.py -- --out /c/Users/Public/out.png', D),
+    ('Bash', 'blender -b -P .aura/decks/abc/blender/s1/scene.py -- --out .aura/decks/abc/blender/s1/scratch/check.png 2>&1 | grep lumi', D),
+    ('Bash', 'cd .aura/decks/abc && blender -b -P blender/s1/scene.py', D),
+    ('Bash', 'blender -b -P .aura/decks/abc/blender/s1/scene.py > .aura/temp/log.txt', D),
+    ('Bash', 'blender -b -P .aura/decks/abc/blender/s1/scene.py &', D),
+    ('Bash', 'echo $(blender -b -P .aura/decks/abc/blender/s1/scene.py)', D),
+    ('PowerShell', '& "C:\\Users\\Public\\blender.exe" -b -P .aura\\decks\\abc\\blender\\s1\\scene.py', D),
+    ('Bash', '/c/Users/Public/tools/blender -b -P .aura/decks/abc/blender/s1/scene.py', D),
+    ('Bash', 'cp .aura/temp/evil.py .aura/blender/5.2/scripts/startup/evil.py', D),
+    # --- batch 4: the BUNDLED copy the installer puts in .aura\blender, in the spellings it makes possible
+    ('Bash', '.aura/blender/blender.exe --version', A),
+    ('PowerShell', '& "{W}\\.aura\\blender\\blender.exe" --version', A),
+    ('PowerShell', '{W}\\.aura\\blender\\blender.exe -b -P {W}\\.aura\\decks\\abc\\blender\\s1\\scene.py -- --out {W}\\.aura\\decks\\abc\\blender\\s1\\scratch\\c.png --preview', A),
+    ('Bash', '{U}/.aura/blender/blender.exe -b --factory-startup --python-exit-code 1 -P .aura/temp/x/scene.py -- --out .aura/temp/x/a.png', A),
+    ('Bash', './.aura/blender/blender.exe -b -P .aura/decks/abc/blender/s1/scene.py -- --out .aura/decks/abc/blender/s1/scratch/c.png', A),
+    ('Bash', 'cat .aura/blender/BLENDER-SOURCE.txt', A),
+    ('Bash', 'cat .aura/blender/lumi-blender.json', A),
+    ('PowerShell', 'Get-Content {W}\\.aura\\blender\\COPYING-GPL-3.0.txt -TotalCount 5', A),
+    ('Bash', 'echo broken > .aura/blender/lumi-blender.json', D),
+    ('PowerShell', 'Set-Content {W}\\.aura\\blender\\lumi-blender.json "x"', D),
+    ('Bash', 'rm -rf .aura/blender', D),
+    ('PowerShell', 'Remove-Item {W}\\.aura\\blender -Recurse -Force', D),
+    ('Bash', 'curl -L https://download.blender.org/release/Blender5.2/blender-5.2.2-windows-x64.zip -o .aura/temp/b.zip', D),
+    ('Bash', 'mv .aura/temp/x.exe .aura/blender/blender.exe', D),
+    ('Bash', '.aura/blender/blender.exe -b --python-expr "print(1)"', D),
+    # --- batch 5, from the real end-to-end run: a FOLDER called blender is not Blender running. Every deck has
+    # .aura/decks/<id>/blender/<sid>, and an ordinary line that mentioned it came back with the Blender refusal
+    # ("Blender cannot run inside $(...)"), which said nothing about the real line and cost Claude a round trip.
+    ('Bash', 'cd {M} && ls "3 - Put your files here" 2>/dev/null | head; mkdir -p .aura/decks/abc/blender', A),
+    ('Bash', 'mkdir -p .aura/decks/abc/blender/s1/scratch && ls .aura/decks/abc/blender', A),
+    ('Bash', 'ls -la .aura/decks/abc/blender | head', A),
+    ('Bash', 'cat .aura/decks/abc/blender/s1/scene.py | head -40', A),
+    ('Bash', 'blender -b -P .aura/decks/abc/blender/s1/scene.py -- --inspect', A),   # Part A's text check, used in the real run
 ]
 
 
@@ -215,6 +268,13 @@ def run_unit(check):
         check('settings: deny rm / Remove-Item / git / network / engine + .claude writes',
               all(x in deny for x in ('Bash(rm:*)', 'PowerShell(Remove-Item:*)', 'Bash(git:*)', 'Bash(curl:*)', 'PowerShell(Invoke-WebRequest:*)',
                                       'Edit(.aura/engine/**)', 'Write(.claude/**)')))
+        # Blender (docs/blender-contract.md section 11): the HOOK decides every spelling. A static Bash(blender:*) rule
+        # would let --python-expr through whenever the hook could not run, so there must be none; and the bundled copy
+        # the batch-4 installer writes into .aura/blender is read-only to Claude, exactly like .aura/engine.
+        blrules = [a for a in allow if re.search(r'\bblender', a, re.I)]
+        check('settings: no static Blender allow rule (the hook decides every spelling)', not blrules, blrules)
+        check('settings: writes into .aura/blender are denied like .aura/engine',
+              'Edit(.aura/blender/**)' in deny and 'Write(.aura/blender/**)' in deny)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

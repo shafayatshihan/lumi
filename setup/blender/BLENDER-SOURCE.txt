@@ -1,0 +1,36 @@
+Blender in Lumi - licence and source code
+=========================================
+
+This folder holds a copy of Blender that Lumi downloaded and installed for you. Lumi did not change it: it is the
+official portable build published by the Blender Foundation.
+
+  program   Blender 5.2.2 LTS (windows-x64, portable zip)
+  file      blender-5.2.2-windows-x64.zip
+  from      https://download.blender.org/release/Blender5.2/blender-5.2.2-windows-x64.zip
+  sha256    3849d17a682cba006075aaa3f3597ecb5c9c30ec31035b2e092c53e40679b535
+  checksums https://download.blender.org/release/Blender5.2/blender-5.2.2.sha256
+
+Lumi checks that SHA256 after every download and refuses to install the file if it does not match.
+
+Licence
+-------
+Blender is free software under the GNU General Public License, version 3 or (at your option) any later version.
+The full licence text is in COPYING-GPL-3.0.txt next to this file. Blender's own licence folder, including the
+licences of the libraries it bundles, is in the "license" folder next to blender.exe.
+
+  https://www.blender.org/about/license/
+
+Blender comes with ABSOLUTELY NO WARRANTY. You may redistribute it under the terms of that licence.
+
+Where to get the source code
+----------------------------
+The complete corresponding source code for this exact version is published by the Blender Foundation at:
+
+  https://download.blender.org/source/blender-5.2.2.tar.xz
+  https://download.blender.org/source/              (all versions)
+  https://projects.blender.org/blender/blender      (the git repository)
+
+Lumi itself is a separate program that only runs Blender as a tool; it is not a derived work of Blender, and
+Lumi's own source code is at https://github.com/shafayatshihan/lumi .
+
+If those links ever stop working, write to the address in Lumi's README and you will be sent the source.

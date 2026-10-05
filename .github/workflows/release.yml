@@ -66,6 +66,6 @@ jobs:
             echo "Updated the files on $TAG"
           else
             gh release create "$TAG" release/Lumi-Setup.zip release/Aura-Slide-Setup.zip release/Lumi.exe --title "Lumi $VERSION" --latest \
-              --notes "Download **Lumi.exe** below and double-click it. If Windows says \"Windows protected your PC\", click **More info**, then **Run anyway**. Only for Claude premium users (Pro, Max or Team)."
+              --notes "Download **Lumi.exe** below and double-click it. If Windows says \"Windows protected your PC\", click **More info**, then **Run anyway**. Works with any Claude plan; Pro or higher is recommended."
             echo "Created $TAG"
           fi

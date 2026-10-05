@@ -7,6 +7,10 @@ Trigger words (in the message, or for the first run also in the brief's notes):
   many-doubts     (in the brief's notes) the plan also asks a deck-wide tone question with when=/depends= variants of a follow-up
   ask-me          first run asks a question with [[aura:choice ...]] + [[aura:ask]] and ends its turn
   (in a slide title during a build) ask-seven: seven questions with when=/depends= variants (q2 follows q1, q4 follows q3); ask-deep: 4 design questions before the slide, one more midway, then it finishes; ask-me: two choices first (3D scene + detail); long-hints: five long hints
+  (Blender slides, docs/blender-contract.md) a build step whose message has a BLENDER SLIDE block writes the fake scene.py
+                  (FAKE_* directives for tools/form-dev/fake_blender.py from the slide title: bl-fail, bl-gpu, bl-slow; bl-noscene
+                  writes none) and "runs" the one allowed check command; a [blender-change ...] message edits scene.py
+                  (text "no-edit": leaves it; "make-it-fail": adds FAKE_FAIL; "fast-again": drops FAKE_SLOW)
   take-your-time  works slowly for up to AURA_FAKE_LONG seconds (default 60), for stop/idle tests
   auth-fail       behaves like a signed-out CLI
   rate-limit      hits the usage limit
@@ -23,6 +27,7 @@ A finished deck ends with 3 [[aura:hint slide=N text="..."]] lines. The deck is 
 (data-edit="s2-t1") shrinks to fit its box, so a very long text there breaks the 26 px rule.
 Env: AURA_FAKE_DELAY seconds between lines (default 0.35), AURA_FAKE_LOGGED_IN=0 for a signed-out status,
 AURA_FAKE_PLAN=<subscriptionType> (default max),
+AURA_FAKE_EMAIL, AURA_FAKE_AUTH_METHOD, AURA_FAKE_LOGIN_SECONDS, AURA_FAKE_CALL_LOG=<path>,
 AURA_FAKE_AUTH_FILE=<path> (signed-in state kept in a file that auth login/logout flip), AURA_FAKE_HELP_FAIL=1 (the
 loading screen's [lumi-help] runs fail)."""
 import html as htm, json, os, re, sys, time, uuid
@@ -38,20 +43,51 @@ def out(obj):
     time.sleep(DELAY)
 
 
-AUTH_FILE = os.environ.get('AURA_FAKE_AUTH_FILE')     # optional: signed-in state that login/logout change ("1"/"0")
+AUTH_FILE = os.environ.get('AURA_FAKE_AUTH_FILE')     # optional: signed-in state that login/logout change
+# The auth file holds "1"/"0" or JSON {"loggedIn": bool, "email": str, "plan": str|"none", "method": str,
+# "next": {"email", "plan", "method"}}: `auth login` signs in as "next" when given (a different account), else keeps
+# the last identity. Every auth call is appended to AURA_FAKE_CALL_LOG when set (tests: "logout, then login").
+
+
+def auth_state():
+    st = {'loggedIn': os.environ.get('AURA_FAKE_LOGGED_IN', '1') != '0', 'email': os.environ.get('AURA_FAKE_EMAIL', 'tester@example.com'),
+          'plan': os.environ.get('AURA_FAKE_PLAN', 'max'), 'method': os.environ.get('AURA_FAKE_AUTH_METHOD', 'claude.ai')}
+    if AUTH_FILE and Path(AUTH_FILE).is_file():
+        raw = Path(AUTH_FILE).read_text(encoding='utf-8').strip()
+        if raw.startswith('{'): st.update(json.loads(raw))
+        else: st['loggedIn'] = raw == '1'
+    return st
+
+
+def save_auth(st):
+    if AUTH_FILE: Path(AUTH_FILE).write_text(json.dumps(st), encoding='utf-8')
+
+
+if args[:1] == ['auth'] and os.environ.get('AURA_FAKE_CALL_LOG'):
+    with open(os.environ['AURA_FAKE_CALL_LOG'], 'a', encoding='utf-8') as f: f.write(' '.join(args[:2]) + '\n')
 if args[:2] == ['auth', 'status']:
-    ok = os.environ.get('AURA_FAKE_LOGGED_IN', '1') != '0'
-    if AUTH_FILE and Path(AUTH_FILE).is_file(): ok = Path(AUTH_FILE).read_text().strip() == '1'
-    info = {'loggedIn': ok, 'authMethod': 'claude.ai' if ok else 'none', 'apiProvider': 'firstParty'}
-    if ok: info['subscriptionType'] = os.environ.get('AURA_FAKE_PLAN', 'max')
+    st = auth_state(); ok = bool(st.get('loggedIn'))
+    info = {'loggedIn': ok, 'authMethod': st.get('method') or 'claude.ai' if ok else 'none', 'apiProvider': 'firstParty'}
+    if ok and st.get('email'): info['email'] = st['email']
+    if ok and st.get('plan') and st['plan'] != 'none': info['subscriptionType'] = st['plan']
     print(json.dumps(info, indent=2))
     sys.exit(0 if ok else 1)
 if args[:2] == ['auth', 'login']:
-    print('Opening your browser to sign in... (fake)'); time.sleep(2)
-    if AUTH_FILE: Path(AUTH_FILE).write_text('1')
+    print('Opening browser to sign in... (fake)')
+    url = ('https://claude.com/cai/oauth/authorize?code=true&client_id=fake&response_type=code'
+           '&redirect_uri=http%3A%2F%2Flocalhost%3A55555%2Fcallback&state=fake')
+    if os.environ.get('BROWSER'):                     # like Claude Code: BROWSER gets the URL, quoted (it holds '&')
+        import subprocess
+        subprocess.run(f'"{os.environ["BROWSER"]}" "{url}"', stdin=subprocess.DEVNULL)
+    time.sleep(float(os.environ.get('AURA_FAKE_LOGIN_SECONDS', '2')))
+    if AUTH_FILE:
+        st = auth_state(); nxt = st.pop('next', None) or {}
+        st.update(nxt); st['loggedIn'] = True
+        save_auth(st)
     print('Login successful.'); sys.exit(0)
 if args[:2] == ['auth', 'logout']:
-    if AUTH_FILE: Path(AUTH_FILE).write_text('0')
+    if AUTH_FILE:
+        st = auth_state(); st['loggedIn'] = False; save_auth(st)
     print('Successfully logged out.'); sys.exit(0)
 
 message = sys.stdin.read()
@@ -317,6 +353,25 @@ if '[plan-edit]' in message and folder:
     t = 'Done, I updated the plan.\n' + '\n'.join(lines + [plan_marker()])
     say(t); result(t); sys.exit(0)
 
+# ---------------------------------------------------------------- Blender: a change request on a slide's preview (docs/blender-contract.md)
+mc = re.search(r'\[blender-change slide=([a-z0-9-]+) n=(\d+)\]', message)
+if mc and folder:
+    scene = cwd / folder / 'blender' / mc.group(1) / 'scene.py'
+    mt = re.search(r'wants this changed: "(.*?)"\n', message, re.S)
+    want = mt.group(1) if mt else ''
+    save_ctx(int(os.environ.get('AURA_FAKE_CTX_CHANGE', '30000')))
+    if 'no-edit' in want or not scene.is_file():
+        t = 'I looked at the scene and left it as it is.'
+    else:
+        extra = '\n# FAKE_FAIL\n' if 'make-it-fail' in want else ''
+        body = scene.read_text(encoding='utf-8')
+        if 'fast-again' in want: body = re.sub(r'#\s*FAKE_SLOW=[\d.]+', '', body)
+        if 'render-slowly' in want: body += '\n# FAKE_SLOW=6\n'          # dev walks: a full render slow enough to watch and cancel
+        scene.write_text(body + f'\n# change: {want[:80]}\n' + extra, encoding='utf-8')
+        tool('Edit', {'file_path': str(scene), 'old_string': 'a', 'new_string': 'b'}, 'The file has been updated.')
+        t = f'I changed the scene: {want[:80]}.'
+    say(t); result(t); sys.exit(0)
+
 # ---------------------------------------------------------------- v0.5 building one slide at a time
 mb_handoff = '[context-handoff]' in FULL or '[context-recovery]' in FULL or SC
 mb = re.search(r'\[build-slide id=([a-z0-9-]+) n=(\d+) of=(\d+)\]', message)
@@ -388,6 +443,19 @@ if mb and folder:
             'show the result as a bar chart next to the 3D picture'))
     else:
         hl = f'[[aura:hint slide={n} text="make the heading shorter"]]\n'
+    ms = re.search(r'Write the scene to `([^`]+scene\.py)`', message)        # a Blender slide (BLENDER SLIDE block)
+    ttl = target.get('title') or ''
+    if ms and 'bl-noscene' not in ttl:
+        sp = cwd / ms.group(1)
+        sp.parent.mkdir(parents=True, exist_ok=True)
+        flags = ''.join(f'# {d}\n' for k, d in (('bl-fail', 'FAKE_FAIL'), ('bl-gpu', 'FAKE_GPU_FAIL'), ('bl-slow', 'FAKE_SLOW=0.6')) if k in ttl)
+        anim = 'L.loop(' in message
+        sp.write_text('import math, os, sys\n# a fake lumi_bpy scene (fake_claude)\n' + flags +
+                      ('# FAKE_FRAMES=3\n' if anim else '') + 'import lumi_bpy as L\na = L.args(); L.reset(a)\n' +
+                      ('L.loop(0.15)\n' if anim else '') + 'L.render(a.out)\n', encoding='utf-8')
+        tool('Write', {'file_path': str(sp), 'content': 'import lumi_bpy as L ...'}, f'File created successfully at: {sp}')
+        mcmd = re.search(r'exactly: `(blender -b -P [^`]+)`', message)
+        if mcmd: tool('Bash', {'command': mcmd.group(1)}, '[lumi] wrote check.png (8.1 s)')
     t = (f'Slide {n} is ready.\n{hl}'
          f'[[aura:built slide="{sid}"]]\n[[aura:done path="{deck_rel}"]]')
     say(t); result(t); sys.exit(0)

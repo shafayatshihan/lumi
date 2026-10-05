@@ -11,6 +11,7 @@ import { parseWhen, whenMatches } from './markers.js';
 import { openDialog, roving, syncTab } from './a11y.js';
 import { setClaude } from './bus.js';
 import { pace } from './api.js';
+import { ENGINE, effEngine, engineNotes } from './blender.js';
 
 import { h } from './dom.js';
 export { h };
@@ -56,11 +57,14 @@ export const countWords = (...parts) => parts.reduce((n, p) => n + String(p || '
 const clone = v => JSON.parse(JSON.stringify(v));
 const baseName = p => String(p || '').split('/').pop();
 
-function fixVisual(v) {
+// visual.engine (docs/blender-contract.md section 2): 'blender' | 'threejs' | absent (= lumi decides); only for a 3D picture
+export function fixVisual(v) {
   const main = MAINS.some(m => m.id === v.main) ? v.main : 'text';
   const ok = (COMPANIONS[main] || []).map(c => c.id);
-  return { main, companions: (v.companions || []).filter(c => ok.includes(c)), phrase: v.phrase || '',
+  const out = { main, companions: (v.companions || []).filter(c => ok.includes(c)), phrase: v.phrase || '',
     detail: main === '3d' ? (v.detail || 'detailed') : null, motion: main === '3d' ? (v.motion || 'timed') : null };
+  if (main === '3d' && (v.engine === 'blender' || v.engine === 'threejs')) out.engine = v.engine;
+  return out;
 }
 
 // ---------------------------------------------------------------- a question card (deck strip, slide badge popover)
@@ -199,8 +203,12 @@ export function slideEditor(slide, ctx = {}) {
   const detailRow = h('div', { class: 'pl-chips', role: 'radiogroup', 'aria-label': 'how detailed' });
   const motionRow = h('div', { class: 'pl-chips', role: 'radiogroup', 'aria-label': 'how it moves' });
   roving(mainRow, '[role=radio]'); roving(detailRow, '[role=radio]'); roving(motionRow, '[role=radio]');
+  // the engine of a 3D picture: two named options with plain notes and the server's time estimates (ctx.engineInfo(slide id))
+  const engRow = h('div', { class: 'pl-engs', role: 'radiogroup', 'aria-label': 'how the 3D picture is made' });
+  roving(engRow, '[role=radio]');
+  const engBox = h('div', { class: 'pl-engbox' }, engRow);
   const threeBox = h('div', { class: 'pl-3d' }, h('div', { class: 'pl-inl' }, h('p', { class: 'pl-lab' }, 'how detailed?'), detailRow),
-    h('p', { class: 'pl-lab' }, 'how does it move?'), motionRow);
+    h('p', { class: 'pl-lab' }, 'how does it move?'), motionRow, engBox);
   const phrase = h('input', { class: 'pl-phrase', type: 'text', maxlength: '160', placeholder: 'what the picture shows, in a few words', 'aria-label': 'what the picture shows' });
   phrase.addEventListener('change', () => { s.visual.phrase = phrase.value.trim(); change(); });
   const fixPop = h('div', { class: 'pl-fix', hidden: true, role: 'dialog', 'aria-label': 'why this is greyed out' });
@@ -227,35 +235,66 @@ export function slideEditor(slide, ctx = {}) {
     fixClose = openDialog(fixPop, { onEsc: closeFix });
     const hostR = fixPop.parentElement.getBoundingClientRect(), r = anchor.getBoundingClientRect(), k = hostR.width / fixPop.parentElement.offsetWidth || 1;
     fixPop.style.left = Math.max(0, Math.min((r.left - hostR.left) / k, fixPop.parentElement.offsetWidth - 400)) + 'px';
-    fixPop.style.top = ((r.bottom - hostR.top) / k + 8) + 'px';
+    fixPop.style.top = ((r.bottom - hostR.top) / k + 8 + fixPop.parentElement.scrollTop) + 'px';     // the picture panel may be scrolled
     close.addEventListener('click', closeFix);
     swap.addEventListener('click', () => { closeFix(); setMain(item.id); });
     own.addEventListener('click', () => { closeFix(); sfx('launch'); ctx.onOwnSlide(item.id); });
   }
+  const engInfo = () => (ctx.engineInfo ? ctx.engineInfo(s.id) : null);
+  const engNow = () => { const i = engInfo(); return i ? effEngine(s.visual, i.look, i.available) : null; };
+  function paintEngines() {
+    const i = engInfo(), v = s.visual;
+    engBox.hidden = !i || v.main !== '3d';
+    if (engBox.hidden) { engRow.replaceChildren(); return; }
+    const now = engNow(), kind = v.motion === 'still' ? 'still' : 'animation', notes = engineNotes(kind, i.est);
+    engRow.replaceChildren(...['blender', 'threejs'].map(id => {
+      const E = ENGINE[id], on = now === id, grey = id === 'blender' && !i.available ? 'blender isn’t installed on this computer yet. repair lumi from the loading screen to add it.' : '';
+      const b = h('button', { type: 'button', class: 'pl-eng' + (on ? ' on' : '') + (grey ? ' is-grey' : ''), role: 'radio', 'aria-checked': on ? 'true' : 'false',
+        'data-eng': id, 'data-nosfx': '', 'data-cursor-label': grey ? 'why?' : 'pick' },
+        h('span', { class: 'pl-eng-t' }, h('b', {}, E.name), h('span', { class: 'pl-eng-tool' }, ` · ${E.tool}`)),
+        h('span', { class: 'pl-eng-n', title: grey || notes[id] }, grey || ((on && !v.engine ? 'suggested · ' : '') + notes[id])));
+      const q = h('span', { class: 'pl-chip-q', role: 'button', tabindex: '0', 'aria-label': `what is ${E.name}?`, html: ICON.q });
+      q.addEventListener('click', e => { e.stopPropagation(); sfx('pop'); tell(`${E.name}: ${E.why}`); });
+      q.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); q.click(); } });
+      b.append(q);
+      b.addEventListener('click', () => {
+        if (grey) { sfx('error'); tell(grey); return; }
+        if (s.visual.engine === id && engNow() === id) return;
+        s.visual.engine = id; sfx('select'); paintVisual(); change(false);
+      });
+      return b;
+    }));
+    syncTab(engRow, '[role=radio]');
+  }
   function paintVisual() {
     const v = s.visual;
-    const a = document.activeElement, row = [mainRow, detailRow, motionRow].find(r => r.contains(a));
+    const a = document.activeElement, row = [mainRow, detailRow, motionRow, engRow].find(r => r.contains(a));
     const refocus = row && a.matches('[role=radio]') ? { parent: row, n: [...row.children].indexOf(a) } : null;   // the chips are rebuilt: keep the keyboard where it was
     mainRow.replaceChildren(...MAINS.map(m => chip(m, v.main === m.id, { radio: true, onPick: () => setMain(m.id) })));
     const own = COMPANIONS[v.main] || [];
     const others = MAINS.filter(m => m.id !== v.main);
+    // handlers read s.visual when tapped: a poll that brings the same plan replaces s (set()), so a captured object would be stale
     addRow.replaceChildren(...own.map(c => chip(c, v.companions.includes(c.id), { onPick: () => {
-      const i = v.companions.indexOf(c.id);
-      if (i >= 0) { v.companions.splice(i, 1); sfx('deselect'); } else { v.companions.push(c.id); sfx('select'); }
+      const cv = s.visual, i = cv.companions.indexOf(c.id);
+      if (i >= 0) { cv.companions.splice(i, 1); sfx('deselect'); } else { cv.companions.push(c.id); sfx('select'); }
       paintVisual(); change();
     } })));
     alsoRow.replaceChildren(...others.map(m => { const g = clashReason(v.main, m.id); return chip({ ...m, label: `+ ${m.label}` }, false, { grey: g, onPick: b => openFix(m, g, b) }); }));
     threeBox.hidden = v.main !== '3d' || !picked;
-    picLine.replaceChildren(h('span', { class: 'pl-picline-i', html: ICON[v.main] || ICON.text }), h('span', { class: 'pl-picline-l' }, 'picture: '),
-      h('b', {}, mainOf(v.main).label), h('span', { class: 'pl-picline-e', html: ICON.pen }));
+    const eng = engNow();
+    // replaceChildren() renders a null argument as the text "null" (h() drops it), so the optional engine span is filtered out
+    picLine.replaceChildren(...[h('span', { class: 'pl-picline-i', html: ICON[v.main] || ICON.text }), h('span', { class: 'pl-picline-l' }, 'picture: '),
+      h('b', {}, mainOf(v.main).label), eng ? h('span', { class: 'pl-picline-x' }, ` · ${ENGINE[eng].name}`) : null,
+      h('span', { class: 'pl-picline-e', html: ICON.pen })].filter(Boolean));
     picLine.setAttribute('aria-expanded', picOpen ? 'true' : 'false');
     picLine.classList.toggle('on', picOpen);
     el.classList.toggle('pic-open', picOpen);
     picture.hidden = !picOpen;
     for (const x of extras) x.hidden = !picked;
     pickHint.hidden = picked;
-    detailRow.replaceChildren(...DETAILS.map(d => chip(d, v.detail === d.id, { radio: true, onPick: () => { v.detail = d.id; sfx('select'); paintVisual(); change(); } })));
-    motionRow.replaceChildren(...MOTIONS.map(d => chip(d, v.motion === d.id, { radio: true, onPick: () => { v.motion = d.id; sfx('select'); paintVisual(); change(); } })));
+    detailRow.replaceChildren(...DETAILS.map(d => chip(d, v.detail === d.id, { radio: true, onPick: () => { s.visual.detail = d.id; sfx('select'); paintVisual(); change(); } })));
+    motionRow.replaceChildren(...MOTIONS.map(d => chip(d, v.motion === d.id, { radio: true, onPick: () => { s.visual.motion = d.id; sfx('select'); paintVisual(); change(); } })));
+    paintEngines();
     for (const row of [mainRow, detailRow, motionRow]) syncTab(row, '[role=radio]');
     if (refocus) { const b = refocus.parent.children[refocus.n]; if (b) b.focus({ preventScroll: true }); }
   }
@@ -275,7 +314,7 @@ export function slideEditor(slide, ctx = {}) {
 
   // F-18: a repaint never happens under the person's hands. Same words -> nothing is touched; a focused text box keeps
   // what is typed in it; a focused chip / file picker waits until focus leaves (then the newest version is painted).
-  const sig = x => JSON.stringify([x.title, x.point, x.bullets, x.sources, x.visual, x.status, x.words]);
+  const sig = x => JSON.stringify([x.title, x.point, x.bullets, x.sources, x.visual, x.status, x.words, engInfo()]);
   let pendingNext = null;
   function set(next, { keepFocus = true } = {}) {
     const focused = keepFocus && el.contains(document.activeElement) ? document.activeElement : null;
@@ -596,6 +635,8 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
     moveTo(from, idx(from) < last ? last : Math.min(last, slides().length - 1));
   });
 
+  // the engine chips need: is Blender here, the look (Bold Blue auto-picks it for still 3D), the server's estimates for this slide
+  const engineInfo = sid => pay && pay.blender ? { available: !!pay.blender.available, look: pay.look, est: (pay.blender.estimates || {})[sid] || null } : null;
   function paintCard(force = false) {
     const s = slides().find(x => x.id === sel);
     if (badgeFor && (!s || badgeFor !== s.id)) closeBadge();
@@ -603,10 +644,10 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
     const i = idx(s.id), n = slides().length;
     const q = openDoubts(s.id);
     // F-18: the card (header buttons + editor) is rebuilt only when this slide, its position or its questions changed
-    const sig = JSON.stringify([s.id, i, n, s.title, s.point, s.bullets, s.sources, s.visual, s.status, q.map(x => x.id), pay ? pay.wordCap : 25, files.length]);
+    const sig = JSON.stringify([s.id, i, n, s.title, s.point, s.bullets, s.sources, s.visual, s.status, q.map(x => x.id), pay ? pay.wordCap : 25, files.length, engineInfo(s.id)]);
     if (!force && sig === cardSig && editor && editorFor === s.id) return;
     cardSig = sig;
-    const ctx = { cap: pay ? pay.wordCap : 25, files, sfx, onChange: (ns, { replan }) => edited(ns, replan), onOwnSlide: m => ownSlide(s.id, m) };
+    const ctx = { cap: pay ? pay.wordCap : 25, files, sfx, onChange: (ns, { replan }) => edited(ns, replan), onOwnSlide: m => ownSlide(s.id, m), engineInfo };
     const act = (icon, label, fn, dis) => { const b = h('button', { type: 'button', class: 'pl-act', 'aria-label': label, title: label, html: ICON[icon], disabled: dis || null, 'data-cursor-label': label.split(' ')[0] }); b.addEventListener('click', fn); return b; };
     const qBadge = q.length ? h('button', { type: 'button', class: 'pl-qbadge', 'data-nosfx': '', 'data-cursor-label': 'answer' }, h('span', { html: ICON.q }), q.length > 1 ? `${q.length} questions` : '1 question') : null;
     if (qBadge) qBadge.addEventListener('click', () => openBadge(s.id));

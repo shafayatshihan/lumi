@@ -68,6 +68,35 @@ const jsFiles = fs.readdirSync(jsDir).filter(f => f.endsWith('.js'));
   check('plan: five main pictures', eq(P.MAINS.map(m => m.id), ['3d', 'chart', 'diagram', 'photo', 'text']));
 }
 
+// ---------------------------------------------------------------- Blender batch 3: engine chips, estimates wording, the next-slide gate
+{
+  const B = await load('blender.js'), P = await load('plan.js');
+  const fv = P.fixVisual;
+  check('blender: fixVisual keeps visual.engine on a 3D picture (blender / threejs)', fv({ main: '3d', engine: 'blender' }).engine === 'blender' && fv({ main: '3d', engine: 'threejs' }).engine === 'threejs');
+  check('blender: fixVisual drops engine for other pictures and unknown values (absent = lumi decides)', !('engine' in fv({ main: 'chart', engine: 'blender' })) && !('engine' in fv({ main: '3d', engine: 'pov' })) && !('engine' in fv({ main: '3d' })));
+  const E = (v, look = 'Bold Blue', av = true) => B.effEngine(v, look, av);
+  check('blender: default = the server\'s rule (Bold Blue + still 3D + Blender -> blender; moving -> three.js)', E({ main: '3d', motion: 'still' }) === 'blender' && E({ main: '3d', motion: 'timed' }) === 'threejs');
+  check('blender: other looks never auto-pick blender; no Blender -> three.js even when chosen', E({ main: '3d', motion: 'still' }, 'Pink Punch') === 'threejs' && E({ main: '3d', motion: 'still', engine: 'blender' }, 'Bold Blue', false) === 'threejs');
+  check('blender: an explicit choice wins over the default', E({ main: '3d', motion: 'still', engine: 'threejs' }) === 'threejs' && E({ main: '3d', motion: 'timed', engine: 'blender' }) === 'blender' && E({ main: 'chart' }) === null);
+  check('blender: the two named options with plain notes', B.ENGINE.blender.name === 'studio render' && B.ENGINE.blender.tool === 'blender' && B.ENGINE.threejs.name === 'live 3D' && /instant, animated, editable/.test(B.engineNotes('still').threejs));
+  const n0 = B.engineNotes('still'), n1 = B.engineNotes('still', { still: 95, 720: 1500, 1080: 3300 }), n2 = B.engineNotes('animation', { still: 95, 720: 1500, 1080: 3300 });
+  check('blender: notes use the server\'s calibrated estimates when there are some (fixed text otherwise)', /1–2 min, animation 10–60 min/.test(n0.blender) && /still ≈ 2 min/.test(n1.blender) && /720p ≈ 25 min, 1080p ≈ 55 min/.test(n2.blender), JSON.stringify([n0, n1, n2]));
+  check('blender: durations read plainly', B.fmtDur(20) === 'under a minute' && B.fmtDur(95) === '2 min' && B.fmtDur(3300) === '55 min' && B.fmtDur(4500) === '1 h 15 min');
+  const est = { preview: { seconds: 14 }, iteration: { tokens: 55000, costUsd: 0.45, seconds: 104 }, full: { 720: { seconds: 1500 }, 1080: { seconds: 3300 } }, queue: { waitS: 0 } };
+  check('blender: one more preview = time + tokens + cost', B.iterLine(est) === 'one more preview ≈ 2 min · ≈ 55k tokens (≈ $0.45)', B.iterLine(est));
+  check('blender: no cost known -> no $ part', !/\$/.test(B.iterLine({ iteration: { tokens: 60000, costUsd: null, seconds: 110 } })));
+  check('blender: full render line per resolution, 0 tokens', /≈ 25 min · 0 tokens/.test(B.fullLine(est, 'animation', 720)) && /≈ 55 min/.test(B.fullLine(est, 'animation', 1080)) && /≈ 2 min/.test(B.fullLine({ full: { still: { seconds: 95 } } }, 'still')));
+  check('blender: a render ahead in the queue adds its wait', B.fullSeconds({ full: { still: { seconds: 95 } }, queue: { waitS: 600 } }, 'still') === 695);
+  const V = (n, status, extra = {}) => ({ id: 's' + n, n, engine: 'blender', status, previews: [{ n: 1 }], ...extra });
+  check('blender: next slide waits for an unapproved studio render', B.nextGate({ a: V(1, 'preview') }, 1).ok === false && /approve its design/.test(B.nextGate({ a: V(1, 'preview') }, 1).text));
+  check('blender: next slide waits while a full render runs', B.nextGate({ a: V(1, 'rendering') }, 1).why === 'rendering');
+  check('blender: rendered or "skip for now" lets the next slide start; unbuilt slides do not count', B.nextGate({ a: V(1, 'rendered'), b: V(2, 'preview', { deferred: { at: 'x' } }), c: V(3, 'writing') }, 2).ok);
+  check('blender: card mode: preview/approved/failed open, rendering/rendered/kept bar, writing none', B.cardMode(V(1, 'preview')) === 'open' && B.cardMode(V(1, 'failed')) === 'open'
+    && B.cardMode(V(1, 'rendering')) === 'bar' && B.cardMode(V(1, 'rendered')) === 'bar' && B.cardMode(V(1, 'preview', { deferred: {} })) === 'bar'
+    && B.cardMode(V(1, 'writing')) === 'none' && B.cardMode(V(1, 'preview'), { folded: true }) === 'bar' && B.cardMode(V(1, 'rendered'), { editing: true }) === 'open'
+    && B.cardMode({ id: 's1', n: 1, engine: 'threejs', status: 'none' }) === 'none');
+}
+
 // ---------------------------------------------------------------- dom.js + a11y.js load, and expose what the pages rely on
 {
   const D = await load('dom.js'), Y = await load('a11y.js');
@@ -93,6 +122,15 @@ const src = Object.fromEntries(jsFiles.map(f => [f, read(f)]));
   check('F-14: there is a polite announce region and screen changes announce themselves', /id="announce"/.test(fs.readFileSync(path.join(jsDir, '..', 'index.html'), 'utf8')) && /announce\(t\)/.test(src['app.js']));
   check('F-08: browser zoom is multiplied back into the stage scale, and the page can scroll', /zoomLevel\(\)/.test(src['app.js']) && /html\.scrolls\{overflow:auto\}/.test(themeCss));
   check('F-20: scenes: the token is taken before the fade-out is awaited', /const token = \+\+sceneToken;\s*await dropScene\(\);/.test(src['app.js']));
+  // batch 5: a question card must never look answered with every way forward dead and no reason ON the card.
+  // The suggested answers ARE real picks (picks starts from c.defaults and complete() reads picks), so the only thing
+  // that can close the gate is setEnabled(false) while Claude is still working - and that has to say so.
+  check('Q: a suggested answer is a real pick (picks starts from the defaults, complete() reads picks)',
+    /picks = new Map\(choices\.map\(c => \[c\.key, new Set\(c\.defaults\)\]\)\)/.test(src['markers.js'])
+    && /const complete = c => picks\.get\(c\.key\)\.size > 0/.test(src['markers.js']));
+  check('Q: a card switched off while claude works says so (is-waiting, a visible note and button titles)',
+    /const stalled = !locked && !enabled;/.test(src['markers.js']) && /classList\.toggle\('is-waiting', stalled\)/.test(src['markers.js'])
+    && /waitNote\.hidden = !stalled;/.test(src['markers.js']) && /ch-wait/.test(src['markers.js']));
   check('W-03: beforeunload asks only when something would be lost', /const risky = /.test(src['app.js']) && !/e\.preventDefault\(\); e\.returnValue = ''; return ''; \}\);\n/.test(src['app.js'].replace(/\r/g, '')));
   check('F-15: the custom pointer has an opt-out and a forced-colors guard', /setNativePointer/.test(src['cursor.js']) && /forced-colors:active/.test(fs.readFileSync(path.join(cssDir, 'cursor.css'), 'utf8')));
 }

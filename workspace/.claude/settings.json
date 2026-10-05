@@ -60,6 +60,8 @@
       "Write(.aura/engine/**)",
       "Edit(.aura/venv/**)",
       "Write(.aura/venv/**)",
+      "Edit(.aura/blender/**)",
+      "Write(.aura/blender/**)",
       "Edit(.claude/**)",
       "Write(.claude/**)",
       "Read(**/.env)",

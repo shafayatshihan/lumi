@@ -5,7 +5,9 @@
 //
 //   install   run from anywhere except <root>\.aura\Lumi.exe: a friendly window downloads the newest release zip
 //             from GitHub, unpacks it in %TEMP%, runs its setup\setup.ps1 -Json -NoLaunch hidden and turns the JSON
-//             progress lines into a step list. setup.ps1 makes the folders and shortcuts; this program then puts a
+//             progress lines into a step list (a line with state "progress" and "pct" fills one step's own bar: that
+//             is how the big pinned Blender download is shown). setup.ps1 makes the folders and shortcuts, including
+//             the SHA256-verified portable Blender in .aura\blender; this program then puts a
 //             copy of itself at <root>\.aura\Lumi.exe (when it is newer) and opens the app.
 //   launch    the installed copy with no arguments (what the Desktop icon runs): start engine\form_server.py with a
 //             working pythonw, wait for /api/ping, open Edge as an app window, exit. Problems -> "Repair Lumi".
@@ -930,8 +932,9 @@ namespace Lumi
             {
                 wTitle.Text = "Let\u2019s set up Lumi";
                 wBody.Text = "It is free. Lumi makes a folder for your files and slides on your C: drive and adds the free " +
-                             "tools it needs: Git, Node.js, Python and Claude Code. It takes 10 to 20 minutes, mostly downloading. " +
-                             "To make slides you need a Claude Pro, Max or Team plan.";
+                             "tools it needs: Git, Node.js, Python, Claude Code and Blender (free software, GNU GPL - its " +
+                             "licence and a link to its source are installed with it). It takes 15 to 25 minutes, mostly " +
+                             "downloading. Any Claude plan works; Pro or higher is recommended.";
                 wMain.Text = "Install Lumi"; wSecond.Text = "Not now";
             }
             wMain.FitWidth(); wSecond.FitWidth();
@@ -1132,7 +1135,7 @@ namespace Lumi
             bar.Fill = Theme.Accent; bar.Value = 0; pPct.Text = "0%";
             SetButtons(false, false, false);
             SetHeader(Verb() + " Lumi",
-                "This takes 10 to 20 minutes and you can keep using your PC. If Windows asks \u201CDo you want to allow this " +
+                "This takes 15 to 25 minutes and you can keep using your PC. If Windows asks \u201CDo you want to allow this " +
                 "app to make changes?\u201D, click Yes.");
             running = true;
             Thread t = new Thread(RunAll); t.IsBackground = true; t.Start();
@@ -1381,10 +1384,12 @@ namespace Lumi
             string name = o.ContainsKey("name") ? Convert.ToString(o["name"], CultureInfo.InvariantCulture) : "";
             string state = Convert.ToString(o["state"], CultureInfo.InvariantCulture);
             string detail = o.ContainsKey("detail") ? Convert.ToString(o["detail"], CultureInfo.InvariantCulture) ?? "" : "";
-            UI(() => ApplyEvent(step, name, state, detail));
+            int pct = -1;
+            if (o.ContainsKey("pct")) { try { pct = Convert.ToInt32(o["pct"], CultureInfo.InvariantCulture); } catch { } }
+            UI(() => ApplyEvent(step, name, state, detail, pct));
         }
 
-        void ApplyEvent(int step, string name, string state, string detail)
+        void ApplyEvent(int step, string name, string state, string detail, int pct)
         {
             if (state == "plan")
             {
@@ -1410,8 +1415,18 @@ namespace Lumi
                 int at = steps.Rows.FindIndex(r => r.Key == "fin");
                 steps.Rows.Insert(at < 0 ? steps.Rows.Count : at, row);
             }
-            if (state == "start") { row.State = RowState.Running; row.Started = DateTime.Now; row.Detail = ""; Shot("progress-step" + step); }
-            else if (state == "ok") { row.State = RowState.Ok; row.Detail = Friendly(detail); }
+            if (state == "progress")
+            {
+                // a long download inside one step (the Blender zip): fill that row's own little bar
+                row.State = RowState.Running;
+                if (row.Started == default(DateTime)) row.Started = DateTime.Now;
+                row.Fraction = pct >= 0 ? Math.Min(1.0, pct / 100.0) : -1;
+                row.Detail = detail;
+                UpdateOverall(); steps.Invalidate();
+                return;
+            }
+            if (state == "start") { row.State = RowState.Running; row.Started = DateTime.Now; row.Detail = ""; row.Fraction = -1; Shot("progress-step" + step); }
+            else if (state == "ok") { row.State = RowState.Ok; row.Fraction = -1; row.Detail = Friendly(detail); }
             else if (state == "have") { row.State = RowState.Have; row.Detail = "already on this PC"; }
             else if (state == "fail")
             {

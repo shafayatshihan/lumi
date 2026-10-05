@@ -11,3 +11,8 @@ setup/icon/preview_sheet.png
 RESUME.md
 SURVEY.md
 FIXLOG.md
+LAUNCH-REVIEW.md
+HANDOFF.md
+
+# dev scratch (GPU probe cache etc.) - never ship
+temp/

@@ -154,6 +154,14 @@ body {
 /* recorded loops (finalized decks) play in the main holder in place of the live scene; labels are already in the video */
 .aura-looping > :not(video.aura-loop) { visibility: hidden !important; }
 .aura-3d > video.aura-loop, .aura-canvas > video.aura-loop { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
+/* Blender holders (studio renders, docs/blender-contract.md): the picture fills the holder; a loop's <video> sits over its poster.
+   Still, print, PDF, capture and reduced motion show the poster only. Labels ([data-anchor]) are placed by the runtime. */
+.bb-blender { position: relative; overflow: hidden; }
+.bb-blender > img.bb-blender-img, .bb-blender > video.bb-blender-video { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }   /* contain, never cover: the render fades to the slide colour at ITS edges, a crop would cut through the floor shadow */
+.bb-blender > [data-anchor] { position: absolute; z-index: 2; }
+.bb-blender:not([data-filled]) > [data-anchor] { display: none; }      /* no render yet, so nothing to anchor to */
+html.aura-still .bb-blender > video.bb-blender-video { display: none; }
+@media print { .bb-blender > video.bb-blender-video { display: none; } }
 /* ?capture and ?still=n: a tool drives the page, nothing moves by itself */
 .aura-capture .slide { transition: none !important; }
 /* ?capture: while a slide is recorded only its holders (with their projected labels) and the backgrounds behind them

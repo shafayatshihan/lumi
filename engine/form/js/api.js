@@ -56,12 +56,15 @@ export const ping = () => req('GET', '/api/ping', undefined, 4000);
 
 export const claude = {
   status: (refresh = false) => getJSON('/api/claude/status' + (refresh ? '?refresh=1' : '')),
-  login: () => postJSON('/api/claude/login'),
+  login: browser => postJSON('/api/claude/login', { browser: browser || 'private' }),
   start: deckId => postJSON('/api/claude/start', deckId ? { deckId } : {}),
   // opts: { deckId, slide } (v0.3 editor): the server prefixes "[slide N]" and resumes that deck's own session.
   reply: (text, opts = {}) => postJSON('/api/claude/reply', { text, ...Object.fromEntries(Object.entries(opts).filter(([, v]) => v != null)) }),
   stop: () => postJSON('/api/claude/stop'),
   logout: () => postJSON('/api/claude/logout'),
+  // the sign-in confirmation ("signed in as x - that's me"), remembered per install until the email changes
+  confirm: email => postJSON('/api/claude/confirm', { email: email || '' }),
+  signin: () => getJSON('/api/claude/signin'),
   events: since => getJSON('/api/claude/events?since=' + (since | 0)),
 };
 export const openSlides = path => postJSON('/api/open-slides', path ? { path } : {});
@@ -70,7 +73,7 @@ export const openFiles = () => postJSON('/api/open-files');
 // v0.3: readiness checks, repairs, deck library, usage.
 export const health = part => getJSON('/api/health' + (part ? '?part=' + encodeURIComponent(part) : ''));
 export const fixClaude = body => postJSON('/api/fix/claude', body);
-export const fix = name => postJSON('/api/fix/' + encodeURIComponent(name));
+export const fix = (name, body) => postJSON('/api/fix/' + encodeURIComponent(name), body);
 export const fixStatus = () => getJSON('/api/fix/status');
 export const usage = () => getJSON('/api/usage');
 export const decks = {
@@ -116,6 +119,18 @@ export const pptx = {
 };
 // S-05: remove what Lumi no longer needs (old temp files, extra older versions); { dry: true } only reports.
 export const cleanup = opts => postJSON('/api/cleanup', opts || {});
+// Blender studio renders (docs/blender-contract.md section 7): every slide's view, the preview loop, approve, the full render.
+const bl = (id, sid, act) => '/api/decks/' + encodeURIComponent(id) + '/blender' + (sid ? '/' + encodeURIComponent(sid) : '') + (act ? '/' + act : '');
+export const blender = {
+  deck: id => getJSON(bl(id)),
+  slide: (id, sid) => getJSON(bl(id, sid)),
+  preview: (id, sid) => postJSON(bl(id, sid, 'preview')),
+  change: (id, sid, text) => postJSON(bl(id, sid, 'change'), { text }),
+  approve: (id, sid, preview) => postJSON(bl(id, sid, 'approve'), preview != null ? { preview } : {}),
+  render: (id, sid, res) => postJSON(bl(id, sid, 'render'), res ? { res } : {}),
+  cancel: (id, sid, job) => postJSON(bl(id, sid, 'cancel'), job ? { job } : {}),
+  defer: (id, sid, on = true) => postJSON(bl(id, sid, 'defer'), { on: !!on }),
+};
 export const finalize = {
   start: (id, opts) => postJSON('/api/decks/' + encodeURIComponent(id) + '/finalize', opts || {}),
   status: () => getJSON('/api/finalize'),

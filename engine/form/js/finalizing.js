@@ -103,6 +103,34 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
     };
     tick();
   }
+  // contract section 10: finalize only embeds studio renders, it never makes them. A slide without its full render (409
+  // blender-pending) sends the person back to that slide; a render older than its design (409 blender-stale) is their call.
+  async function showBlender(r, opts) {
+    const pending = r.error === 'blender-pending', nums = (r.slides || []).map(Number).filter(Boolean);
+    clearTimeout(pollT); sfx('pop');
+    const [pl, bv] = await Promise.all([api.plan.get(deckId), api.blender.deck(deckId)]);
+    if (!alive) return;
+    const slides = (pl && pl.plan && pl.plan.slides) || [], views = Object.values((bv && bv.slides) || {});
+    const one = nums.length === 1;
+    badge.textContent = 'finalize';
+    head.textContent = pending ? (one ? 'one studio render isn’t finished' : `${nums.length} studio renders aren’t finished`) : (one ? 'a studio render is older than its design' : 'some studio renders are older than their design');
+    line.textContent = pending ? 'finalize puts finished renders into the deck; it never makes them. approve each design and let lumi render it, then finalize again.'
+      : `${one ? 'this slide' : 'these slides'} changed after the last full render, so the deck still shows the older picture. render again, or finalize with the older render.`;
+    bar.style.transform = 'scaleX(.02)';
+    const why = v => !v ? '' : v.status === 'rendering' ? `rendering now · ${Math.round(((v.job || {}).progress || 0) * 100)}%`
+      : v.status === 'failed' ? 'the last try didn’t work' : v.status === 'previewing' || v.status === 'changing' ? 'a new preview is on its way'
+      : v.status === 'approved' ? 'approved, not rendered yet' : v.deferred ? 'kept as a preview for now' : pending ? 'waiting for you to approve the design' : 'the design changed after the render';
+    note.replaceChildren(h('span', { class: 'fz-bl' }, ...nums.map(n => {
+      const s = slides[n - 1] || {}, v = views.find(x => x.n === n);
+      const goB = btn(`go to slide ${n}`, () => { sfx('slide'); onEdit && onEdit(deckId, n); });
+      goB.classList.add('fz-bl-go');
+      return h('span', { class: 'fz-bl-row' }, h('span', { class: 'fz-bl-n' }, String(n)),
+        h('span', { class: 'fz-bl-t' }, h('b', {}, s.title || `slide ${n}`), h('span', {}, why(v))), goB);
+    })));
+    acts.replaceChildren(...(pending
+      ? [btn('check again', () => { reset(); start({ ...opts, retry: true }); }, true), btn('my decks', () => { sfx('back'); onHome && onHome(); })]
+      : [btn('use it anyway', () => { reset(); start({ ...opts, retry: true, acceptStale: true }); }, true), btn('my decks', () => { sfx('back'); onHome && onHome(); })]));
+  }
   function reset() {
     head.textContent = 'finalizing your deck'; badge.textContent = 'finalize';
     line.textContent = 'getting ready…'; bar.style.transform = 'scaleX(.02)';
@@ -135,8 +163,9 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
       const rec = d && d.deck;
       if (rec && rec.finalized && !rec.changedSinceFinalize && rec.final) return showDone(rec.final, 'already finalized', true);
     }
-    const r = await api.finalize.start(deckId, opts.light ? { light: true } : {});
+    const r = await api.finalize.start(deckId, { ...(opts.light ? { light: true } : {}), ...(opts.acceptStale ? { acceptStale: true } : {}) });
     if (!alive) return;
+    if (r && (r.error === 'blender-pending' || r.error === 'blender-stale')) { started = false; return showBlender(r, opts); }
     if (!r || r.ok === false) {
       started = false;
       return finished({ ok: false, phase: 'failed', message: r && r.error === 'offline' ? 'can’t reach lumi. nothing was started. try again in a moment.' : r && r.reason ? r.reason : r && r.error === 'finalizing' ? 'another deck is being finalized. wait for it to finish.' : 'finalize could not start.' });

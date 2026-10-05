@@ -143,6 +143,8 @@ a slide with two main visuals, more than 3 stats or chips, chips without a chart
 
 ## 4. The 3D recipe
 
+> A slide's 3D picture may be a Blender studio render instead of live three.js (the plan's engine choice): same boxes, same labels, same clash matrix (one main visual). `BLENDER.md` section 9 says how it sits in the archetypes (stills: title-hero, problem-stats, what-it-is; short loops: what-it-is, problem-stats; tours and timed stories stay three.js).
+
 ### 4.0 First decide what the subject really is, then show IT (every 3D slide, before any code)
 
 Ask: **what is this slide about in the real world, and what would a photographer or a documentary shoot to show it?**
@@ -310,6 +312,15 @@ bearings), `tube` + `path2d` + `curve` (pipes, wires, strands, vessels, tracks),
 threads), `roundedBox` (devices, chips, boards, cells of a battery), `blob` (cells, organs, droplets, particles, rocks),
 `instanced` (repeating units: lipids, atoms, fins, bolts, crowds), `along` (things riding a path), `glowSprite` (light,
 heat, fluorescence). Real scale goes in the notes, not in the model.
+
+**Use the REAL counts and the REAL dimensions, and give every moving part its own object at its real pivot.** A ring
+gear has the number of teeth it has (41 on an 11-tooth pinion is 3.73:1), a torque converter has 31 / 29 / 15 blades, a
+diaphragm spring has 18 fingers, a spring has 6 coils of 13 mm wire. Accuracy is realism and it costs nothing to
+render; state each count in a comment and in the caption where it helps. **If a count or a size is not known, ASK it in
+the build question -- never invent a plausible one.** A part merged into its neighbour cannot move, and a part whose
+origin is off its real axis moves wrongly, so each one is its own object with its origin on its pivot. In Blender the
+standard parts are already written (`lumi_mech`: involute gears, springs, ISO bolts and nuts, blade rings, shafts,
+bearings, O-rings) -- see BLENDER.md section 4.
 
 *The four recipes below are worked examples, each right for its own subject. Do not reuse their bases, stands or
 props for a different subject; start from 4.0.*

@@ -1,5 +1,5 @@
 # Lumi (by Shafayat, formerly Aura-Slide) - one-click setup for Windows 10/11.
-# Makes C:\Lumi, installs whatever is missing (Git, Node.js, Python, Claude Code, the slide engine),
+# Makes C:\Lumi, installs whatever is missing (Git, Node.js, Python, Claude Code, the slide engine, Blender),
 # adds the icon and shortcuts, then opens the Lumi app.
 # Safe to run again: anything already installed is skipped and the user's own files are never touched.
 #   -Json      no console drawing: print one JSON line per step event instead, for Lumi.exe to show:
@@ -85,6 +85,16 @@ function Emit([int]$step, [string]$name, [string]$state, [string]$detail = '') {
   $o = [ordered]@{ step = $step; total = $Steps.Count; name = $name; state = $state; detail = $detail }
   [Console]::Out.WriteLine(($o | ConvertTo-Json -Compress)); [Console]::Out.Flush()
 }
+# A long download inside one step: the same line plus "pct" (0-100), so Lumi.exe can fill that row's own little bar.
+# Without -Json it redraws one console line in place. The caller throttles it.
+function EmitProgress([int]$step, [string]$name, [string]$detail, [int]$pct) {
+  if ($Json) {
+    $o = [ordered]@{ step = $step; total = $Steps.Count; name = $name; state = 'progress'; detail = $detail; pct = $pct }
+    [Console]::Out.WriteLine(($o | ConvertTo-Json -Compress)); [Console]::Out.Flush()
+    return
+  }
+  Write-Host ("`r         " + (Bar $pct 100 24) + ('  {0,3}%  {1}          ' -f $pct, $detail)) -NoNewline -ForegroundColor DarkGray
+}
 function Stop-Here([int]$code) { if (-not $Json) { Read-Host '  Press Enter to close' | Out-Null }; exit $code }
 
 # Run a program hidden, with a live spinner + elapsed time, output appended to the log. Returns the exit code.
@@ -150,8 +160,10 @@ $Steps = @(
   @{ n = 'Claude Code (the AI)';                   f = 'Step-Claude' },
   @{ n = 'Slide engine: 3D and video tools';       f = 'Step-Npm' },
   @{ n = 'Slide engine: PDF and PowerPoint tools'; f = 'Step-Pip' },
+  @{ n = 'Blender (studio 3D renders, free/GPL)';  f = 'Step-Blender' },
   @{ n = 'Icon and shortcuts';                     f = 'Step-Shortcuts' }
 )
+$BlenderStepNo = 1 + [array]::IndexOf(($Steps | ForEach-Object { $_.f }), 'Step-Blender')
 
 function Step-Folder {
   $made = -not (Test-Path $Root)
@@ -239,6 +251,129 @@ function Step-Pip {
   if ($c -ne 0) { throw "The PDF and PowerPoint tools could not be installed (code $c)." }
   'ready'
 }
+# ---------------------------------------------------------------- Blender (docs/blender-contract.md sections 5 and 12)
+# Lumi ALWAYS installs Blender. It is the official portable windows-x64 zip, pinned by version + SHA256 in
+# setup\blender\blender-pin.json, downloaded from download.blender.org, verified, and then flattened (the zip has one
+# top folder) into <root>\.aura\blender, so .aura\blender\blender.exe is exactly where find_blender() looks.
+# Blender is GPL: its licence text and a link to the matching source go in next to it.
+# A developer test points AURA_BLENDER_PIN at another pin file (a small local zip served over HTTP).
+function Blender-Pin {
+  $f = if ($env:AURA_BLENDER_PIN) { $env:AURA_BLENDER_PIN } else { Join-Path $PSScriptRoot 'blender\blender-pin.json' }
+  if (-not (Test-Path $f)) { throw 'This Lumi release is missing the Blender download details (setup\blender\blender-pin.json).' }
+  $p = Get-Content $f -Raw | ConvertFrom-Json
+  if (-not $p.url -or -not $p.sha256 -or -not $p.version) { throw 'The Blender download details are incomplete.' }
+  $p
+}
+# Is the bundled copy there, complete, and the pinned version? Used by the install, by --repair and by the health check.
+function Blender-Ok([string]$dir, $pin) {
+  if (-not (Test-Path (Join-Path $dir 'blender.exe'))) { return $false }
+  $s = Join-Path $dir 'lumi-blender.json'
+  if (-not (Test-Path $s)) { return $false }
+  try { $st = Get-Content $s -Raw | ConvertFrom-Json } catch { return $false }
+  if ($st.version -ne $pin.version -or $st.sha256 -ne $pin.sha256) { return $false }
+  try { if ([int64]$st.exeBytes -ne (Get-Item (Join-Path $dir 'blender.exe')).Length) { return $false } } catch { return $false }
+  foreach ($rel in @($st.must)) { if ($rel -and -not (Test-Path (Join-Path $dir $rel))) { return $false } }
+  return $true
+}
+# Download with a live percentage, resuming a part file with an HTTP Range request and retrying a dropped connection.
+function Blender-Fetch($pin, [string]$part, [int]$stepNo, [string]$stepName) {
+  $want = [int64]$pin.bytes
+  $last = ''
+  for ($try = 1; $try -le 4; $try++) {
+    $have = if (Test-Path $part) { (Get-Item $part).Length } else { [int64]0 }
+    if ($want -gt 0 -and $have -ge $want) { return }
+    try {
+      $req = [Net.HttpWebRequest]::Create([string]$pin.url)
+      $req.UserAgent = 'Lumi-setup'
+      $req.Timeout = 60000; $req.ReadWriteTimeout = 180000; $req.AllowAutoRedirect = $true
+      if ($have -gt 0) { $req.AddRange([int64]$have) }
+      $resp = $req.GetResponse()
+      $resumed = ($have -gt 0 -and [int]$resp.StatusCode -eq 206)
+      if (-not $resumed) { $have = [int64]0 }                 # the server ignored the range: start again
+      $total = if ($want -gt 0) { $want } else { $have + $resp.ContentLength }
+      $inS = $resp.GetResponseStream()
+      $outS = New-Object IO.FileStream($part, $(if ($resumed) { [IO.FileMode]::Append } else { [IO.FileMode]::Create }), [IO.FileAccess]::Write)
+      try {
+        $buf = New-Object byte[] 262144
+        $shown = -1; $tick = [DateTime]::UtcNow
+        while ($true) {
+          $n = $inS.Read($buf, 0, $buf.Length)
+          if ($n -le 0) { break }
+          $outS.Write($buf, 0, $n); $have += $n
+          $pct = if ($total -gt 0) { [int](100 * $have / $total) } else { 0 }
+          if ($pct -ne $shown -and ([DateTime]::UtcNow - $tick).TotalMilliseconds -ge 400) {
+            $shown = $pct; $tick = [DateTime]::UtcNow
+            EmitProgress $stepNo $stepName ('{0:0} of {1:0} MB' -f ($have / 1MB), ($total / 1MB)) $pct
+          }
+        }
+      } finally { $outS.Dispose(); $inS.Dispose(); $resp.Close() }
+      if ($want -le 0 -or (Get-Item $part).Length -ge $want) { return }
+      $last = 'the download stopped early'
+    } catch {
+      $last = $_.Exception.Message
+      Log ('blender download attempt ' + $try + ': ' + $last)
+      Start-Sleep -Seconds (2 * $try)
+    }
+  }
+  throw ('Blender could not be downloaded (' + $last + '). Check this PC''s internet connection and run the setup again.')
+}
+function Step-Blender {
+  $pin = Blender-Pin
+  $dir = Join-Path $Aura 'blender'
+  if (Blender-Ok $dir $pin) { return 'HAVE' }
+  $name = if ($BlenderStepNo -ge 1 -and $Steps) { $Steps[$BlenderStepNo - 1].n } else { 'Blender' }
+  $tmp = Join-Path $Aura 'temp'
+  New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+  $part = Join-Path $tmp ('blender-' + $pin.version + '-windows-x64.zip.part')
+  # a verified leftover from an interrupted run is reused; a file with the wrong hash is downloaded again
+  for ($round = 1; $round -le 2; $round++) {
+    Blender-Fetch $pin $part $BlenderStepNo $name
+    EmitProgress $BlenderStepNo $name 'checking the download' 100
+    $got = (Get-FileHash $part -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($got -eq ([string]$pin.sha256).ToLowerInvariant()) { break }
+    Log ('blender sha256 mismatch: got ' + $got + ' want ' + $pin.sha256)
+    Remove-Item $part -Force -ErrorAction SilentlyContinue
+    if ($round -ge 2) {
+      throw ('The Blender download did not arrive in one piece (its security check failed twice), so Lumi did not ' +
+             'install it. Try again on a different network, or download Blender ' + $pin.version + ' yourself from blender.org.')
+    }
+  }
+  if (-not $Json) { Write-Host ("`r" + (' ' * 118) + "`r") -NoNewline }
+  # unpack into a staging folder, then flatten the zip's single top folder into .aura\blender
+  $stage = Join-Path $tmp ('blender-unpack-' + $pin.version)
+  if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+  New-Item -ItemType Directory -Force -Path $stage | Out-Null
+  Add-Type -AssemblyName System.IO.Compression.FileSystem | Out-Null
+  [IO.Compression.ZipFile]::ExtractToDirectory($part, $stage)
+  $top = @(Get-ChildItem $stage -Force)
+  $src = if ($top.Count -eq 1 -and $top[0].PSIsContainer) { $top[0].FullName } else { $stage }
+  if (-not (Test-Path (Join-Path $src 'blender.exe'))) { throw 'The Blender download did not contain blender.exe.' }
+  if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+  Move-Item $src $dir
+  Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item $part -Force -ErrorAction SilentlyContinue
+  # GPL: the licence text and where to get the source for exactly this build, next to the program itself
+  $docs = if ($env:AURA_BLENDER_PIN) { Split-Path -Parent $env:AURA_BLENDER_PIN } else { Join-Path $PSScriptRoot 'blender' }
+  foreach ($f in 'COPYING-GPL-3.0.txt', 'BLENDER-SOURCE.txt') {
+    $s = Join-Path $docs $f
+    if (Test-Path $s) { Copy-Item $s (Join-Path $dir $f) -Force }
+  }
+  # the stamp: what is installed, so --repair and the health check can tell a good copy from a broken one
+  $must = @('blender.exe')
+  $verDir = Get-ChildItem $dir -Directory -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d+\.\d+$' } | Select-Object -First 1
+  if ($verDir) { foreach ($sub in 'python', 'scripts', 'datafiles') { if (Test-Path (Join-Path $verDir.FullName $sub)) { $must += ($verDir.Name + '\' + $sub) } } }
+  $stamp = [ordered]@{
+    name = 'Blender'; version = [string]$pin.version; channel = [string]$pin.channel
+    url = [string]$pin.url; sha256 = ([string]$pin.sha256).ToLowerInvariant()
+    license = [string]$pin.license; licenseFile = 'COPYING-GPL-3.0.txt'; sourceUrl = [string]$pin.sourceUrl
+    installedAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    exeBytes = (Get-Item (Join-Path $dir 'blender.exe')).Length
+    must = $must
+  }
+  Set-Content -Path (Join-Path $dir 'lumi-blender.json') -Encoding ASCII -Value ($stamp | ConvertTo-Json)
+  return ('Blender ' + $pin.version + ' ' + $pin.channel + ' installed (free software, GPL)')
+}
+
 function Step-Shortcuts {
   $ico = Join-Path $Aura 'lumi.ico'
   # the app itself: Lumi.exe from this release (at its root), else the one that is running this setup
@@ -296,7 +431,7 @@ $os = [Environment]::OSVersion.Version
 if ($os.Major -lt 10) { Early-Fail 'Lumi needs Windows 10 or 11.' }
 $drive = (Split-Path -Qualifier $Root).TrimEnd(':')
 $free = [math]::Round((Get-PSDrive $drive).Free / 1GB, 1)
-if ($free -lt 3) { Early-Fail "Only $free GB free on drive $drive. Please free up at least 3 GB and run this again." }
+if ($free -lt 5) { Early-Fail "Only $free GB free on drive $drive. Please free up at least 5 GB and run this again." }
 try { Invoke-WebRequest 'https://github.com' -Method Head -TimeoutSec 15 -UseBasicParsing | Out-Null }
 catch { Early-Fail 'No internet connection. Connect to Wi-Fi and run this again.' }
 if (-not (Has 'winget')) {
@@ -337,6 +472,8 @@ if ($failed.Count) {
   Line ''; Stop-Here 1
 }
 Line ('  All done!  Your folder:  ' + $Root) 'Green'
+Line '  Lumi also installed Blender (free software, GNU GPL) for its studio 3D renders.' 'DarkGray'
+Line ('  Its licence and source link: ' + (Join-Path $Aura 'blender\BLENDER-SOURCE.txt')) 'DarkGray'
 Line '  Next time, open Lumi with the "Lumi" icon on your Desktop.' 'Green'
 if ($MovedFrom) {
   Line ('  Your files were copied from ' + $MovedFrom + '.') 'Yellow'

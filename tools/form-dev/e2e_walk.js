@@ -19,6 +19,7 @@ const OUT = path.join(process.env.AURA_E2E_OUT || path.join(os.tmpdir(), 'lumi-e
 fs.mkdirSync(OUT, { recursive: true });
 for (const f of fs.readdirSync(OUT)) fs.rmSync(OUT + f);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function until(fn, ms = 60000, every = 500) { const t0 = Date.now(); let v; while (Date.now() - t0 < ms) { v = await fn(); if (v) return v; await sleep(every); } return v; }
 let n = 0, pass = 0, total = 0;
 const log = (...a) => console.log(`[${tag}]`, ...a);
 (async () => {
@@ -28,6 +29,15 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
   const errs = [];
   page.on('pageerror', e => errs.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errs.push('console.error: ' + m.text().slice(0, 200)); });
+  // a refusal has to name itself: a bare "status of 409" in the console says nothing about which call was refused
+  const bad = [];
+  page.on('response', async r => {
+    if (r.status() < 400) return;
+    let why = '';
+    try { why = (await r.text()).slice(0, 200); } catch (e) { /* body gone */ }
+    bad.push(`${r.status()} ${r.request().method()} ${new URL(r.url()).pathname} ${why}`);
+    log('HTTP', bad[bad.length - 1]);
+  });
   const shot = async name => { await page.screenshot({ path: `${OUT}${String(++n).padStart(2, '0')}-${name}.png` }); };
   const scrolls = () => page.evaluate(() => ({ doc: document.documentElement.scrollHeight > innerHeight + 2 || document.documentElement.scrollWidth > innerWidth + 2, zoom: document.documentElement.dataset.zoom, cls: document.documentElement.className }));
   const dlg = async text => { await page.click(`.pl-dlg .pl-big:has-text("${text}")`); };
@@ -36,6 +46,9 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
   try {
     await page.goto(`http://127.0.0.1:${PORT}/${Z > 1 ? '?zoom=' + Z : ''}`);
     await sleep(900); await shot('loading');
+    // sign-in fix: a login this install never confirmed shows "is this you?" first
+    await page.waitForFunction(() => (window.__aura && window.__aura.route === 'home') || document.querySelector('.ld-c-who'), null, { timeout: 120000 });
+    if (await page.$('.ld-c-who')) { await shot('loading-confirm'); await page.click('.ld-primary:has-text("that")'); }
     await page.waitForFunction(() => window.__aura && window.__aura.route === 'home', null, { timeout: 120000 });
     await sleep(1200); await shot('home-empty'); R.homeScroll = await scrolls();
 
@@ -114,14 +127,29 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     await page.evaluate(() => { const r = [...document.querySelectorAll('.bd-up-row')].find(x => x.classList.contains('is-now')); if (r) r.click(); });
     await sleep(500); R.targetBlocked = await page.evaluate(() => document.querySelector('.ed-toast').textContent);
     await shot('build-target-blocked');
-    // add a slide from the coming-up header, then remove it again
+    // add a slide from the coming-up header, then remove it again.
+    // "coming up" counts every slide that is NOT built yet, so it still counts the one Claude is building right now.
+    // Whether slide 1 has finished by this point is a race, so the count is checked RELATIVE to what it was before
+    // the add, never against a fixed number (a fixed 3 failed whenever slide 1 was still in flight).
+    const upN = async () => +((await page.evaluate(() => document.querySelector('.bd-up-n').textContent)) || 0);
+    R.upBefore = await upN();
     await page.click('.bd-up-add'); await page.waitForSelector('.bd-card'); await page.fill('.bd-card .pl-title-in', 'a slide added mid build'); await page.keyboard.press('Tab');
     await page.click('.pl-dlg .pl-big:has-text("save")'); await sleep(1500); await shot('build-slide-added');
-    R.slidesAfterAdd = await page.evaluate(() => document.querySelector('.bd-up-n').textContent);
+    R.slidesAfterAdd = await upN();
+    // "coming up" only shows the first 3 rows and hides the rest behind "+N more", so membership is read from the plan
+    // itself, not from the visible rows (a 4th slide is correctly off-list and that is not a failure).
+    const planTitles = () => page.evaluate(async () => {
+      const l = await (await fetch('/api/decks')).json();
+      const d = l.decks.find(x => x.planCount);
+      const p = await (await fetch('/api/decks/' + d.id + '/plan')).json();
+      return p.plan.slides.map(s => s.title);
+    });
+    R.addedListed = (await planTitles()).some(t => /a slide added/.test(t || ''));
     await page.click('.bd-up-row:has-text("a slide added")').catch(async () => { await page.click('.bd-up-more'); await sleep(400); await page.click('.bd-all .bd-up-row:has-text("a slide added")'); });
     await page.waitForSelector('.bd-card'); await shot('build-remove-dialog');
     await page.click('.pl-dlg .pl-big:has-text("remove this slide")'); await page.click('.pl-dlg .pl-big:has-text("tap again")'); await sleep(1500);
-    R.slidesAfterRemove = await page.evaluate(() => document.querySelector('.bd-up-n').textContent);
+    R.slidesAfterRemove = await upN();
+    R.removedGone = !(await planTitles()).some(t => /a slide added/.test(t || ''));
     await waitBuilt(); await sleep(1500); await shot('build-slide1-done');
     // ---- slide 2: Claude asks real questions
     await page.click('.bd-main');
@@ -129,6 +157,20 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     R.locked = await page.evaluate(() => document.querySelector('.bd-main').disabled);
     R.popFocus = await page.evaluate(() => !!document.activeElement.closest('.ws-pop'));
     await page.keyboard.press('ArrowDown'); await sleep(200);
+    // batch 5 invariant: the card must never show an answer as chosen while every way forward is dead and nothing on
+    // the card says why. (Claude's suggested answers arrive already ticked; the card is switched off while Claude
+    // still works, and with no note that reads as a broken app - it is what trapped the real end-to-end run.)
+    R.deadEnd = await page.evaluate(() => {
+      const vis = e => !!e && e.offsetParent !== null && !e.hidden;
+      const card = document.querySelector('.ws-pop .ch-card'); if (!card) return 'no card';
+      const chosen = !!card.querySelector('.ch-opt.on');
+      const nx = card.querySelector('.ch-next'), sd = card.querySelector('.ch-send');
+      const canGo = (vis(nx) && !nx.disabled) || (vis(sd) && !sd.disabled);
+      if (!chosen || canGo) return 'ok';
+      const told = card.classList.contains('is-waiting') || card.classList.contains('is-locked');
+      const note = [...card.querySelectorAll('.ch-wait')].some(vis);
+      return told && note ? 'ok (explained)' : 'DEAD END: an answer is chosen, nothing can advance, and the card says nothing';
+    });
     for (let i = 0; i < 6; i++) {
       await page.click('.ws-pop .ch-q:not([hidden]) .ch-opt >> nth=0');
       const nx = page.locator('.ws-pop .ch-next:not([hidden])');
@@ -140,11 +182,25 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     // ---- stop test on slide 3
     await page.click('.bd-main'); await page.waitForSelector('.bd-stop:not([hidden])', { timeout: 20000 }); await sleep(1500);
     await page.click('.bd-stop'); await page.waitForSelector('.pl-dlg'); await shot('build-stop-dialog');
-    await dlg('stop'); await sleep(2500);
+    // After a stop the server kills the run and the PAGE learns it from its next poll (1.5-5 s, slower when idle), so
+    // the button is briefly still disabled. What matters to a person is that it comes BACK, not that it is back in 2.5 s:
+    // wait for it (bounded) and record how long it took, so a build that can never be resumed still fails here.
+    const stoppedAt = Date.now();
+    await dlg('stop');
+    await page.waitForFunction(() => { const b = document.querySelector('.bd-main'); return b && !b.disabled; }, null, { timeout: 30000 }).catch(() => {});
+    R.stopResumeS = +((Date.now() - stoppedAt) / 1000).toFixed(1);
     R.afterStop = await page.evaluate(() => ({ main: document.querySelector('.bd-main .lbl').textContent, disabled: document.querySelector('.bd-main').disabled }));
     await shot('build-stopped');
     await page.click('.bd-main'); await waitBuilt(); await sleep(1200); await shot('build-all-built');
     // ---- finalize
+    // "make next slide" goes enabled from the page's own poll, which can still be a second behind the server while the
+    // last run settles. Clicking straight away makes the server answer 409 busy ("claude is still working on this
+    // deck") - the finalize screen shows that reason, which is correct, but it is not what this walk is measuring.
+    // Wait for the server itself to say Claude is idle, then finalize.
+    await until(async () => page.evaluate(async () => {
+      // `busy` on the server is `run is not None or settling is not None`, so the settling window counts too
+      try { const s = await (await fetch('/api/claude/status')).json(); return !s.running && !s.waiting && !s.settling; } catch (e) { return false; }
+    }), 120000, 1000);
     await page.click('.bd-main');
     await page.waitForFunction(() => window.__aura.route === 'finalize'); await sleep(2500); await shot('finalizing');
     await page.waitForFunction(() => /all done|already finalized/.test(document.querySelector('.fz-h') ? document.querySelector('.fz-h').textContent : ''), null, { timeout: 240000 });
@@ -176,15 +232,23 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     ok('leaving the build page while claude works is allowed (W-04)', R.homeEnabledWhileRunning === true);
     ok('an unbuilt slide can be edited mid-build (W-01)', R.comingUpSaved.includes('edited while building'));
     ok('the slide being built right now says so', /building this slide right now/.test(R.targetBlocked));
-    ok('add / remove a slide mid-build (W-01)', R.slidesAfterAdd === '3' && R.slidesAfterRemove === '2');
+    // What W-01 promises is that the new slide appears in "coming up" and the removed one leaves it. The COUNT also
+    // drops by one whenever the slide being built finishes, which can happen at any moment here, so the count is only
+    // checked for the right direction; the membership checks are the race-free ones.
+    ok('add / remove a slide mid-build (W-01)', R.addedListed === true && R.removedGone === true
+      && R.slidesAfterAdd <= R.upBefore + 1 && R.slidesAfterAdd >= R.upBefore
+      && R.slidesAfterRemove < R.slidesAfterAdd);
     ok("claude's questions lock the build and take focus", R.locked === true && R.popFocus === true);
+    ok('a question card is never a dead end (an answer chosen, nothing to press, no reason)', /^ok/.test(R.deadEnd || ''));
     ok('stop leaves a buildable deck', R.afterStop.main === 'make next slide' && R.afterStop.disabled === false);
+    ok('stop hands the build back within one poll (under 30 s)', R.stopResumeS < 30);
     ok('rename from the library (W-02)', R.renamed.includes('Renamed from the library'));
     ok('archive hides a deck and counts it (W-02)', R.afterArchive.cards === 1 && /\(1\)/.test(R.afterArchive.arch));
     ok('delete moves to the bin and undo brings it back (W-02)', R.afterDelete.cards === 0 && /moved to the bin/.test(R.afterDelete.toast) && R.afterUndo === 1);
     ok('no console errors', errs.length === 0);
+    ok('no request was refused', bad.length === 0);
   } catch (e) { log('ERR', e.message.split('\n')[0]); log(JSON.stringify(R)); total++; try { await page.screenshot({ path: OUT + 'zz-error.png' }); } catch (x) { /* gone */ } }
-  finally { log('CONSOLE ERRORS:', errs.join(' | ') || 'none'); await browser.close(); }
+  finally { log('CONSOLE ERRORS:', errs.join(' | ') || 'none'); log('REFUSED REQUESTS:', bad.join(' | ') || 'none'); await browser.close(); }
   log(`${pass}/${total} e2e checks passed`);
   process.exit(pass === total && total > 0 ? 0 : 1);
 })();

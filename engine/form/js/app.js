@@ -848,7 +848,7 @@ async function mountRoute(name, opts = {}) {
   try {
     if (name === 'loading' && m) routeView = m.mountLoading(host, { audio, onDone: afterLoading });
     else if (name === 'home' && m) routeView = m.mountHome(host, { audio, update: updateInfo, onNew: () => newDeck({ fresh: true }), onResume: resumeDraft, onOpen: openFromHome,
-      onFinalize: dk => openFinalize(dk.id), draft: () => (!draftUsed && reached >= 2 ? { step: Math.min(reached, iOf('review')) } : null) });
+      onFinalize: dk => openFinalize(dk.id), onSignin: () => setRoute('loading', {}), draft: () => (!draftUsed && reached >= 2 ? { step: Math.min(reached, iOf('review')) } : null) });
     else if (name === 'editor' && m) routeView = m.mountEditor(host, { deckId: opts.deckId, slide: opts.slide, audio, bus, sceneCtx, mountScene, onHome: goHome, onFinalize: openFinalize });
     else if (name === 'plan' && m) routeView = m.mountPlan(host, { deckId: opts.deckId || null, audio, setMode,
       onStarted: id => { draftUsed = true; buildDeck = id; persistLocal(); },

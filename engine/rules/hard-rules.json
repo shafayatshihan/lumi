@@ -113,5 +113,34 @@
       "bodyMinIsError": true,
       "bodyMinExemptNote": "20 px is allowed only for the footer mark, the page number, captions / source lines and the chart's step labels and event pill (BBChart marks them .bb-steplbl / .bb-cap). Everything else is at least 28 px."
     }
+  },
+  "blender": {
+    "note": "Studio renders (Blender) in a deck, checked by tools/lib/blender_check.js (docs/blender-contract.md). stillSize: the full still is always 1080p; loopSizes: a loop is 720p or 1080p; loopFps: 20. edgeTolerance: 0-255 levels the picture's corners / left / top edge may differ from the slide's canvas colour (the render is composited to the exact colour, so 3 only forgives video rounding). blackFracAbove / meanLumaBelow / nonBgBelow: the black and blank tests. seamFactor / seamFloor: the step from the last frame to the first may be at most seamFactor times a normal step (never below seamFloor levels). stillMaxMB / loopMaxMB: file budgets per deck slide (the packed file holds the render once, as base64).",
+    "stillSize": [
+      1920,
+      1080
+    ],
+    "loopSizes": [
+      [
+        1280,
+        720
+      ],
+      [
+        1920,
+        1080
+      ]
+    ],
+    "loopFps": 20,
+    "edgeTolerance": 3,
+    "blackFracAbove": 0.9,
+    "meanLumaBelow": 30,
+    "nonBgBelow": 0.004,
+    "seamFactor": 2.5,
+    "seamFloor": 0.8,
+    "stillMaxMB": 6,
+    "loopMaxMB": {
+      "720": 14,
+      "1080": 30
+    }
   }
 }

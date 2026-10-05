@@ -2,7 +2,8 @@
 // Aura deck check: renders a deck in Microsoft Edge with every slide shown and checks each slide against the HARD RULE
 // (no text under 26 px) and the power-design slide rules that can be measured. Saves one PNG per slide plus an
 // overview sheet to .aura/temp/shots/<deck>/ so the slides can be looked at.
-//   node .aura/engine/tools/deck_check.js <build folder | deck.html> [--mode presenter|document] [--notes] [--no-shots] [--stills]
+//   node .aura/engine/tools/deck_check.js <build folder | deck.html> [--mode presenter|document] [--notes] [--no-shots] [--stills] [--finalize]
+// --finalize: the deck is about to be finalized, so a Blender slide with no render yet, or showing only a preview, is an ERROR (a warning while building).
 // The deck is served over http and probed after it loads (probeRender): a deck that did not finish drawing, or whose 3D scenes fell
 // back, is reported - and a check that could not render the deck exits 2, never 0. --stills also tries candidate PDF still frames.
 // Also checks (Batch E): every number is traceable (lib/claims.js + provenance.json), banned 3D props, an empty half-column, one .em per
@@ -12,6 +13,7 @@
 const fs = require('fs'), path = require('path');
 const { findAuraRoot, resolveDeck, serveRootFor, serve, launch, openDeck, probeRender, rel } = require('./lib/deckpage');
 const claims = require('./lib/claims');
+const blenderCheck = require('./lib/blender_check');
 
 const RULES = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rules', 'hard-rules.json'), 'utf8')); } catch (e) { return {}; } })();
 const MIN_PX = RULES.minFontPx || 26;
@@ -28,7 +30,7 @@ const GENERIC = Object.assign({ minFontPx: MIN_PX, svgTolerancePx: 0, bodyMinPx:
 const argv = process.argv.slice(2);
 const flag = n => { const i = argv.indexOf(n); if (i < 0) return false; argv.splice(i, 1); return true; };
 const val = n => { const i = argv.indexOf(n); return i >= 0 ? argv.splice(i, 2)[1] : null; };
-const wantNotes = flag('--notes'), noShots = flag('--no-shots'), wantStills = flag('--stills'), modeArg = val('--mode');
+const wantFinalize = flag('--finalize'), wantNotes = flag('--notes'), noShots = flag('--no-shots'), wantStills = flag('--stills'), modeArg = val('--mode');
 
 /* ------------------------------------------------------------------ in-page measuring ------------------------------- */
 function collect({ MIN_PX, TOL, BODY_MIN, BODY_EXEMPT }) {
@@ -121,17 +123,18 @@ function collect({ MIN_PX, TOL, BODY_MIN, BODY_EXEMPT }) {
     const area = el => { const r = el.getBoundingClientRect(); return r.width * r.height; };
     const visuals = [];
     s.querySelectorAll('.aura-3d').forEach(el => { if (!el.parentElement.closest('.aura-3d')) visuals.push('3D'); });
+    s.querySelectorAll('.bb-blender').forEach(() => visuals.push('3D'));        // a studio render (Blender) is the slide's 3D picture
     s.querySelectorAll('.bb-chart, [data-visual="chart"]').forEach(() => visuals.push('chart'));
     // a 2D canvas loop (.aura-canvas) is an animated diagram: it counts as the slide's diagram, never as a sixth kind
     // C-11: on a slide that already has a 3D scene a 2D canvas is part of that motion visual (an overlay or a loop), not a second main visual
     const has3d = s.querySelector('.aura-3d[data-scene]');
     s.querySelectorAll(has3d ? '[data-visual="diagram"]' : '[data-visual="diagram"], .aura-canvas').forEach(el => { if (!el.parentElement.closest('[data-visual="diagram"], .aura-canvas')) visuals.push('diagram'); });
     const photos = new Set(s.querySelectorAll('.bb-photo, [data-visual="photo"]'));
-    s.querySelectorAll('img').forEach(im => { if (!im.closest('.bb-photo, [data-visual="photo"], .bb-inset, .aura-3d, .aura-canvas, .bb-mark, .bb-logo, [data-logo], .bb-foot') && area(im) > 1920 * 1080 * 0.15) photos.add(im); });
+    s.querySelectorAll('img').forEach(im => { if (!im.closest('.bb-photo, [data-visual="photo"], .bb-inset, .aura-3d, .aura-canvas, .bb-blender, .bb-mark, .bb-logo, [data-logo], .bb-foot') && area(im) > 1920 * 1080 * 0.15) photos.add(im); });
     photos.forEach(() => visuals.push('photo'));
     const companions = { stats: s.querySelectorAll('.bb-stats > li').length, steps: s.querySelectorAll('.bb-steps > li').length, chips: s.querySelectorAll('.bb-chips > li').length,
       insets: s.querySelectorAll('.bb-inset').length, goals: s.querySelectorAll('.bb-goals > li').length, zones: s.querySelectorAll('.bb-zones > li').length,
-      tags: s.querySelectorAll('.aura-3d [data-follow]').length, has3d: s.querySelectorAll('.aura-3d[data-scene]').length };
+      tags: s.querySelectorAll('.aura-3d [data-follow], .bb-blender [data-anchor]').length, has3d: s.querySelectorAll('.aura-3d[data-scene]').length };
     const broken = Array.from(s.querySelectorAll('img')).filter(im => im.complete && im.naturalWidth === 0).map(im => (im.getAttribute('src') || '').slice(0, 60));
     const has3dFallback = s.querySelectorAll('.aura-3d[data-fallback]').length;
     const notesEl = s.querySelector('[data-aura-notes], .notes');
@@ -143,7 +146,7 @@ function collect({ MIN_PX, TOL, BODY_MIN, BODY_EXEMPT }) {
       const src = window.Aura && Aura.sceneSource ? Aura.sceneSource(hd.dataset.scene) : '';
       (src.match(PROPS) || []).forEach(m => { if (!props.includes(m.toLowerCase())) props.push(m.toLowerCase()); });
     });
-    const MEDIA = 'img, svg, canvas, video, .aura-3d, .aura-canvas, .bb-chart, .bb-photo, .bb-studio, [data-visual]';
+    const MEDIA = 'img, svg, canvas, video, .aura-3d, .aura-canvas, .bb-blender, .bb-chart, .bb-photo, .bb-studio, [data-visual]';
     const emptyCols = Array.from(s.querySelectorAll('.bb-l, .bb-r')).filter(c => !c.textContent.trim() && !c.querySelector(MEDIA) && !c.matches(MEDIA)).length;
     const headlines = Array.from(s.querySelectorAll('h1, h2, .headline, .title')).filter(h => h.textContent.trim()).map(h => ({ text: h.textContent.replace(/\s+/g, ' ').trim().slice(0, 40), em: h.querySelectorAll('.em').length }));
     const figures = Array.from(s.querySelectorAll('img, [data-figure]')).map(im => ({ src: (im.getAttribute('src') || '').slice(0, 120), figure: im.dataset.figure || '',
@@ -352,6 +355,16 @@ async function analysePixels({ si, plain, normal, bareOnly }) {
     [...new Set(net)].forEach(m => err(0, m));
     if (!info.runtime) warn(0, 'the Aura runtime is not loaded: no navigation, notes or animation replay.');
 
+    // studio renders (Blender): present, right size, background = the slide's colour, not black / blank, seamless, within budget
+    const blNotes = [];
+    try {
+      const items = await page.evaluate(blenderCheck.collectBlender);
+      if (items.length) {
+        const v = blenderCheck.judge(items, { rules: RULES.blender, deckDir: path.dirname(deck), root: auraRoot, finalize: wantFinalize });
+        v.errors.forEach(x => err(x.slide, x.msg)); v.warnings.forEach(x => warn(x.slide, x.msg)); blNotes.push(...v.notes);
+      }
+    } catch (e) { err(0, 'the studio render check could not run: ' + String(e.message || e).split(/\r?\n/)[0].slice(0, 160)); }
+
     // capture contract: every 3D slide registers a loop period, and its loop is seamless (seek(0) == seek(period))
     const stillNotes = [];
     const want3d = info.slides.map((s, i) => s.companions.has3d ? i + 1 : 0).filter(Boolean);
@@ -436,6 +449,7 @@ async function analysePixels({ si, plain, normal, bareOnly }) {
       console.log(`  ${label} ${x.slide ? 'slide ' + x.slide + (info.slides[x.slide - 1].title ? ' "' + info.slides[x.slide - 1].title.slice(0, 32) + '"' : '') : 'deck'}: ${x.msg}`));
     show(errors, 'ERROR'); show(warnings, 'warn ');
     stillNotes.forEach(m => console.log('  still ' + m));
+    blNotes.forEach(m => console.log('  studio render ' + m));
     if (shots.length) console.log(`  screenshots: ${rel(auraRoot, shotsDir)}/slide-01.png ... slide-${String(S).padStart(2, '0')}.png${overview ? ', overview.png' : ''}`);
     console.log(errors.length ? `RESULT: ${errors.length} error(s), ${warnings.length} warning(s). Fix the errors and run the check again.`
                               : `RESULT: clean (${warnings.length} warning(s) to consider).` + (shots.length ? ' Look at the screenshots before packing.' : ''));

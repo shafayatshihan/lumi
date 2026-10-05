@@ -248,7 +248,7 @@ def run(check):
         toks[m.group(1)] = [t.strip() for t in m.group(2).split('|')]
     for fn, ts in toks.items():
         src = read(ENGINE / ('tools' if fn == 'deck_check.js' else 'rules') / fn)
-        if fn == 'deck_check.js': src += read(ENGINE / 'tools' / 'lib' / 'claims.js')
+        if fn == 'deck_check.js': src += read(ENGINE / 'tools' / 'lib' / 'claims.js') + read(ENGINE / 'tools' / 'lib' / 'blender_check.js')
         missing = [t for t in ts if t not in src]
         check(f'every message named in enforcement.md exists in {fn}', not missing, missing)
     rows = re.findall(r'^\| .*\(`([^`]+)`\)', enf, re.M)

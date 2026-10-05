@@ -30,6 +30,15 @@
       holder ([data-loop-target], else the first .aura-3d / .aura-canvas) in place of the live scene, and never
       starts the live scene. The holder's other children (projected labels) are hidden: the video already shows them.
       ?live ignores the loops and runs WebGL; ?capture always runs the live scenes.
+   3b. Blender holders (studio renders). <div class="bb-blender" data-blender="<id>" data-kind="still|animation"> holds a render that
+      Lumi made in Blender and the packer inlined: <img class="bb-blender-img"> (the still, or the loop's poster = frame 1) and, for an
+      animation, a muted <video class="bb-blender-video"> (20 fps seamless loop). It is NOT an .aura-3d / .aura-canvas, so it never
+      appears in LumiCapture.slides (finalize must not record it: it is already a recorded video). It is listed in
+      LumiCapture.recorded = { <n>: { kind, period } } so finalize can tell "already recorded" from "no 3D". Presenter mode plays the
+      video only while the slide is current (reset to the start when it leaves); ?still, ?aura=all, ?aura=still, ?capture and
+      reduced motion show the poster instead, so the PDF page is exactly the render's first frame. Projected labels:
+      children [data-anchor="name"] are placed at the percentages recorded with the render (data-anchors on the holder, from
+      lumi_bpy L.anchor), following the video's clock. data-draft="1" = the latest PREVIEW, not the approved render.
    4. Still frames. ?still=<n> shows slide n alone, frozen at t = period x 0.35 (data-still on a holder overrides; a
       loop video is sought to the same time), no chrome, no entrance motion, and sets <html data-aura-still-ready="1">
       when the frame is drawn. ?aura=all (PDF / check) uses the same still time for every piece.
@@ -258,6 +267,7 @@
 
   async function startPieces(slide) {
     const token = slide;
+    playBlender(slide);
     const loop = !LIVE && loops.get(slides.indexOf(slide) + 1);
     if (loop) { playLoop(loop); return; }        // a recorded loop replaces the live scene on this slide
     if (CAPTURE) return;                         // the recorder draws every frame through LumiCapture.seek
@@ -277,6 +287,7 @@
     trimLive(); kick();
   }
   function stopPieces(slide) {
+    stopBlender(slide);
     running.forEach(rec => { if (slide.contains(rec.el)) running.delete(rec); });
     const loop = loops.get(slides.indexOf(slide) + 1);
     if (loop && loop.video) loop.video.pause();
@@ -338,6 +349,51 @@
     });
   }
 
+  /* ---------------- Blender holders: a render that is already a picture or a recorded loop ---------------- */
+  function blenderHolders(slide) { return Array.from(slide.querySelectorAll('.bb-blender[data-filled]')); }
+  function blenderAnchors(h) {
+    if (h._anchors !== undefined) return h._anchors;
+    try { h._anchors = JSON.parse(h.dataset.anchors || 'null'); } catch (e) { h._anchors = null; }
+    return h._anchors;
+  }
+  // put every [data-anchor] label at the point recorded with the render (percent of the picture, frame i)
+  function placeBlenderLabels(h, t) {
+    const a = blenderAnchors(h); if (!a) return;
+    const fps = parseFloat(h.dataset.fps) || 20;
+    h.querySelectorAll('[data-anchor]').forEach(el => {
+      const pts = a[el.dataset.anchor]; if (!pts || !pts.length) { el.style.display = 'none'; return; }
+      const i = pts.length > 1 ? Math.floor(((t || 0) * fps) + 1e-6) % pts.length : 0, p = pts[Math.max(0, i)];
+      el.style.left = p[0] + '%'; el.style.top = p[1] + '%';
+    });
+  }
+  function blenderVideo(h) { return h.querySelector('video.bb-blender-video'); }
+  function playBlender(slide) {
+    if (FROZEN || STILL) return;
+    blenderHolders(slide).forEach(h => {
+      const v = blenderVideo(h); if (!v) return;
+      v.preload = 'auto';
+      try { v.currentTime = 0; } catch (e) { /* not loaded yet */ }
+      const p = v.play(); if (p && p.catch) p.catch(() => {});
+      if (blenderAnchors(h) && !h._following) {
+        h._following = true;
+        const step = () => { if (v.paused) { h._following = false; return; } placeBlenderLabels(h, v.currentTime); requestAnimationFrame(step); };
+        requestAnimationFrame(step);
+      }
+    });
+  }
+  function stopBlender(slide) {
+    blenderHolders(slide).forEach(h => {
+      const v = blenderVideo(h); if (!v) return;
+      v.pause();
+      try { v.currentTime = 0; } catch (e) { /* ignore */ }
+      placeBlenderLabels(h, 0);
+    });
+  }
+  async function readyBlender(slide) {       // a still / PDF frame waits until the render is decoded
+    await Promise.all(blenderHolders(slide).map(h => { const im = h.querySelector('img.bb-blender-img');
+      return im && im.decode ? im.decode().catch(() => {}) : null; }));
+  }
+
   /* ---------------- capture (?capture) and still frames (?still=n) ---------------- */
   const nextFrame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   function poseCss(root, t) {
@@ -365,8 +421,10 @@
     slide.querySelectorAll(REC_KEEP).forEach(el => el.setAttribute('data-aura-rec-keep', ''));
   }
   function buildCapture() {
-    const out = { ready: null, slides: {} };
+    const out = { ready: null, slides: {}, recorded: {} };
     slides.forEach((s, i) => {
+      const bl = blenderHolders(s)[0] || s.querySelector('.bb-blender');
+      if (bl) out.recorded[i + 1] = { kind: bl.dataset.kind || (blenderVideo(bl) ? 'animation' : 'still'), period: 0, draft: bl.hasAttribute('data-draft'), filled: bl.hasAttribute('data-filled') };
       const holder = holderOf(s);
       if (!holder) return;
       const ps = Array.from(s.querySelectorAll('.aura-3d[data-scene], .aura-canvas[data-canvas]')).map(periodOf).filter(p => p !== null);
@@ -399,12 +457,14 @@
       await seekVideo(v, t);
       runSync(loop.holder, t);
     } else await renderSlideAt(s, 0, true);
+    await readyBlender(s);
     await nextFrame();
     html.dataset.auraStillReady = '1';
   }
 
   // all-slides mode: render each 3D scene once at its still time, keep it as a picture, free the GPU context
   async function renderStills() {
+    await Promise.all(slides.map(readyBlender));
     for (const el of document.querySelectorAll('.aura-3d[data-scene]')) {
       const rec = await ensure3d(el);
       if (!rec || rec.failed) continue;
@@ -610,6 +670,7 @@
     });
     const finish = () => { html.dataset.auraReady = '1'; readyResolve(info()); emit('ready', info()); };
     scanLoops();
+    slides.forEach(sl => blenderHolders(sl).forEach(h => placeBlenderLabels(h, 0)));
     if (!FROZEN) browserNotice();
     if (FROZEN) {
       fit();

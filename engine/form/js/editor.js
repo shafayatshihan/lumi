@@ -16,6 +16,7 @@ import { mountWorkshop, toolLine } from './workshop.js';
 import { markersOf } from './markers.js';
 import { slideEditor, ICON, clearLater } from './plan.js';
 import { mountPlay } from './lumi-play.js';
+import { mountBlenderCard, fmtLeft } from './blender.js';
 
 const PER_PAGE = 6;
 import { h } from './dom.js';
@@ -32,6 +33,8 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   // F-10: no private copy of "claude is running": it is read from the one shared answer (bus.js), which both the events poll
   // (workshop.js) and this page's plan poll keep up to date, the freshest report winning.
   const isBusy = () => claudeNow(deckId).running;
+  let blc = null;                                   // the studio-render card (blender.js), mounted below
+  let buildVeil = false;                            // the build page put its own "claude is building" veil up
   let wasBusy = false, acting = false, planVer = 0, planIdle = 0, planRaw = '', loadFails = 0, modalRel = null;
   const offs = [];
 
@@ -82,8 +85,9 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   const modal = h('div', { class: 'pl-modal bd-modal', hidden: true });
   const qdock = h('div', { class: 'bd-qdock' });              // claude's questions, docked under the preview (the slide stays visible)
   const playHost = h('div', { class: 'bd-playhost' });        // something to do while claude works + what it is doing now
-  el.replaceChildren(...(build ? [homeBtn, title, strip, preview, nav, bdBar, bdSay, stats, toast, upCol, qdock, playHost, chatHost, modal]
-    : [homeBtn, title, strip, preview, nav, tip, stats, toast, bench, chatHost]));
+  const blDock = h('div', { class: 'bl-dock' });              // a Blender slide's studio render: preview, "do you like the design?", render
+  el.replaceChildren(...(build ? [homeBtn, title, strip, preview, nav, bdBar, bdSay, stats, toast, upCol, qdock, playHost, blDock, chatHost, modal]
+    : [homeBtn, title, strip, preview, nav, tip, stats, toast, bench, blDock, chatHost]));
 
   let toastT = 0;
   const say = (t, bad) => { toast.textContent = t; toast.classList.toggle('bad', !!bad); toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('show'), 3800); };
@@ -91,7 +95,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   // ---------------------------------------------------------------- slides + preview
   const deckUrl = (v = '') => `/deck/${encodeURIComponent(deckId)}/?aura=edit${v ? '&v=' + v : ''}#${cur}`;
   function loadFrame(v) {
-    runtime = false; shim = null;
+    runtime = false; shim = null; buildVeil = false;
     veil.hidden = false;
     frame.src = deckUrl(v);
   }
@@ -153,6 +157,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     page = Math.floor((cur - 1) / PER_PAGE);
     paintAll();
     if (chat) chat.setSlide(cur);
+    if (blc) blc.setSlide(cur);
   }
   const ro = new ResizeObserver(() => { if (shim) shim.fit(); });
   ro.observe(frame);
@@ -351,8 +356,11 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     const slides = planSlides();
     const target = pay && slides.find(x => x.id === pay.buildTarget);
     const ti = target ? slides.indexOf(target) + 1 : pay ? pay.built + 1 : 0;
-    play.setStep({ head: nowLine || nowStage || 'getting started', sub: ti && pay ? `slide ${ti} of ${pay.count}${pay.buildRest ? ', then the rest' : ''}` : 'claude is working' });
-    play.setRunning(!!running);
+    const rnd = !running && blc ? blc.rendering() : null;       // a full Blender render is a wait too (no next slide meanwhile)
+    if (rnd) play.setStep({ head: rnd.queued ? `slide ${rnd.n} waits for another render` : `lumi is rendering slide ${rnd.n} · ${Math.round(rnd.progress * 100)}%`,
+      sub: `${fmtLeft(rnd.etaS) || 'starting'}. it runs on this computer and uses no claude tokens.` });
+    else play.setStep({ head: nowLine || nowStage || 'getting started', sub: ti && pay ? `slide ${ti} of ${pay.count}${pay.buildRest ? ', then the rest' : ''}` : 'claude is working' });
+    play.setRunning(!!running || !!rnd);
   }
 
   // ---------------------------------------------------------------- the plan of the slide a question is about
@@ -397,6 +405,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
         say(r.built >= r.count ? 'every slide is built. have a last look, then finalize.' : `slide ${r.built} is ready. have a look.`);
         cur = Math.max(1, r.built); count = 0; thumbs = [];
         loadFrame(r.mtime || Date.now()); paintStrip(); loadThumbs(); loadDeck();
+        if (blc) blc.setSlide(cur);
       }
       paintBuild();
       paintPlay();
@@ -426,16 +435,21 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     bdMore.setAttribute('aria-expanded', moreOpen && !bdRest.hidden ? 'true' : 'false');
     bdMore.classList.toggle('on', moreOpen && !bdRest.hidden);
     bdRest.disabled = running || acting || waiting;
+    // contract section 9 + batch 3: the next slide waits until every built studio-render slide is rendered (or kept as a preview on purpose)
+    const gate = blc && !allDone ? blc.gate(b) : { ok: true };
+    if (!gate.ok) { bdMain.disabled = true; bdRest.disabled = true; }
     bdStop.hidden = !running;
     homeBtn.title = running ? 'claude keeps building while you look at other decks' : '';
     const ti = target ? slides.indexOf(target) + 1 : b + 1;
     bdSay.textContent = running ? `claude is building slide ${ti} of ${n}${pay.buildRest ? ', then the rest' : ''}…`
       : waiting ? 'claude has a question. answer it under the slide, one step at a time.'
+      : !gate.ok ? gate.text
       : allDone ? `all ${n} slides are built. change anything you like, then finalize.`
       : b === 0 ? 'claude builds slide 1 first. it also sets up the look of the whole deck.'
       : `slide ${b} of ${n} is ready. check it, change it if you like, then make the next one.`;
     bdSay.classList.toggle('is-busy', running);
-    if (!pay.exists) { veil.hidden = false; veil.lastChild.textContent = running ? 'claude is building slide 1…' : 'press “build deck” to make slide 1'; }
+    if (!pay.exists) { veil.hidden = false; buildVeil = true; veil.lastChild.textContent = running ? 'claude is building slide 1…' : 'press “build deck” to make slide 1'; }
+    else if (buildVeil) { buildVeil = false; veil.lastChild.textContent = 'loading your slides…'; loadFrame(pay.mtime || Date.now()); }     // the file is back (a repack): show it again
     paintUp();
   }
   // "coming up": the next 3 unbuilt slides, then "+N more" (a calm list of the rest in a dialog)
@@ -487,7 +501,8 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     if (!isNew && isBusy() && s.id === pay.buildTarget) { say('claude is building this slide right now. you can change it as soon as it is done.', true); sfx('error'); return; }
     sfx('pop');
     let next = s, removing = false, saving = false;
-    const ed = slideEditor(s, { cap: pay.wordCap, sfx, compact: true, onChange: ns => { next = ns; } });
+    const engineInfo = sid => pay && pay.blender ? { available: !!pay.blender.available, look: pay.look, est: (pay.blender.estimates || {})[sid] || null } : null;
+    const ed = slideEditor(s, { cap: pay.wordCap, sfx, compact: true, onChange: ns => { next = ns; }, engineInfo });
     const pos = isNew ? planSlides().length + 1 : planSlides().findIndex(x => x.id === s.id) + 1;
     const write = async (mutate, done) => {
       if (saving) return;
@@ -551,6 +566,26 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   });
   offs.push(() => { if (modalRel) modalRel(false); });
   offs.push(() => { if (play) play.destroy(); });
+
+  // a studio-render slide: its card docks under the shrunk preview ('open') or sits as a slim bar ('bar'); the slide stays visible
+  let mediaT = 0;
+  async function mediaChanged() {             // the server embeds the new picture and packs the deck again: show it once the file changed
+    clearTimeout(mediaT);
+    const base = (deck && deck.mtime) || (pay && pay.mtime) || 0;
+    for (let i = 0; i < 12 && alive; i++) {
+      await new Promise(res => { mediaT = setTimeout(res, 900); });
+      const r = await api.decks.get(deckId);
+      if (!alive) return;
+      const m = r && r.deck && r.deck.mtime;
+      if (m && m > base) { deck = { ...(deck || {}), ...r.deck }; loadFrame(m); thumbs = []; paintStrip(); loadThumbs(); if (!build) loadDeck(); return; }
+    }
+  }
+  blc = mountBlenderCard(blDock, { deckId, build, sfx,
+    onLayout: m => { el.classList.toggle('is-bl', m === 'open'); el.classList.toggle('has-blbar', m === 'bar'); },
+    onMedia: () => mediaChanged(),
+    onState: () => { if (build) { paintBuild(); paintPlay(); } } });
+  blc.setSlide(cur);
+  offs.push(() => { clearTimeout(mediaT); blc.destroy(); });
 
   loadDeck();
   if (!build) loadFrame();

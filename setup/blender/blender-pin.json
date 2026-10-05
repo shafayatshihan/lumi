@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "The exact portable Blender that Lumi bundles. setup/setup.ps1 Step-Blender downloads this zip, verifies its",
+    "SHA256 and flattens its single top folder into <root>\\.aura\\blender, so .aura\\blender\\blender.exe exists",
+    "(docs/blender-contract.md section 5, source 'bundled').",
+    "The hash is the official one published by blender.org; it was read from the checksums file below and the file",
+    "size from the zip's Content-Length on 2026-10-05.",
+    "Never change version/url without also re-reading the matching line of the .sha256 file from download.blender.org.",
+    "Blender is GNU GPL v3 or later: COPYING-GPL-3.0.txt and BLENDER-SOURCE.txt in this folder are installed next to it."
+  ],
+  "name": "Blender",
+  "version": "5.2.2",
+  "channel": "LTS",
+  "zip": "blender-5.2.2-windows-x64.zip",
+  "url": "https://download.blender.org/release/Blender5.2/blender-5.2.2-windows-x64.zip",
+  "sha256": "3849d17a682cba006075aaa3f3597ecb5c9c30ec31035b2e092c53e40679b535",
+  "bytes": 404453484,
+  "checksums": "https://download.blender.org/release/Blender5.2/blender-5.2.2.sha256",
+  "verifiedOn": "2026-10-05",
+  "license": "GPL-3.0-or-later",
+  "licenseUrl": "https://www.blender.org/about/license/",
+  "sourceUrl": "https://download.blender.org/source/blender-5.2.2.tar.xz",
+  "sourceIndexUrl": "https://download.blender.org/source/",
+  "repoUrl": "https://projects.blender.org/blender/blender"
+}

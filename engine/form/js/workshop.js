@@ -257,7 +257,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     if (!info) return h('div', { class: 'qx qx-none' }, h('p', { class: 'qx-point' }, 'the plan for this slide isn’t available.'));
     const v = info.visual || {}, main = MAINS.find(m => m.id === v.main) || MAINS[4];
     const bits = [main.label];
-    if (v.main === '3d') { const d = DETAILS.find(x => x.id === v.detail), m = MOTIONS.find(x => x.id === v.motion); if (d) bits.push(d.label); if (m) bits.push(m.label); }
+    if (v.main === '3d') { const d = DETAILS.find(x => x.id === v.detail), m = MOTIONS.find(x => x.id === v.motion); if (d) bits.push(d.label); if (m) bits.push(m.label); if (v.engine === 'blender') bits.push('studio render'); }
     const comp = (v.companions || []).join(', ');
     const vis = h('p', { class: 'qx-vis' }, h('span', { class: 'qx-vi', html: ICON[main.id] || ICON.text }), h('span', {}, bits.join(' · ') + (comp ? ` + ${comp}` : '')));
     return h('div', { class: 'qx' },
@@ -387,6 +387,11 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
       case 'tool-error':
         stepLine(ev.code === 'blocked' ? 'a rule blocked one step' : 'one step needed another try', 'ws-warn');
         break;
+      case 'blender': {            // the server's studio-render steps for this slide (docs/blender-contract.md section 7); progress ticks stay out of the chat
+        if (/-progress$|^preview-started$/.test(ev.code || '') || !text) break;
+        note(text.charAt(0).toLowerCase() + text.slice(1), 'ws-quiet ws-bl');
+        break;
+      }
       case 'marker-problem':       // the server could not read one of claude's marker lines (it also logs it)
         note(text || 'claude sent something lumi could not read.', 'ws-warn');
         break;
@@ -588,7 +593,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
       const go = h('button', { type: 'button', class: 'ws-btn ws-ink ws-big', 'data-cursor-label': 'sign in', 'data-nosfx': '' }, 'sign in to Claude');
       go.addEventListener('click', signIn);
       body = [h('div', { class: 'ws-art', html: ART.signin }), h('p', { class: 'ws-g-t' }, 'sign in to claude'),
-        h('p', { class: 'ws-g-x' }, 'claude needs you to sign in once (a Pro, Max or Team plan). a small window opens; finish there and come back.'),
+        h('p', { class: 'ws-g-x' }, 'claude needs you to sign in once (any claude plan works; pro is recommended). a private browser window opens; sign in there and come back.'),
         h('div', { class: 'ws-g-b' }, go), hasRun() ? h('button', { type: 'button', class: 'ws-link', onclick: () => { gateDismissed = true; showGate(null); } }, 'not now, show the chat') : null];
     } else if (kind === 'start') {
       const go = h('button', { type: 'button', class: 'ws-btn ws-ink ws-big', 'data-cursor-label': 'go', 'data-nosfx': '' }, 'make my slides');

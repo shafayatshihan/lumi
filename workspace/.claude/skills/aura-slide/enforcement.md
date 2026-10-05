@@ -43,6 +43,15 @@ on the page background. The number check traces numerals, not meaning (see "Neve
 | A font that failed to load (`failed to load`) | error | |
 | A 3D scene that did not start (`did not start`) | error | also in the hook (B-02) |
 | A 3D slide without a loop period, or a loop with a seam (`seamless`) | error | the capture contract the Finalize step needs |
+| A studio render (Blender) missing from the slide (`is not in the deck yet`), or only a draft preview (`shows a preview, not the approved render`) | warn while building; error with `--finalize` | the user has not approved / rendered it yet. Finalize itself also stops (see below) |
+| A studio render that cannot be read (`could not be read`): picture does not decode, loop video missing or does not open | error | |
+| A studio render of the wrong size (`a still must be`, `a loop must be`) | error | 1920 x 1080 still; 1280 x 720 or 1920 x 1080 loop |
+| A loop at the wrong frame rate (`loop runs at`) | error | 20 fps |
+| A studio render whose edges are not the slide's canvas colour (`background is not the slide colour`) | error | corners, left and top edge within 3 levels of the slide's own colour; `lumi_bpy` composites to the exact colour and fades the floor shadow out at the frame edge |
+| A black render (`looks black`) or a blank one (`is blank`) | error | pixel statistics: mean brightness, black fraction, share of pixels that are not the background; a video is measured on its first, middle and last frame |
+| A loop that jumps when it restarts (`loop is not seamless`) | error | the step from the last frame to the first against the normal frame-to-frame step |
+| A studio render over its file budget (`stays under`) | error | still 6 MB; 720p loop 14 MB; 1080p loop 30 MB (hard-rules.json -> blender) |
+| A label with no anchor point in the render (`no anchor point`) | warn | the label stays hidden until `L.anchor('<name>', ...)` gives it a place |
 | Text outside any slide (`text outside any slide`) | error | |
 | Anything that needs the internet | error | blocked network request |
 | A slide that is not 1920 x 1080 (`1920 x 1080`) | error | |
@@ -66,6 +75,8 @@ on the page background. The number check traces numerals, not meaning (see "Neve
 | A font that is not embedded (`not an embedded font`) | warn | |
 | Gradient text (`gradient text`) | warn | contrast not measured there |
 | Missing speaker notes (`no speaker notes`) | warn | only with `--notes`; length is checked whenever notes exist |
+
+**Studio renders (Blender slides) and Finalize.** The Lumi server refuses to finalize (409 `blender-pending`) while a Blender slide has no full render, and asks (409 `blender-stale`) when a render is older than its scene; `finalize.js` itself stops with a plain message if a holder is empty or still shows a draft preview, and never records or re-renders a Blender slide (it is already a picture or a recorded loop). The checks above run on every slide that has a `.bb-blender` holder; `--finalize` turns "not in the deck yet" and "shows a preview" into errors.
 
 `deck_check.js` exits 0 whenever there is no ERROR: warnings never block; exit 2 = it could not render the deck (never a pass). It
 renders over http, so 3D slides are measured WITH their 3D (the report line `rendered: http, n of n 3D scene(s) drawn` says so).
@@ -99,5 +110,5 @@ Each is still a rule Claude must follow. The last column says whether a checker 
 | A warning left unfixed is named in the reply | `SKILL.md` step 7 | not checkable |
 | Question limits (5 doubts, 8 per message, 3 elsewhere) | `SKILL.md` "Asking questions" | the app shows any number; counting is cheap |
 
-<!-- checks: deck_check.js = has no provenance entry | does not contain it | gives no readFrom region | crops that region away | has no citation | is computed from | does not say so | speaker notes must | read off | default prop | half-column | accent phrases | speaker notes are | title slide is missing | steps; a numbered | aim for 4.5:1 | HARD RULE: text is | keeps text at | main visuals | stats / facts | chips | inset | zone rows | checklist rows | projected labels | edge safe zone | cut off | did not load | words; a | contrast | typefaces | failed to load | did not start | seamless | text outside any slide | 1920 x 1080 | text sizes | not on the type scale | empty space | texts overlap | not an embedded font | gradient text | no speaker notes -->
+<!-- checks: deck_check.js = is not in the deck yet | shows a preview, not the approved render | could not be read | a still must be | a loop must be | loop runs at | background is not the slide colour | looks black | is blank | loop is not seamless | stays under | no anchor point | has no provenance entry | does not contain it | gives no readFrom region | crops that region away | has no citation | is computed from | does not say so | speaker notes must | read off | default prop | half-column | accent phrases | speaker notes are | title slide is missing | steps; a numbered | aim for 4.5:1 | HARD RULE: text is | keeps text at | main visuals | stats / facts | chips | inset | zone rows | checklist rows | projected labels | edge safe zone | cut off | did not load | words; a | contrast | typefaces | failed to load | did not start | seamless | text outside any slide | 1920 x 1080 | text sizes | not on the type scale | empty space | texts overlap | not an embedded font | gradient text | no speaker notes -->
 <!-- checks: check_rules.js = LUMI HARD RULE 1 VIOLATED | LUMI CHECKER COULD NOT VERIFY THE DECK | LUMI DECK CHECK FAILED | a 3D scene did not start -->

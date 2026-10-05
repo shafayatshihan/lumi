@@ -19,6 +19,9 @@
 //
 // usage (manual): node check_rules.js <file.html> [...]
 //
+// Studio renders (Blender slides): the --stop pass runs deck_check.js, which also checks each .bb-blender holder (tools/lib/blender_check.js:
+// render present and readable, size, background = the slide colour at the edges, not black / blank, seamless loop, file budget). While a slide is
+// still being built the missing / draft render is only a warning; the hook never blocks on it.
 // B-01: the app writes .aura/temp/current-run.json when it starts a Claude run (deck id, work folder, start time). --stop checks
 // exactly the HTML files this run wrote: the deck's work folder, the build folder it touched, or a fresh file in "4 - Your
 // slides". Nothing written in this run = nothing checked (a "do not use any tools" turn stays untouched), and Older versions /

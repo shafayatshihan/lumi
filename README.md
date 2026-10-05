@@ -3,8 +3,8 @@
 Beautiful, animated presentation slides for your thesis, project or class talk, made by Claude from your own report
 and files. It works for any subject, so you don't need to know any coding. (Lumi was called Aura-Slide before v0.4.)
 
-> ⚠️ **Only for Claude premium users. The free plan won't work, sadly.**
-> You need a Claude Pro (or higher) account. Windows 10 or 11 only.
+> Works with any Claude plan. **Pro or higher is recommended**: the Free plan has very little Claude Code usage, so builds may stop early.
+> Windows 10 or 11 only.
 
 ## Get started (about 20 minutes, once)
 
@@ -13,8 +13,13 @@ and files. It works for any subject, so you don't need to know any coding. (Lumi
    - If Windows asks *"Do you want to allow this app to make changes?"*: click **Yes**.
 2. Click **Install Lumi** and wait until it says **Lumi is ready**.
 
-Lumi installs anything missing (Git, Node.js, Python and Claude Code), makes your folder at **`C:\Lumi`** and puts a
-**Lumi** icon on your Desktop and in the Start menu.
+Lumi installs anything missing (Git, Node.js, Python, Claude Code and Blender), makes your folder at **`C:\Lumi`** and
+puts a **Lumi** icon on your Desktop and in the Start menu.
+
+Blender is [free software under the GNU GPL](https://www.blender.org/about/license/). Lumi downloads the official
+portable build from `download.blender.org`, checks its SHA256 against the one pinned in `setup/blender/blender-pin.json`
+and installs it in `C:\Lumi\.aura\blender`, with the licence text and a link to the matching source code next to it
+(`BLENDER-SOURCE.txt`).
 
 Coming from Aura-Slide? Your files in `C:\Aura-Slide by Shafayat` are copied into `C:\Lumi`. The old folder is left
 alone; delete it yourself once you have checked your files.

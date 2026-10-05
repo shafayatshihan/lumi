@@ -3,7 +3,8 @@
   python tools/form-dev/test_frontend.py --e2e               ... plus the Playwright walk of the real pages against a throwaway
                                                              sandbox server with the fake Claude, at 1366x768 and 1920x1080
   python tools/form-dev/test_frontend.py --e2e --viewports 1280x720,1366x768,1920x1080,zoom
-Options: --port 8798 (never 8765/8766/8786)   --sandbox X:\\aura-dev-e2e   --venv-from <an existing .aura\\venv to copy; without it
+  python tools/form-dev/test_frontend.py --e2e --blender-only   only the Blender batch 3 walk (e2e_blender.js, fake Blender)
+Options: --no-venv (skip the sandbox venv) --port 8798 (never 8765/8766/8786)   --sandbox X:\\aura-dev-e2e   --venv-from <an existing .aura\\venv to copy; without it
 sandbox.py builds one, which needs the network and a few minutes>   --out <screenshots folder>
 Needs Node, Edge and the playwright package (AURA_PLAYWRIGHT=<path to it> if it is not installed beside the repo).
 What the unit layer covers: tools/form-dev/test_frontend.mjs (bus, api, plan logic, structural rules) and markers_test.mjs (the marker
@@ -48,7 +49,7 @@ def e2e():
     print('\n[frontend e2e: the real pages against a sandbox server with the fake Claude]')
     import json
     venv_from = opt('--venv-from')
-    cmd = [sys.executable, str(HERE / 'sandbox.py'), str(SANDBOX), '--reset'] + ([] if not venv_from else ['--no-venv'])
+    cmd = [sys.executable, str(HERE / 'sandbox.py'), str(SANDBOX), '--reset'] + ([] if not (venv_from or '--no-venv' in args) else ['--no-venv'])
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode: print(r.stdout, r.stderr); return False
     if venv_from: shutil.copytree(venv_from, SANDBOX / '.aura' / 'venv', dirs_exist_ok=True)
@@ -57,28 +58,43 @@ def e2e():
     env = dict(os.environ, AURA_HOME=str(SANDBOX / '.aura'), AURA_FAKE_CLAUDE=str(HERE / 'fake_claude.py'), AURA_NO_LAUNCH='1',
                AURA_FAKE_DELAY='0.4', AURA_NO_NETWORK='1', AURA_FAKE_FIX='1', AURA_NO_REAP='1', AURA_E2E_PORT=str(PORT), AURA_E2E_OUT=OUT)
     ok = True
+    walks = ([] if '--blender-only' in args else [('e2e_walk.js', {})]) +         [('e2e_blender.js', {'AURA_BLENDER': str(HERE / 'fake_blender.py'), 'AURA_FAKE_BLENDER_ART': '1'})]     # Blender batch 3 walk
     for vp in VIEWPORTS:
-        # a clean library for every viewport: the server is restarted over an emptied decks / brief / temp
-        srv = subprocess.Popen([sys.executable, str(REPO / 'engine' / 'form_server.py'), '--port', str(PORT)], env=env,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        try:
-            for _ in range(60):
-                try:
-                    urllib.request.urlopen(f'http://127.0.0.1:{PORT}/api/ping', timeout=2); break
-                except Exception:
-                    time.sleep(0.3)
-            else:
-                print('  FAIL the sandbox server did not start'); return False
-            a = ['zoom'] if vp == 'zoom' else vp.split('x')
-            walk = node(HERE / 'e2e_walk.js', *( ['1366', '768', '1.5'] if vp == 'zoom' else a), env=env)
-            if walk.returncode == 2: print('  SKIP the walk needs playwright (set AURA_PLAYWRIGHT)'); return ok
-            ok &= walk.returncode == 0
-        finally:
-            srv.terminate()
-            try: srv.wait(10)
-            except subprocess.TimeoutExpired: srv.kill()
-            for d in ('decks', 'brief', 'temp'):
-                shutil.rmtree(SANDBOX / '.aura' / d, ignore_errors=True); (SANDBOX / '.aura' / d).mkdir(parents=True, exist_ok=True)
+        for script, extra in walks:
+            if script == 'e2e_blender.js' and vp == 'zoom': continue
+            # a clean library for every walk: the server is restarted over an emptied decks / brief / temp
+            # the server's own output is KEPT. When it stopped mid-walk the page could only say "lumi's helper stopped
+            # running", and with DEVNULL there was nothing left anywhere to say why.
+            Path(OUT).mkdir(parents=True, exist_ok=True)
+            srv_log = Path(OUT) / f'server-{vp}-{script[:-3]}.log'
+            srv_out = open(srv_log, 'w', encoding='utf-8', errors='replace')
+            srv = subprocess.Popen([sys.executable, str(REPO / 'engine' / 'form_server.py'), '--port', str(PORT)], env=dict(env, **extra),
+                                   stdout=srv_out, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            try:
+                for _ in range(60):
+                    try:
+                        urllib.request.urlopen(f'http://127.0.0.1:{PORT}/api/ping', timeout=2); break
+                    except Exception:
+                        time.sleep(0.3)
+                else:
+                    print('  FAIL the sandbox server did not start'); return False
+                a = ['zoom'] if vp == 'zoom' else vp.split('x')
+                walk = node(HERE / script, *( ['1366', '768', '1.5'] if vp == 'zoom' else a), env=dict(env, **extra))
+                if walk.returncode == 2: print('  SKIP the walk needs playwright (set AURA_PLAYWRIGHT)'); return ok
+                ok &= walk.returncode == 0
+                if srv.poll() is not None:
+                    print(f'  FAIL the sandbox server stopped during {script} (exit {srv.returncode}). Its output:')
+                    srv_out.flush()
+                    for line in srv_log.read_text(encoding='utf-8', errors='replace').splitlines()[-25:]: print('     ', line)
+                    ok = False
+            finally:
+                if srv.poll() is None:
+                    srv.terminate()
+                    try: srv.wait(10)
+                    except subprocess.TimeoutExpired: srv.kill()
+                srv_out.close()
+                for d in ('decks', 'brief', 'temp'):
+                    shutil.rmtree(SANDBOX / '.aura' / d, ignore_errors=True); (SANDBOX / '.aura' / d).mkdir(parents=True, exist_ok=True)
     print(f'  screenshots in {OUT}')
     return ok
 
