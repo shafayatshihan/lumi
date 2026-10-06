@@ -1,5 +1,5 @@
 // Front-end end-to-end walk (X-03): the REAL pages in Edge against a sandbox server with the fake Claude.
-//   loading -> home -> wizard -> plan (typing while the poll runs) -> build (questions, locks, coming-up edits, stop) -> finalize
+//   loading -> home -> start (topic, files) -> interview -> look -> plan (typing while the poll runs) -> build (questions, locks, coming-up edits, stop) -> finalize
 //   -> home (rename / archive / delete + undo). Runs at one viewport; zoom 1.5 stands in for Ctrl+ at 150 %.
 // Normally started by tools/form-dev/test_frontend.py --e2e, which makes the sandbox and the server. By hand:
 //   AURA_E2E_PORT=8798 node tools/form-dev/e2e_walk.js 1366 768 [1.5]      (server already running on that port)
@@ -55,26 +55,79 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     // ---- a second deck to practise the library actions on
     await page.evaluate(() => fetch('/api/decks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }));
 
-    // ---- wizard
+    // ---- starting a deck: one box, then the files (the 40-field form is gone)
     await page.evaluate(() => window.__aura.newDeck());
-    await page.waitForFunction(() => window.__aura.route === 'wizard');
-    await sleep(1500); await shot('wizard-welcome');
-    await page.click('#begin'); await sleep(1800); await shot('wizard-step');
-    R.wizardScreen = await page.evaluate(() => window.__aura.screen);
-    R.wizardScroll = await scrolls();
-    // a held Enter / double next must not orphan a scene (F-20): press next twice quickly if enabled
-    await page.evaluate(() => window.__aura.go('welcome'));
-    await sleep(300);
-    await page.evaluate(() => { window.__aura.go('basics'); window.__aura.go('review'); });
+    await page.waitForFunction(() => window.__aura.route === 'start');
+    await page.waitForSelector('#start .st-in'); await sleep(1200); await shot('start-topic');
+    R.startScroll = await scrolls();
+    await page.click('#start .st-in');
+    await page.keyboard.type('a final-year project on a cheap soil sensor, 12 minutes in front of two examiners');
+    await page.click('#start .pl-big.pl-ink');
+    await page.waitForSelector('#start .st-folder'); await sleep(1200); await shot('start-files');
+    // the scene behind this step follows the folder; switching twice quickly must leave exactly one (F-20)
+    await page.locator('#start .st-folder').nth(2).click();
+    await page.locator('#start .st-folder').nth(1).click();
     await sleep(2500);
     R.scenes = await page.evaluate(() => document.querySelectorAll('.scene-host').length);
+    await page.click('#start .pl-big.pl-ink');
 
-    // ---- plan
-    await page.evaluate(() => window.__aura.plan());
-    await page.waitForSelector('.pl-big.pl-ink'); await sleep(500); await shot('plan-intro');
-    await page.click('.pl-big.pl-ink');
+    // ---- the interview: several rounds, each mixing a multiple choice and a question in your own words
+    await page.waitForFunction(() => window.__aura.route === 'plan');
+    await page.waitForSelector('.iv .ch-card', { timeout: 120000 }); await sleep(1200); await shot('interview-round1');
+    R.ivKinds = await page.evaluate(() => [...document.querySelectorAll('.iv .ch-tag')].map(t => t.textContent.trim()));
+    // A reload in the middle must lose nothing: the open question lives in interview.json, not in the page. A reload
+    // with nothing running lands on the library (Lumi only reopens a deck Claude is working on), so the walk opens the
+    // deck again from there - which is exactly what a person would do - and the question must be waiting, word for word.
+    const askedBefore = await page.evaluate(() => (document.querySelector('.iv .ch-q') || {}).textContent || '');
+    const ivDeck = await page.evaluate(async () => {
+      const r = await (await fetch('/api/decks')).json();
+      const d = (r.decks || []).find(x => ['asking', 'waiting', 'error'].includes(x.interviewState));
+      return d ? d.id : null;
+    });
+    R.ivDeck = ivDeck;
+    await page.reload();
+    await page.waitForFunction(() => window.__aura && window.__aura.route === 'home', null, { timeout: 120000 });
+    await sleep(800);
+    await page.evaluate(id => window.__aura.plan(id), ivDeck);
+    await page.waitForSelector('.iv .ch-card', { timeout: 120000 }); await sleep(1500);
+    R.ivAfterReload = await page.evaluate(() => (document.querySelector('.iv .ch-q') || {}).textContent || '');
+    R.ivReloadKept = R.ivAfterReload === askedBefore && !!askedBefore;
+    await shot('interview-after-reload');
+    const roundNow = () => page.evaluate(() => (document.querySelector('.iv-round') || {}).textContent || '');
+    R.loop = [];
+    for (let round = 0; round < 6; round++) {
+      if (await page.locator('.th-list').count()) { R.loop.push('theme'); break; }
+      try { await page.waitForSelector('.iv .ch-card, .th-list', { timeout: 120000 }); } catch (e) { R.loop.push('no-card'); break; }
+      if (await page.locator('.th-list').count()) { R.loop.push('theme'); break; }
+      // the card is switched off while claude is still working: wait for it to come back before answering
+      await page.waitForFunction(() => { const c = document.querySelector('.iv .ch-card'); return c && !c.classList.contains('is-waiting'); }, null, { timeout: 120000 });
+      const was = await page.evaluate(() => (document.querySelector('.iv .ch-q') || {}).textContent || '');
+      const opt = page.locator('.iv .ch-opt').first();
+      if (await opt.count()) { await opt.click(); await sleep(400); }
+      const next = page.locator('.iv .ch-next');
+      if (await next.count() && await next.first().isVisible()) { await next.first().click(); await sleep(500); }
+      const box = page.locator('.iv .ch-in');
+      if (await box.count()) { await box.first().click(); await page.keyboard.type('that cheap sensors can save a whole harvest'); }
+      const send = page.locator('.iv .ch-send');
+      if (!(await send.count()) || !(await send.first().isVisible())) { R.loop.push('no-send@' + was); break; }
+      R.loop.push('sent@' + was);
+      await send.first().click();
+      // While Claude thinks, the card is gone and only the round line has moved on: wait for the NEXT question
+      // (or the look step), never merely for the round number.
+      await page.waitForFunction(p => document.querySelector('.th-list')
+        || (document.querySelector('.iv .ch-card') && ((document.querySelector('.iv .ch-q') || {}).textContent || '') !== p), was, { timeout: 120000 });
+      await sleep(800);
+    }
+    R.ivRounds = await page.evaluate(() => { const t = document.querySelector('.iv-round'); return t ? t.textContent : ''; });
+
+    // ---- the look: its own step, after the interview and before the plan
+    await page.waitForSelector('.th-list .lk-opt', { timeout: 120000 }); await sleep(1500); await shot('theme-step');
+    R.themeStep = true;
+    await page.locator('.th-list .lk-opt').nth(1).click(); await sleep(800);
+    await page.click('.th-left .pl-big.pl-ink');
     await sleep(1200); await shot('planning');
     await page.waitForSelector('.pl-list .pl-row', { timeout: 120000 }); await sleep(1500); await shot('plan-ready'); R.planScroll = await scrolls();
+    R.cost = await page.evaluate(() => [...document.querySelectorAll('.pl-costl')].map(p => p.textContent));
 
     // F-18: type in the deck question box and let several polls pass
     await page.click('.pl-strip .pl-dq-opt >> nth=1');
@@ -228,6 +281,15 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     ok('home does not scroll at a normal zoom', Z > 1 || !R.homeScroll.doc);
     ok('zoom makes the page scroll instead of clipping (F-08)', Z === 1 || R.homeScroll.cls.includes('scrolls') || R.planScroll.cls.includes('scrolls'));
     ok('a double next leaves exactly one scene (F-20)', R.scenes === 1);
+    ok('a round mixes a multiple choice and a question in your own words', R.ivKinds.includes('in your words') && R.ivKinds.length > 1);
+    ok('a reload in the middle of the interview loses nothing', R.ivReloadKept === true);
+    ok('the look is asked once, after the interview, before the plan', R.themeStep === true);
+    ok('the plan page says how long the whole deck takes', R.cost.some(t => /to make this deck/.test(t)));
+    // Lumi has just run Claude, so a fresh allowance reading usually exists here. What must never happen is a bare
+    // number: an allowance line always carries its "as of" stamp, and no cost is ever quoted in tokens or money.
+    // (That the line is left out ENTIRELY when the reading is missing or stale is proved in test_interview.py.)
+    ok('the allowance line is stamped when it is shown, and no cost is ever tokens or money',
+      R.cost.every(t => !/allowance/.test(t) || /as of/.test(t)) && !R.cost.some(t => /token|\$/.test(t)));
     ok('typing in a plan question survives the polls (F-18)', R.noWipe.v === 'typed while polling' && R.noWipe.on === 'Classmates' && /pl-dq-free/.test(R.noWipe.focus));
     ok('leaving the build page while claude works is allowed (W-04)', R.homeEnabledWhileRunning === true);
     ok('an unbuilt slide can be edited mid-build (W-01)', R.comingUpSaved.includes('edited while building'));

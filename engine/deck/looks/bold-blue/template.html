@@ -33,9 +33,10 @@
       <div class="bb-hero">
         <p class="kicker dot" data-edit="s1-1">{{KICKER}}</p>
         <h1 class="title" data-edit="s1-2">{{TITLE}}</h1>
+        <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. A deck with no supervisor must have no "With thanks" line - never invent a role the interview did not establish. -->
         <ul class="bb-meta">
-          <li data-edit="s1-3"><span class="lb">Presented by</span><b>Presenter Name</b></li>
-          <li data-edit="s1-4"><span class="lb">For</span><b>Course or event</b><br>Institution</li>
+          <li data-optional="identity" data-edit="s1-3"><span class="lb">Presented by</span><b>Presenter Name</b></li>
+          <li data-optional="identity" data-edit="s1-4"><span class="lb">For</span><b>Course or event</b><br>Institution</li>
         </ul>
       </div>
       <footer class="bb-foot"><span class="bb-mark" data-edit="s1-5">Deck mark</span><span class="bb-pageno"></span></footer>
@@ -60,9 +61,10 @@
           <h1 class="bb-thanks bb-msg" data-edit="s99-0">One sentence that fits <span class="em">this talk</span></h1>
           <p class="bb-q" data-edit="s99-1"><span class="bb-ping"></span>A last line: question, next step or contact</p>
           <div class="bb-rule"></div>
+          <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. A deck with no supervisor must have no "With thanks" line - never invent a role the interview did not establish. -->
           <ul class="bb-people">
-            <li><span class="lb" data-edit="s99-2">Presented by</span><strong data-edit="s99-3">Presenter Name</strong><em data-edit="s99-4">ID or role</em></li>
-            <li class="gap"><span class="lb" data-edit="s99-5">With thanks</span><strong data-edit="s99-6">Supervisor Name</strong><em data-edit="s99-7">Title, institution</em></li>
+            <li data-optional="identity"><span class="lb" data-edit="s99-2">Presented by</span><strong data-edit="s99-3">Presenter Name</strong><em data-edit="s99-4">ID or role</em></li>
+            <li class="gap" data-optional="identity"><span class="lb" data-edit="s99-5">With thanks</span><strong data-edit="s99-6">Supervisor Name</strong><em data-edit="s99-7">Title, institution</em></li>
           </ul>
         </div>
         <div class="bb-r w5"></div>

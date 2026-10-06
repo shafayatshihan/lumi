@@ -63,6 +63,8 @@ The app reads special lines in your messages. This section is the only prose def
 | `[[aura:stage=read\|plan\|build\|check\|export\|done]]` | at the moment that stage starts (optional extra: the app derives the stage from the tools you run, so progress is right even if you forget; a marker is text you write, never something a command prints) | move the progress bar (browser) |
 | `[[aura:ask]]` | the last line of a turn that waits for the person. **Never while planning.** | wait for the reply; lock "make next slide" while a question is open (server and browser) |
 | `[[aura:choice …]]` | to ask a question (below) | show buttons: build popup, editor chat; in planning, a doubt card on the plan page (browser, server) |
+| `[[aura:text …]]` | to ask a question whose answer no list of options could hold (below) | show one box they type into, in the same card as the pick questions (browser, server) |
+| `[[aura:interview-done]]` | the last line of the interview turn after which no doubt is left that would change a slide (write `interview.json` with `done: true` first) | finish the interview and move on to the theme and the plan (server) |
 | `[[aura:hint slide=N text="…"]]` | 3–5 after a one-shot build or an edit; 1–3 after a built slide | suggestion chips (browser) |
 | `[[aura:done path="…"]]` | the very last line when you packed a deck (not in a build step: Lumi packs, `built` is last) | learn which file is the deck (server, browser) |
 | `[[aura:plan path="…"]]` | the very last line of a planning run (`path` is optional and informational) | read `plan.json` (server) |
@@ -88,6 +90,19 @@ The app reads special lines in your messages. This section is the only prose def
 - The answer comes back as plain text, one line per question: `q1: 34% water saved`, several answers joined with ` | `
   (`q2: Bar heights | A photo`), then `note: …` if they added words of their own. What they leave out takes its default.
   Their own words contradicting an option win.
+
+**Text** (their own words, when a list would be a lie):
+```
+[[aura:text id="q2" question="What must the room be able to do after your talk?" placeholder="in one sentence" lines=3]]
+```
+- `id` and `question` are required and follow the same rules as a choice's. Optional: `placeholder` (at most 60 characters,
+  a hint of the shape of the answer, never an example that leads them), `lines` (how tall the box is, 1–6, default 3),
+  `slide`, `scope`.
+- Use it only when the answer space is genuinely open: a name, a one-line message, what must not be shown. If the real
+  answers are a short closed list, write a `choice`: a pick is one tap, typing is work.
+- The answer comes back on the same `q2: …` line as a pick's, as one line (their line breaks become spaces).
+- **`when` and `depends` may only name a `choice` question.** A text answer counts as nothing selected, so
+  `when="q2=…"` pointing at a text question never holds and that variant would never be shown.
 
 **Hint** (suggestion chip):
 ```

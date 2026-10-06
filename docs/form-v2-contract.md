@@ -34,7 +34,7 @@ in current **Edge/Chrome**. **No build step**: plain HTML/CSS + native ES module
 
 | Role | Owns (create/edit only these) |
 |---|---|
-| **core** | `engine/form/index.html`, `engine/form/css/app.css`, `engine/form/js/app.js`, `engine/form/js/steps.js`, `engine/form/js/fields.js` |
+| **core** | `engine/form/index.html`, `engine/form/css/app.css`, `engine/form/js/app.js`, `engine/form/js/start.js` |
 | **gaze** | `engine/form/js/gaze.js`, `engine/form/js/cursor.js`, `engine/form/css/cursor.css`, `tools/form-dev/gaze.html` |
 | **audio** | `engine/form/js/audio.js`, `tools/form-dev/audio.html` |
 | **scenes3d** | `engine/form/js/scenes/three-kit.js`, `engine/form/js/scenes/welcome.js`, `.../style.js`, `.../workshop.js`, `tools/form-dev/scenes.html` |
@@ -246,7 +246,7 @@ input box enabled when Claude is waiting). Handles: CLI missing, not signed in (
 `POST /api/claude/login`, then polls status), usage limit, errors, reconnect after reload (events are stored
 server-side). Polls `GET /api/claude/events?since=n` every ~700 ms while open. Emits `claude:event`/`claude:state`.
 
-**core** (app.js/steps.js/fields.js/index.html/app.css) wires everything: stage scaling; screen transitions
+**core** (app.js/start.js/index.html/app.css) wires everything: stage scaling; screen transitions
 (animated, with `whoosh`); left nav; validation (friendly messages, shake + `error` sound); field renderers
 (choice cards, multi pills, text, textarea, stepper, date, repeaters with paging, toggles, slider, file select);
 autosave; `beforeunload` confirmation **always on after the first interaction** (stronger while Claude runs);
@@ -373,8 +373,9 @@ conversation per deck (the deck's `sessionId`; every re-plan and build step `--r
 
 **Screens (app routes, `setRoute(name, {deckId})` in `app.js`).** `loading` (readiness + Claude sign-in first,
 silent fixes), `home` (deck library, account pill, update note), `plan` (`js/plan.js`), `build` (`js/editor.js`,
-mounted with `build: true`), `finalize` (`js/finalizing.js`), `editor` (the v0.3 editor for finished decks), plus the
-`wizard` screens from `steps.js`. Nothing scrolls; the stage is still 1600 x 900.
+mounted with `build: true`), `finalize` (`js/finalizing.js`), `editor` (the v0.3 editor for finished decks), and
+`start` (`js/start.js`: what the talk is about, then the files). The 40-field `wizard` and its `steps.js` / `fields.js`
+are DELETED - Claude interviews the person instead. Nothing scrolls; the stage is still 1600 x 900.
 
 **Work folders.** Each deck keeps its editable files in `.aura/decks/<id>/` (`plan.json`, the packed editable deck)
 and its record in `.aura/decks/<id>.json` (fields in `DECK_FIELDS`: id, title, file, look, quality, createdAt,

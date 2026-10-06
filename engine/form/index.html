@@ -18,23 +18,16 @@
 <link rel="stylesheet" href="/css/theme.css">
 </head>
 <body>
-<div id="stage" data-mode="full" data-route="loading" data-screen="welcome">
+<div id="stage" data-mode="full" data-route="loading">
   <div id="char" aria-hidden="true">
     <video id="charVideo" muted playsinline preload="auto" src="/assets/character.mp4"></video>
   </div>
-  <div id="welcomeLayer" aria-hidden="true"></div>
 
   <div id="brand" aria-label="lumi by Shafayat" data-keepout>
     <span class="word">lumi</span><span class="by">by Shafayat</span>
   </div>
 
   <div id="topbar">
-    <span id="saved"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>saved</span>
-    <span id="counter" aria-live="polite"></span>
-    <button id="homeBtn" class="home-pill" type="button" hidden data-cursor-label="library">
-      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1.6" fill="currentColor"/><rect x="11" y="3" width="6" height="6" rx="1.6" fill="currentColor" opacity=".55"/><rect x="3" y="11" width="6" height="6" rx="1.6" fill="currentColor" opacity=".55"/><rect x="11" y="11" width="6" height="6" rx="1.6" fill="currentColor"/></svg>
-      <span>my decks</span>
-    </button>
     <div id="usage" class="usage" hidden role="status" aria-live="polite"></div>
     <button id="sound" class="sound" type="button" aria-pressed="true" hidden data-nosfx data-cursor-label="music">
       <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="lbl">music on</span>
@@ -45,59 +38,17 @@
 
   <section id="loading" class="route" aria-label="getting ready"></section>
   <section id="home" class="route" aria-label="your decks"></section>
+  <section id="start" class="route" aria-label="start a new deck"></section>
   <section id="editor" class="route" aria-label="deck editor"></section>
   <section id="plan" class="route" aria-label="plan your deck"></section>
   <section id="build" class="route" aria-label="build my deck"></section>
   <section id="finalize" class="route" aria-label="finalize"></section>
 
-  <section id="welcome" aria-label="welcome">
-    <div class="w-left w-anim">
-      <span class="badge">have a fresh idea?</span>
-      <h1 class="w-head">imagination<br>meets craft</h1>
-      <ol id="phases" class="phases" aria-label="how it works"></ol>
-    </div>
-    <div class="w-right w-anim">
-      <span class="badge">say hey</span>
-      <h2 class="w-head2">let’s team up!<br>bring us your idea*</h2>
-      <p class="w-note">*good things start with one spark. let’s make yours.</p>
-      <button id="begin" class="begin" type="button" data-nosfx data-cursor-label="go">
-        <span>let’s begin</span>
-        <span class="begin-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      </button>
-      <p class="w-plan">works with any Claude plan · Pro recommended</p>
-      <p id="welcomeBack" class="w-back" hidden>welcome back! you’ll pick up at <span id="resumeAt">step 2</span>.<br><button id="fresh" type="button" class="link">start fresh</button></p>
-    </div>
-  </section>
-
-  <section id="ask">
-    <div id="left">
-      <div id="badge" class="badge"></div>
-      <h1 id="headline" class="q"></h1>
-      <p id="lead" class="lead"></p>
-      <div id="leftSlot"></div>
-    </div>
-    <nav id="nav" aria-label="sections"></nav>
-    <div id="illus"></div>
-    <div id="fields"></div>
-    <div id="msg" role="alert">
-      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 17s-6.5-3.8-6.5-8.6A3.6 3.6 0 0 1 10 6.3a3.6 3.6 0 0 1 6.5 2.1C16.5 13.2 10 17 10 17z" fill="#d89cb3"/></svg>
-      <span class="msg-text"></span>
-    </div>
-    <div class="actions">
-      <button id="back" class="btn-back" type="button" data-nosfx data-cursor-label="back">
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M19 12H6M11 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>back</span>
-      </button>
-      <button id="next" class="btn-next" type="button" data-nosfx data-cursor-label="next">
-        <span class="lbl">next</span>
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <button id="make" class="btn-make" type="button" hidden data-nosfx data-cursor-label="let’s go">
-        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M11 2c1 6.5 3.4 8.9 10 10-6.6 1.1-9 3.5-10 10-1-6.5-3.4-8.9-10-10 6.6-1.1 9-3.5 10-10z" fill="currentColor"/></svg>
-        <span class="lbl">make my slides</span>
-      </button>
-    </div>
-  </section>
+  <div id="illus"></div>
+  <div id="msg" role="alert">
+    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 17s-6.5-3.8-6.5-8.6A3.6 3.6 0 0 1 10 6.3a3.6 3.6 0 0 1 6.5 2.1C16.5 13.2 10 17 10 17z" fill="#d89cb3"/></svg>
+    <span class="msg-text"></span>
+  </div>
 </div>
 
 <div id="announce" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>

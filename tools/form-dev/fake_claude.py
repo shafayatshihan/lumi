@@ -19,6 +19,7 @@ Trigger words (in the message, or for the first run also in the brief's notes):
   (session ids) containing dead-beef: --resume fails like the real CLI (stderr + result with errors); dead-quiet: exits 1 silently;
   fail-fresh      (in the message) a NON-resumed run exits 1 with an error on stderr
 Every run first says "[fake-argv] <json list of its arguments>" so tests can check the flags (--model, --resume ...),
+then "[fake-env] LUMI_INTERVIEW=<path|empty>" (what the Stop hook hands deck_check for rule L-15),
 and a resumed run also says "[fake-heard] <the message>" (to check the [slide N] prefix). A slide's own fresh conversation
 ("[slide-conversation ..." first line) says "[fake-context] <its context>" and "[fake-heard] <the message after it>", and
 behaves like a reply (it never starts a new deck).
@@ -155,6 +156,9 @@ out({'type': 'system', 'subtype': 'init', 'session_id': session, 'cwd': str(cwd)
      'tools': ['Read', 'Write', 'Edit', 'Bash'], 'permissionMode': 'acceptEdits'})
 defang = lambda t: t.replace('[[aura:', '[[ aura:')      # an echo of the prompt must not look like markers Claude wrote
 say('[fake-argv] ' + defang(json.dumps(args, ensure_ascii=False)))
+# The Stop hook runs the full deck check inside this very run and needs to know which deck's interview.json to read;
+# the server puts it in LUMI_INTERVIEW. Echo it so a test can prove it really arrives in the child's environment.
+say('[fake-env] LUMI_INTERVIEW=' + (os.environ.get('LUMI_INTERVIEW') or ''))
 if SC: say('[fake-context] ' + defang(CTX_PART[:240]) + f' ... ({len(CTX_PART)} chars; digest={"The plan in short:" in CTX_PART}; '
                  f'notes={"How the slides already built" in CTX_PART}; since={"Since you last worked" in message})')
 if resume or SC: say('[fake-heard] ' + defang(message[:300]))
@@ -279,6 +283,41 @@ def v(main, comps=(), detail=None, motion=None, phrase=''):
 
 
 plan_marker = lambda: f'[[aura:plan path="{folder}/plan.json"]]'
+
+# ---------------------------------------------------------------- the interview (interview batch 1)
+# "[interview] ..." messages: ask a choice + a text question per round and end with [[aura:ask]]; after AURA_FAKE_INTERVIEW_ROUNDS
+# rounds (or when the server's "you have enough to plan" nudge is in the message) write interview.json done:true and end with
+# [[aura:interview-done]]. Triggers in the message: int-silent (says nothing Lumi can read), take-your-time (a long run).
+if '[interview]' in message:
+    mi = re.search(r'(\.aura/decks/[A-Za-z0-9_-]+)/interview\.json', message)
+    ipath = cwd / (mi.group(1) if mi else folder or '.aura/decks/none') / 'interview.json'
+    try: iv = json.loads(ipath.read_text(encoding='utf-8'))
+    except Exception: iv = {}
+    rnd = int(iv.get('round') or 1)
+    nudged = 'enough to plan' in message
+    say(f'[fake-interview] round={rnd} nudge={nudged} handoff={"taking over" in message} resume={bool(resume)} '
+        f'added={"arrived" in message} answered={"answered your last" in message}')
+    if trigger('take-your-time'):
+        end = time.time() + float(os.environ.get('AURA_FAKE_LONG', '60'))
+        while time.time() < end: time.sleep(0.5)
+    if trigger('int-silent'):
+        t = 'I have been thinking about your talk.'
+        say(t); result(t); sys.exit(0)
+    save_ctx(int(os.environ.get('AURA_FAKE_INTERVIEW_CTX', '8000')))
+    if nudged or rnd >= int(os.environ.get('AURA_FAKE_INTERVIEW_ROUNDS', '3')):
+        iv['conclusions'] = dict(iv.get('conclusions') or {}, audience='Examiners', duration='12 min')
+        iv['identity'] = {'established': ['presenter'], 'presenters': ['Fake Presenter']}
+        iv['done'] = True
+        ipath.parent.mkdir(parents=True, exist_ok=True)
+        ipath.write_text(json.dumps(iv, indent=2, ensure_ascii=False), encoding='utf-8')
+        tool('Write', {'file_path': str(ipath), 'content': '{...}'}, 'File written')
+        t = 'I know enough to plan this talk.\n[[aura:interview-done]]'
+        say(t); result(t); sys.exit(0)
+    t = (f'Thanks, that helps (round {rnd}).\n'
+         f'[[aura:choice id="q{rnd}a" question="Who is in the room (round {rnd})?" options="Examiners|Classmates|Both" multi="no" default="Examiners"]]\n'
+         f'[[aura:text id="q{rnd}b" question="What must they remember (round {rnd})?" placeholder="one sentence" lines="3"]]\n'
+         '[[aura:ask]]')
+    say(t); result(t); sys.exit(0)
 
 if '[plan-mode]' in message and folder:
     if not resume:

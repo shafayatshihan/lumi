@@ -149,6 +149,10 @@ const out = {
   illusNoMark: j([S('42 %', 'illustrative shape')], [{ slide: 1, text: '42 %', kind: 'illustrative' }]).errors.length,
   illusOk: j([S('42 % (illustrative)', 'illustrative shape', { visibleIllustrative: true })], [{ slide: 1, text: '42 %', kind: 'illustrative' }]).errors.length,
   title: c.titleFields({ people: { presenters: [{ name: 'Shafayat Islam' }], supervisor: 'Dr. Jane Rahman' }, basics: { date: '2026-10-05' } }, 'Shafayat Islam, 2026').length,
+  // L-15 after the interview: the brief carries ONLY the identity fields the interview established.
+  idNone: c.titleFields({ identity: [] }, 'A talk with nobody named on it').length,
+  idMissing: c.titleFields({ identity: [{ label: 'presenter', value: 'Shafayat Islam' }, { label: 'supervisor', value: 'Dr. Jane Rahman' }] }, 'Shafayat Islam, 2026').length,
+  idWins: c.titleFields({ identity: [], people: { supervisor: 'Dr. Jane Rahman' } }, 'nobody').length,
 };
 console.log(JSON.stringify(out));
 """, str(ENGINE / 'tools' / 'lib' / 'claims.js')], REPO)
@@ -162,6 +166,8 @@ console.log(JSON.stringify(out));
     check('B-05: published needs a cite shown + noted; computed needs traced inputs; illustrative needs the mark on the slide',
           u.get('publishedOk') == 0 and u.get('computedBad', 0) >= 1 and u.get('illusNoMark', 0) >= 1 and u.get('illusOk') == 0, u)
     check('L-15: title-slide fields from the brief (missing supervisor is reported)', u.get('title') == 1, u)
+    check('L-15: brief.identity is the contract: an empty list demands nothing, a listed name still has to be on the slide',
+          u.get('idNone') == 0 and u.get('idMissing') == 1 and u.get('idWins') == 0, u)
 
     if not browser:
         return

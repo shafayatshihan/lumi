@@ -144,18 +144,34 @@ function judge({ slides, corpus, prov, brief }) {
   return { errors, warnings, stat };
 }
 
-// the title slide must carry what the brief gives (presenters, supervisor, institution, event, date)
-function titleFields(brief, text) {
+// L-15: the title slide must carry the identity the BRIEF ESTABLISHED - nothing more.
+// `brief.identity` is the contract the interview writes: [{label, value}, ...], built only from the fields Claude
+// actually asked about AND got a value for. An absent or empty list means nobody was named, so a deck with no
+// supervisor, no institution and no event is legal - which is the point of replacing the 40-field form.
+// The old people.* / basics.* shape is kept for ONE release so a deck made with v0.5.3 still fails exactly where it
+// did before; it is read only when `identity` is missing entirely (an explicit empty list wins over it).
+function identityList(brief) {
   if (!brief) return [];
-  const words = v => clean(v).toLowerCase().split(/[^a-z0-9À-￿]+/).filter(w => w.length >= 3 && !/^(the|and|dept|department|university|prof|professor|dr)$/.test(w));
-  const T = clean(text).toLowerCase();
-  const want = [];
+  if (Array.isArray(brief.identity)) {
+    return brief.identity
+      .map(x => (x && typeof x === 'object' ? [String(x.label || '').trim() || 'name', x.value] : null))
+      .filter(x => x && x[1] != null && String(x[1]).trim());
+  }
+  const want = [];                                               // ---- one-release fallback: the v0.5.3 brief shape ----
   const P = (brief.people || {});
   (Array.isArray(P.presenters) ? P.presenters : []).forEach(p => p && p.name && want.push(['presenter', p.name]));
   ['supervisor:supervisor', 'institution:institution', 'department:department'].forEach(k => { const [f, l] = k.split(':'); if (P[f]) want.push([l, P[f]]); });
   const B = brief.basics || {};
   if (B.event) want.push(['event', B.event]);
   if (B.date) { const y = String(B.date).match(/\b(19|20)\d\d\b/); if (y) want.push(['date', y[0]]); }
+  return want;
+}
+
+function titleFields(brief, text) {
+  const want = identityList(brief);
+  if (!want.length) return [];
+  const words = v => clean(v).toLowerCase().split(/[^a-z0-9À-￿]+/).filter(w => w.length >= 3 && !/^(the|and|dept|department|university|prof|professor|dr)$/.test(w));
+  const T = clean(text).toLowerCase();
   const missing = [];
   for (const [label, v] of want) {
     const ws = words(v); if (!ws.length) continue;
@@ -165,4 +181,4 @@ function titleFields(brief, text) {
   return missing;
 }
 
-module.exports = { numerals, loadCorpus, loadProvenance, judge, titleFields, clean, inCorpus };
+module.exports = { numerals, loadCorpus, loadProvenance, judge, titleFields, identityList, clean, inCorpus };

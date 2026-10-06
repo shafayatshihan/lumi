@@ -10,9 +10,10 @@
           <h1 class="bb-thanks bb-msg" aria-label="Closing message" data-edit="s{{N}}-0">One sentence that fits <span class="em">this talk</span></h1>
           <p class="bb-q" data-edit="s{{N}}-1"><span class="bb-ping"></span>A last line: question, next step or contact</p>
           <div class="bb-rule"></div>
+          <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. A deck with no supervisor must have no "With thanks" line - never invent a role the interview did not establish. -->
           <ul class="bb-people">
-            <li><span class="lb" data-edit="s{{N}}-2">Presented by</span><strong data-edit="s{{N}}-3">Presenter Name</strong><em data-edit="s{{N}}-4">ID or role</em></li>
-            <li class="gap"><span class="lb" data-edit="s{{N}}-5">With thanks</span><strong data-edit="s{{N}}-6">Supervisor Name</strong><em data-edit="s{{N}}-7">Title, institution</em></li>
+            <li data-optional="identity"><span class="lb" data-edit="s{{N}}-2">Presented by</span><strong data-edit="s{{N}}-3">Presenter Name</strong><em data-edit="s{{N}}-4">ID or role</em></li>
+            <li class="gap" data-optional="identity"><span class="lb" data-edit="s{{N}}-5">With thanks</span><strong data-edit="s{{N}}-6">Supervisor Name</strong><em data-edit="s{{N}}-7">Title, institution</em></li>
           </ul>
         </div>
         <div class="bb-r w5"></div>

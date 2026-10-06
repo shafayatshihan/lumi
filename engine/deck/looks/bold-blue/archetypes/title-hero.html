@@ -6,9 +6,10 @@
       <div class="bb-hero">
         <p class="kicker dot" data-edit="s{{N}}-1">Course · Institution</p>
         <h1 class="title" data-edit="s{{N}}-2">A clear title that says what the talk is about</h1>
+        <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. A deck with no supervisor must have no "With thanks" line - never invent a role the interview did not establish. -->
         <ul class="bb-meta">
-          <li data-edit="s{{N}}-3"><span class="lb">Presented by</span><b>Presenter Name</b></li>
-          <li data-edit="s{{N}}-4"><span class="lb">For</span><b>Course or event</b><br>Institution</li>
+          <li data-optional="identity" data-edit="s{{N}}-3"><span class="lb">Presented by</span><b>Presenter Name</b></li>
+          <li data-optional="identity" data-edit="s{{N}}-4"><span class="lb">For</span><b>Course or event</b><br>Institution</li>
         </ul>
       </div>
       <footer class="bb-foot"><span class="bb-mark" data-edit="s{{N}}-5">Deck mark</span><span class="bb-pageno"></span></footer>

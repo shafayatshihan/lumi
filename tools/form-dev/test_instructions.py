@@ -20,8 +20,9 @@ REPO = Path(__file__).resolve().parents[2]
 ENGINE = REPO / 'engine'
 SKILL = REPO / 'workspace' / '.claude' / 'skills' / 'aura-slide'
 CLAUDE_MD = REPO / 'workspace' / '.claude' / 'CLAUDE.md'
-DOCS = [CLAUDE_MD] + [SKILL / n for n in ('SKILL.md', 'planning.md', 'building.md', 'editing.md', 'deck-toolkit.md',
-                                          'aura-blend.md', 'story-arcs.md', 'enforcement.md')] + [SKILL / 'looks' / 'bold-blue' / 'LOOK.md']
+DOCS = [CLAUDE_MD] + [SKILL / n for n in ('SKILL.md', 'planning.md', 'interviewing.md', 'building.md', 'editing.md',
+                                          'deck-toolkit.md', 'aura-blend.md', 'story-arcs.md',
+                                          'enforcement.md')] + [SKILL / 'looks' / 'bold-blue' / 'LOOK.md']
 
 
 def read(p):
@@ -49,7 +50,8 @@ def run(check):
     bad = []
     for c in cases:
         r = am.scan(c['text'])
-        got = [{'name': m['name'], 'attrs': m['attrs'], 'line': m['line'], **({'choice': m['choice']} if 'choice' in m else {})} for m in r['markers']]
+        got = [{'name': m['name'], 'attrs': m['attrs'], 'line': m['line'], **({'choice': m['choice']} if 'choice' in m else {}),
+                **({'text': m['text']} if 'text' in m else {})} for m in r['markers']]
         gp = [{'line': p['line'], 'reason': p['reason'], 'marker': p['marker']} for p in r['problems']]
         if got != c['markers'] or gp != c['problems']: bad.append(c['name'])
     check(f'Python reads all {len(cases)} shared marker cases', not bad, bad)
@@ -67,7 +69,15 @@ def run(check):
         norm_js = {k: {'form': v.get('form'), 'required': v.get('required'), 'optional': v.get('optional')} for k, v in spec_js['markers'].items()}
         check('markers.js carries an identical copy of markers.json (markers, stages, limits)',
               norm == norm_js and spec_js['stages'] == mk_spec['stages'] and spec_js['limits'] == mk_spec['limits'])
-    check('Python limits: 8 options, questions cut at 200, options at 60', am.LIMITS == {'options': 8, 'questionChars': 200, 'optionChars': 60, 'whenChars': 200})
+    check('Python limits: 8 options, questions cut at 200, options at 60, free text at 1200',
+          am.LIMITS == {'options': 8, 'questionChars': 200, 'optionChars': 60, 'whenChars': 200,
+                        'answerChars': 1200, 'placeholderChars': 60, 'maxLines': 6})
+    # [[aura:text]] is a SIBLING of choice, never a zero-option choice (interview plan section 1)
+    check('a zero-option choice is still refused', am.scan('[[aura:choice id="q1" question="x?" options=""]]')['problems'][0]['reason'] == 'missing-options')
+    t = am.find('[[aura:text id="q1" question="What must they do afterwards?" lines=2]]', 'text')
+    check('a text marker is normalised beside the choice one', t and t[0]['text']['lines'] == 2 and t[0]['text']['placeholder'] == '')
+    check('a text marker needs its question', am.scan('[[aura:text id="q1"]]')['problems'][0]['reason'] == 'missing-question')
+    check('the text marker is named in plain words', am.describe({'reason': 'missing-question', 'marker': 'text'}).startswith('claude wrote a question in your own words'))
 
     skill = read(SKILL / 'SKILL.md')
     listed = set(re.findall(r'\[\[aura:([a-z][a-z-]*)', skill.split('## Asking questions')[0].split('**The markers**')[1]))
@@ -202,7 +212,9 @@ def run(check):
     check('the build message and CLAUDE.md agree on where the deck is packed', '(never into "4 - Your slides")' not in msg and f'.aura/decks/{did}/' in msg and '[deck-folder' in read(CLAUDE_MD))
     bm = read(SKILL / 'building.md')
     check('the step card is one block in building.md', bm.count('<!-- step-card -->') == 1 and bm.count('<!-- /step-card -->') == 1)
-    for need in ('closing slide is designed', 'title slide carries every name', 'BUILD ONLY THIS SLIDE', 'wooden base'):
+    # L-15 changed shape with the interview: the step card now names the identity LIST, not a fixed set of roles
+    for need in ('closing slide is designed', 'built from the brief’s `identity` list'.replace('’', "'"),
+                 'never a role the interview did not establish', 'BUILD ONLY THIS SLIDE', 'wooden base'):
         check(f'the step card repeats a rule both real runs skipped: {need}', need in msg)
 
     print('\n[instructions: one statement of each fact]')

@@ -1,10 +1,10 @@
 // "Plan your deck" (v0.5, every look). Before anything is built, Claude suggests the slides; the person checks them.
-// States: intro (two big buttons: plan with Claude / skip, I'm in a hurry) -> planning (Claude reads the files once)
+// States: the interview -> the look -> planning (Claude reads the files once)
 // -> the plan: a draggable slide list on the left, the selected slide's words in the middle, its picture on the right,
 // deck-wide questions in a strip on top, per-slide questions as badges. Every edit to a slide asks Claude for a quick
 // re-plan of that slide only (queued on the server, sonnet/high); neighbours it changed flash; "✓ all clear" or a new
 // question comes back. One main picture per slide: clashing chips are greyed with a reason and two fixes.
-// mountPlan(el, { deckId?, audio, setMode, onStarted(deckId), onHurry(deckId?) -> Promise<bool>, onBuild(deckId), onHome }) -> { destroy() }
+// mountPlan(el, { deckId?, audio, setMode, onStarted(deckId), onBuild(deckId), onHome }) -> { destroy() }
 // Also exports the pieces the build page reuses: slideEditor(), doubtCard(), MAINS, COMPANIONS.
 import * as api from './api.js';
 import { parseWhen, whenMatches } from './markers.js';
@@ -342,9 +342,48 @@ export function slideEditor(slide, ctx = {}) {
   return { el, set, meter: meterEl, note: why, destroy() { clearTimeout(whyT); if (fixClose) fixClose(false); }, get slide() { return clone(s); }, focusTitle: () => title.focus({ preventScroll: true }) };
 }
 
+// ---------------------------------------------------------------- what this deck costs (section 6)
+// Two things, in plain words, and never money and never the machine's own units: how long the deck takes to make, and how much
+// of today's claude allowance is left. The allowance is only ever as fresh as the last time claude was working, so it
+// carries an honest "as of" stamp - and when lumi has no trustworthy reading at all, the whole line is left out rather
+// than guessed at (the server sends cost.allowance = null for that).
+const hoursWords = s => {
+  if (!(s > 0)) return '';
+  const m = Math.round(s / 60);
+  if (m < 2) return 'about a minute';
+  if (m < 50) return `about ${m} minutes`;
+  const q = Math.round(m / 15) / 4;                       // to the nearest quarter hour, said the way a person says it
+  if (q <= 1) return 'about an hour';
+  if (q === 1.25 || q === 1.5) return 'about an hour and a half';
+  const w = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+  const hh = Math.round(q), half = Math.abs(q - Math.floor(q) - 0.5) < 0.13 ? Math.floor(q) : 0;
+  if (half && w[half]) return `about ${w[half]} and a half hours`;
+  return `about ${w[hh] || hh} hours`;
+};
+const SHARE = [[0.04, 'almost none'], [0.16, 'about a tenth'], [0.3, 'about a quarter'], [0.42, 'about a third'],
+  [0.58, 'about half'], [0.72, 'about two thirds'], [0.88, 'about three quarters'], [2, 'nearly all']];
+const shareWords = f => (SHARE.find(x => f < x[0]) || SHARE[SHARE.length - 1])[1];
+const clockOf = sec => { const d = new Date(sec * 1000); return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase().replace(/\s+/g, ' '); };
+// -> [{ text, warn }] lines, or [] when there is nothing honest to say
+export function costLines(cost) {
+  const b = (cost && cost.build) || null, a = (cost && cost.allowance) || null, out = [];
+  const build = b && b.seconds > 0 ? hoursWords(b.seconds) : '';
+  if (build) out.push({ text: `${build} to make this deck` + (b.rendered ? `, because ${b.rendered === 1 ? 'one slide gets' : `${b.rendered} slides get`} a photo-real picture, made with blender` : ''), warn: false });
+  if (!a || !isFinite(a.pct)) return out;                 // missing or stale: the time stands on its own
+  const left = Math.max(0, Math.min(1, 1 - a.pct / 100));
+  const stamp = clockOf(a.capturedAt);
+  out.push({ text: `${shareWords(left)} of your claude allowance is left today${stamp ? ` · as of ${stamp}` : ''}`, warn: false });
+  // over budget: say so plainly and change NOTHING. the person decides which slide to make simpler.
+  const secsLeft = a.resetsAt ? a.resetsAt - Date.now() / 1000 : 0;
+  if (build && secsLeft > 0 && b.seconds > secsLeft) {
+    out.push({ text: `this deck needs ${build}, and your allowance refills ${clockOf(a.resetsAt) ? `at ${clockOf(a.resetsAt)}` : 'later today'}. you can still start it - it carries on afterwards - or make a slide or two simpler first.`, warn: true });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- the page
 const PER_PAGE_TALL = 10, PER_PAGE_SHORT = 9;
-export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurry, onBuild, onHome } = {}) {
+export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuild, onHome } = {}) {
   const sfx = n => { try { audio && audio.sfx && audio.sfx(n); } catch (e) { /* optional */ } };
   let alive = true, pay = null, plan = null, sel = null, page = 0, pollT = 0, saveT = 0, files = [], lastSeq = 0, noticeSeq = -1;
   let dirty = new Set(), pendingSave = false, editor = null, editorFor = null, view = '', snappedFor = null;
@@ -355,7 +394,8 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
   const dragState = { id: null };
 
   const homeB = h('button', { type: 'button', class: 'ed-home pl-home', 'data-cursor-label': 'library' }, h('span', { html: ICON.back }), 'my decks');
-  const head = h('div', { class: 'pl-head' }, h('h1', { class: 'pl-h' }, 'plan your deck'), h('p', { class: 'pl-sub' }, ''));
+  const costEl = h('div', { class: 'pl-cost', hidden: true, role: 'status' });
+  const head = h('div', { class: 'pl-head' }, h('h1', { class: 'pl-h' }, 'plan your deck'), h('p', { class: 'pl-sub' }, ''), costEl);
   const buildB = h('button', { type: 'button', class: 'pl-build', 'data-nosfx': '', 'data-cursor-label': 'build' }, h('span', {}, 'build my deck'), h('span', { html: ICON.right }));
   const strip = h('div', { class: 'pl-strip', 'aria-label': 'questions about the whole deck' });
   const list = h('div', { class: 'pl-list', role: 'listbox', 'aria-label': 'your slides' });
@@ -372,10 +412,12 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
   const card = h('div', { class: 'pl-card' }, cardHead, cardBody, shim, badgePop);
   const main = h('div', { class: 'pl-main' }, strip, listCol, card);
   const intro = h('div', { class: 'pl-intro' });
+  const ivHost = h('div', { class: 'pl-ivhost', hidden: true });                  // the interview's own centred scene
+  const thHost = h('div', { class: 'pl-thhost', hidden: true });                  // the theme, its own step after the interview
   const toast = h('p', { class: 'pl-toast', role: 'status' });
   const undoB = h('button', { type: 'button', class: 'pl-undo', hidden: true, 'data-cursor-label': 'undo', 'data-nosfx': '' });
   const modal = h('div', { class: 'pl-modal', hidden: true });
-  el.replaceChildren(homeB, head, buildB, main, intro, toast, undoB, modal);
+  el.replaceChildren(homeB, head, buildB, main, intro, ivHost, thHost, toast, undoB, modal);
   // F-06: the "ready to build?" dialog takes focus, traps Tab, hides the page behind it and gives focus back
   const openModal = node => { if (modalRel) modalRel(false); modal.replaceChildren(node); modal.hidden = false; modalRel = openDialog(node, { host: modal, onEsc: closeModal }); };
   function closeModal() { modal.hidden = true; if (modalRel) { modalRel(); modalRel = null; } }
@@ -409,25 +451,25 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
   const say = (t, bad) => { toast.textContent = t; toast.classList.toggle('bad', !!bad); toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('show'), 4200); };
   homeB.addEventListener('click', () => { sfx('back'); onHome && onHome(); });
 
-  // ---------------------------------------------------------------- intro: plan with claude, or skip
+  // ---------------------------------------------------------------- intro: start planning
+  // There is only one way to make a deck now: the interview, then the look, then the plan. The old "skip, i'm in a
+  // hurry" button is gone (interview plan section 9) - it built a whole deck from answers nobody had checked. This
+  // screen is what a deck made before that change still lands on when it has never been planned.
   function showIntro() {
     view = 'intro';
     setMode && setMode('home');
-    main.hidden = true; buildB.hidden = true; head.hidden = true; intro.hidden = false;
-    const planB = h('button', { type: 'button', class: 'pl-big pl-ink', 'data-nosfx': '', 'data-cursor-label': 'plan' },
-      h('span', { class: 'pl-big-i', html: ICON.spark }), h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'plan with claude'),
-        h('span', { class: 'pl-big-tag' }, 'recommended'), h('span', { class: 'pl-big-s' }, 'claude suggests the slides first. you check them, then it builds them one by one.')));
-    const skipB = h('button', { type: 'button', class: 'pl-big', 'data-nosfx': '', 'data-cursor-label': 'skip' },
-      h('span', { class: 'pl-big-i', html: ICON.right }), h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'skip, i’m in a hurry'),
-        h('span', { class: 'pl-big-s' }, 'claude builds the whole deck in one go. you can change it afterwards.')));
-    intro.replaceChildren(h('span', { class: 'badge' }, 'plan your deck'), h('h1', { class: 'q pl-intro-h' }, 'shall we plan the slides first?'),
-      h('p', { class: 'lead pl-intro-l' }, 'a plan takes a minute or two and saves a lot of fixing later.'), h('div', { class: 'pl-bigs' }, planB, skipB));
+    main.hidden = true; buildB.hidden = true; head.hidden = true; intro.hidden = false; ivHost.hidden = true; thHost.hidden = true;
+    const planB = h('button', { type: 'button', class: 'pl-big pl-ink pl-big-s1', 'data-nosfx': '', 'data-cursor-label': 'plan' },
+      h('span', { class: 'pl-big-i', html: ICON.spark }), h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'plan my slides'),
+        h('span', { class: 'pl-big-s' }, 'claude suggests the slides first. you check them, then it builds them one by one.')));
+    intro.replaceChildren(h('span', { class: 'badge' }, 'plan your deck'), h('h1', { class: 'q pl-intro-h' }, 'shall we plan the slides?'),
+      h('p', { class: 'lead pl-intro-l' }, 'a plan takes a minute or two and saves a lot of fixing later.'), h('div', { class: 'pl-bigs' }, planB));
     planB.addEventListener('click', async () => {
-      planB.disabled = skipB.disabled = true; sfx('launch');
+      planB.disabled = true; sfx('launch');
       const r = await api.plan.start(deckId || undefined);
       if (!alive) return;
       if (!r || r.ok === false) {
-        planB.disabled = skipB.disabled = false; sfx('error');
+        planB.disabled = false; sfx('error');
         say(r && r.error === 'busy' ? 'claude is still busy with another deck. try again when it’s done.' : r && r.error === 'cli-missing' ? 'claude isn’t installed on this computer yet.' : 'claude couldn’t start. try again in a moment.', true);
         return;
       }
@@ -435,11 +477,61 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
       onStarted && onStarted(deckId);
       refresh();
     });
-    skipB.addEventListener('click', async () => {
-      planB.disabled = skipB.disabled = true; sfx('launch');
-      const ok = onHurry ? await onHurry() : false;
-      if (alive && !ok) { planB.disabled = skipB.disabled = false; say('claude couldn’t start. is it still busy with another deck?', true); }
+  }
+
+  // ---------------------------------------------------------------- the look: its own step, after the interview
+  // The interview is forbidden to ask about appearance (it asks only what costs time or changes meaning), and the form
+  // that used to ask is gone, so the look is asked here - once, on its own, right before planning.
+  let thScene = null, thLoading = false, thLook = null;
+  function showTheme(p) {
+    if (view === 'theme') return;
+    view = 'theme';
+    setMode && setMode('home');
+    main.hidden = true; buildB.hidden = true; head.hidden = true; intro.hidden = true; ivHost.hidden = true; thHost.hidden = false;
+    thLook = p.look || null;
+    const listEl = h('div', { class: 'th-list' });
+    const illus = h('div', { class: 'th-illus' }, h('div', { class: 'illus-slot' }));
+    const goB = h('button', { type: 'button', class: 'pl-big pl-ink pl-big-s1', 'data-nosfx': '', 'data-cursor-label': 'plan' },
+      h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'use this look, plan my slides'),
+        h('span', { class: 'pl-big-s' }, 'claude reads everything once more and suggests the slides. you check them before anything is built.')));
+    thHost.replaceChildren(h('div', { class: 'th' },
+      h('div', { class: 'th-left' }, h('span', { class: 'badge' }, 'the look'), h('h1', { class: 'th-h' }, 'pick a look'),
+        h('p', { class: 'th-lead' }, 'hover one to see it move, or let claude choose what suits your talk. this is the one thing claude never decides behind your back.'),
+        h('div', { class: 'pl-bigs' }, goB)),
+      illus, listEl));
+    if (!thLoading) {
+      thLoading = true;
+      import('./looks.js').then(m => {
+        if (!alive || view !== 'theme' || !m || !m.mountLooks) return;
+        thScene = m.mountLooks(listEl, illus.firstChild, { audio,
+          getState: () => ({ look: { theme: thLook } }),
+          setKey: (k, v) => { if (k === 'look.theme') thLook = v; } });
+      }, e => { console.warn('[aura] looks.js is not available', e); }).finally(() => { thLoading = false; });
+    }
+    goB.addEventListener('click', async () => {
+      goB.disabled = true; sfx('launch');
+      const r = await api.decks.patch(deckId, { look: thLook || 'Claude chooses' });
+      if (!alive) return;
+      if (!r || r.ok === false) {
+        goB.disabled = false; sfx('error');
+        say(r && r.reason ? r.reason : 'lumi couldn’t save that look. try again in a moment.', true);
+        return;
+      }
+      const s = await api.plan.start(deckId);
+      if (!alive) return;
+      if (!s || s.ok === false) {
+        goB.disabled = false; sfx('error');
+        say(s && s.error === 'busy' ? 'claude is still busy with another deck. try again when it’s done.' : s && s.error === 'cli-missing' ? 'claude isn’t installed on this computer yet.' : 'claude couldn’t start. try again in a moment.', true);
+        return;
+      }
+      dropTheme();
+      onStarted && onStarted(deckId);
+      refresh();
     });
+  }
+  function dropTheme() {
+    if (thScene) { try { thScene.destroy(); } catch (e) { /* fine */ } thScene = null; }
+    thHost.replaceChildren();
   }
 
   // ---------------------------------------------------------------- planning (claude reads the files once)
@@ -447,7 +539,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
     if (view !== 'planning') {
       view = 'planning';
       setMode && setMode('home');
-      main.hidden = true; buildB.hidden = true; head.hidden = false; intro.hidden = false;
+      main.hidden = true; buildB.hidden = true; head.hidden = false; intro.hidden = false; ivHost.hidden = true; thHost.hidden = true;
       const stopB = h('button', { type: 'button', class: 'pl-soft', 'data-cursor-label': 'stop' }, 'stop');
       let armed = 0;
       stopB.addEventListener('click', async () => {
@@ -459,16 +551,42 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
     }
     head.querySelector('.pl-sub').textContent = p.waiting ? 'claude has a question for you' : 'planning…';
   }
+  // ---------------------------------------------------------------- the interview (before any plan exists)
+  // Loaded only when a deck is actually in it, so an older deck never pays for the module. It gets the whole page to
+  // itself: head, slide list and build button are all hidden, because there is nothing to plan yet.
+  let ivScene = null, ivLoading = null, ivPending = null;
+  async function showInterview(p) {
+    if (view !== 'interview') {
+      view = 'interview';
+      setMode && setMode('home');
+      main.hidden = true; buildB.hidden = true; head.hidden = true; intro.hidden = true; ivHost.hidden = false; thHost.hidden = true;
+    }
+    if (!ivScene) {
+      if (ivLoading) { ivPending = p; return; }
+      ivLoading = import('./interview.js').then(m => {
+        if (!alive) return;
+        ivScene = m.interviewScene(ivHost, { sfx,
+          onAsk: async t => { const r = await api.interview.answer(deckId, t); if (r && r.ok === false) say('claude couldn’t take that answer. try again in a moment.', true); refresh(); },
+          onStart: async () => { const r = await api.interview.start(deckId); if (r && r.ok === false) say('claude couldn’t start. is it busy with another deck?', true); refresh(); },
+          onRetry: async () => { const r = await api.interview.start(deckId); if (r && r.ok === false) say('claude couldn’t start. try again in a moment.', true); refresh(); } });
+        ivScene.update(ivPending || p);
+        ivPending = null;
+      }, e => { console.warn('[aura] interview.js is not available', e); });
+      ivPending = p;
+      return;
+    }
+    ivScene.update(p);
+  }
   function showError(p) {
     view = 'error';
     setMode && setMode('home');
-    main.hidden = true; buildB.hidden = true; head.hidden = false; intro.hidden = false;
+    main.hidden = true; buildB.hidden = true; head.hidden = false; intro.hidden = false; ivHost.hidden = true; thHost.hidden = true;
     const again = h('button', { type: 'button', class: 'pl-big pl-ink pl-big-s1', 'data-nosfx': '' }, h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'try planning again')));
-    const skip = h('button', { type: 'button', class: 'pl-big pl-big-s1', 'data-nosfx': '' }, h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'skip, build in one go')));
     intro.replaceChildren(h('div', { class: 'pl-wait' }, h('h2', { class: 'pl-wait-h' }, 'the plan didn’t come through'),
-      h('p', { class: 'pl-wait-p' }, (p.planError || 'something went wrong.').toLowerCase()), h('div', { class: 'pl-bigs' }, again, skip)));
+      h('p', { class: 'pl-wait-p' }, (p.planError || 'something went wrong.').toLowerCase()),
+      h('p', { class: 'pl-wait-p' }, 'nothing you told claude is lost. pressing the button picks it up where it stopped.'),
+      h('div', { class: 'pl-bigs' }, again)));
     again.addEventListener('click', async () => { again.disabled = true; sfx('launch'); const r = await api.plan.start(deckId); if (r && r.ok === false) { again.disabled = false; say('claude couldn’t start. try again in a moment.', true); } refresh(); });
-    skip.addEventListener('click', async () => { skip.disabled = true; const ok = onHurry ? await onHurry(deckId) : false; if (!ok && alive) skip.disabled = false; });
   }
 
   // ---------------------------------------------------------------- the plan
@@ -498,7 +616,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
     if (view !== 'plan') {
       view = 'plan';
       setMode && setMode('work');
-      intro.hidden = true; main.hidden = false; head.hidden = false; buildB.hidden = false;
+      intro.hidden = true; main.hidden = false; head.hidden = false; buildB.hidden = false; ivHost.hidden = true; thHost.hidden = true;
     }
     if (!sel || idx(sel) < 0) sel = slides()[0] ? slides()[0].id : null;
     paintHead(); paintStrip(); paintList(); paintCard(); refreshBadge();
@@ -508,8 +626,18 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
     const sub = busy() ? 'claude is updating the plan…' : q ? `${n} slides · ${q} question${q > 1 ? 's' : ''} for you` : `${n} slides · ✓ all clear`;
     head.querySelector('.pl-sub').textContent = sub;
     head.querySelector('.pl-sub').classList.toggle('is-busy', busy());
+    paintCost();
     buildB.disabled = busy() || !n;
     buildB.title = busy() ? 'wait until claude has updated the plan' : '';
+  }
+  let costSig = '';
+  function paintCost() {
+    const lines = costLines(pay && pay.cost);
+    const sig = JSON.stringify(lines);
+    if (sig === costSig) return;
+    costSig = sig;
+    costEl.hidden = !lines.length;
+    costEl.replaceChildren(...lines.map(l => h('p', { class: 'pl-costl' + (l.warn ? ' is-warn' : '') }, l.text)));
   }
   function paintStrip(force = false) {
     const ds = openDoubts();
@@ -853,7 +981,17 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
     if (!pay) return;
     if (pay.buildStarted) { onBuild && onBuild(deckId); return; }
     const st = pay.planState;
+    // The interview comes BEFORE any plan, and only then. A deck that already has slides, or is planning, or was made
+    // before the interview existed (its state reads 'ready') never sees this screen, so a published v0.5.3 deck opens
+    // exactly where it always did.
+    const ivLive = pay.interviewState === 'asking' || pay.interviewState === 'waiting' || pay.interviewState === 'error';
+    // The look comes after the interview and before the plan, and only for a deck that has never been asked: a deck made
+    // by the old form carries its answer in its brief and the server reports it as already chosen, so it never stops here.
+    const themeDue = pay.interviewState === 'ready' && !pay.lookUser && !slides().length && st === 'none';
+    if (view === 'theme' && !themeDue) dropTheme();
     if (st === 'planning' || (pay.running && pay.runKind === 'plan')) showPlanning(pay);
+    else if (ivLive && !slides().length && st === 'none') showInterview(pay);
+    else if (themeDue) showTheme(pay);
     else if (st === 'error' && !slides().length) showError(pay);
     else if (slides().length || st === 'ready') showPlan();
     else showIntro();
@@ -865,7 +1003,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
     if (pay) return;
     view = 'opening'; offlineView = true;
     setMode && setMode('home');
-    main.hidden = true; buildB.hidden = true; head.hidden = true; intro.hidden = false;
+    main.hidden = true; buildB.hidden = true; head.hidden = true; intro.hidden = false; ivHost.hidden = true; thHost.hidden = true;
     const gone = r && r.status === 404;
     const retry = h('button', { type: 'button', class: 'pl-big pl-big-s1', 'data-nosfx': '' }, h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, gone ? 'back to my decks' : 'try again now')));
     retry.addEventListener('click', () => { if (gone) { onHome && onHome(); return; } retry.disabled = true; idle = 0; refresh().then(() => { retry.disabled = false; }); });
@@ -906,6 +1044,8 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onHurr
       alive = false; clearTimeout(pollT); clearTimeout(saveT); clearTimeout(toastT); clearTimeout(undoT); clearLater();
       if (modalRel) modalRel(false); if (addRel) addRel(false); if (badgeRel) badgeRel(false);
       if (editor) editor.destroy();
+      if (ivScene) { try { ivScene.destroy(); } catch (e) { /* fine */ } ivScene = null; }
+      dropTheme();
       if (pendingSave && deckId && plan) api.plan.save(deckId, plan, [...dirty]);
       removeEventListener('keydown', onKey);
       document.removeEventListener('dragend', onDocDragEnd);

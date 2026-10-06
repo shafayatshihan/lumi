@@ -107,6 +107,14 @@ export const plan = {
   answer: (id, doubtId, answer, other) => postJSON('/api/decks/' + encodeURIComponent(id) + '/plan/answer', { id: doubtId, answer, other }),
   suggest: (id, after) => postJSON('/api/decks/' + encodeURIComponent(id) + '/plan/suggest', { after }),
 };
+// the discovery conversation, before the plan: start/continue a round, and send a round's answers
+export const interview = {
+  // where a deck is born now that the 40-field form is gone: what the talk is about, and which file is the main one
+  create: (topic, mainReport) => postJSON('/api/interview/start', { topic: topic || '', mainReport: mainReport || '' }),
+  start: (id, topic) => postJSON('/api/decks/' + encodeURIComponent(id) + '/interview', topic ? { topic } : {}),
+  get: id => getJSON('/api/decks/' + encodeURIComponent(id) + '/interview'),
+  answer: (id, text) => postJSON('/api/decks/' + encodeURIComponent(id) + '/interview/answer', { text }),
+};
 export const build = {
   next: id => postJSON('/api/decks/' + encodeURIComponent(id) + '/build', { mode: 'next' }),
   rest: id => postJSON('/api/decks/' + encodeURIComponent(id) + '/build', { mode: 'rest' }),

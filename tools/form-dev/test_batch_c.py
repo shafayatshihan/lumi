@@ -231,7 +231,7 @@ def run(T):
         fs.RUNNER = type('R', (), {'running': False, 'busy': False, 'deck_id': None})()
         real = (fs.check_rules, fs.overflow_count)
         try:
-            fs.check_rules, fs.overflow_count = (lambda p: (None, 'The text-size check could not run (TimeoutExpired).')), (lambda p: None)
+            fs.check_rules, fs.overflow_count = (lambda p: (None, 'The text-size check could not run (TimeoutExpired).')), (lambda p, d=None: None)
             s, j = fs.edit_text('aaaaaaaaaaaa', 's1-t1', 'New words')
             check('S-02: check could not run -> the text is KEPT and the answer says it was not verified',
                   s == 200 and j.get('ok') and j.get('unchecked') and 'New words' in f.read_text(encoding='utf-8') and j.get('notice'), (s, j))
@@ -240,7 +240,7 @@ def run(T):
             check('S-02: a real rule failure still undoes the text, with the plain reason', s == 200 and j.get('ok') is False and j.get('error') == 'rules' and
                   'New words' in f.read_text(encoding='utf-8') and 'Newer' not in f.read_text(encoding='utf-8'), (s, j))
             fs.check_rules = lambda p: (True, '')
-            fs.overflow_count = lambda p: 0
+            fs.overflow_count = lambda p, d=None: 0
             s, j = fs.edit_text('aaaaaaaaaaaa', 's1-t1', 'Good words')
             check('S-02: a pass stays a plain ok (no unchecked flag)', j.get('ok') and not j.get('unchecked'), j)
         finally:

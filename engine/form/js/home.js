@@ -76,13 +76,16 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
     acct.title = plan === 'free' ? 'Lumi works, but Claude’s Free plan has very little Claude Code usage, so builds may stop early; Pro or higher is recommended.' : '';
     const label = String(st.planLabel || (plan ? plan + ' plan' : 'signed in')).toLowerCase();
     acctT.replaceChildren(...(st.signedIn ? [...(st.email ? [h('b', {}, st.email), ' · '] : []), h('b', {}, label)] : ['claude: not signed in']));
-    acctGo.textContent = st.signedIn ? 'switch account' : 'sign in';
+    acctSignedIn = !!st.signedIn;                      // the TRUTH: never re-derive this from the button label
+    if (!acctArm) acctGo.textContent = st.signedIn ? 'switch account' : 'sign in';   // don't clobber 'tap again'
   }
   const toSignin = () => { if (onSignin) onSignin(); };
-  let acctArm = 0;
+  let acctArm = 0, acctSignedIn = false;
   acctGo.addEventListener('click', async () => {
     if (acctGo.disabled) return;
-    const signedIn = acctGo.textContent === 'switch account';
+    // NOT acctGo.textContent: the first tap rewrites it to 'tap again to switch', so the second tap used to read
+    // signedIn === false and skip the sign-out entirely (the 'second tap never signs out' launch blocker).
+    const signedIn = acctSignedIn;
     if (signedIn && !acctArm) { sfx('pop'); acctGo.textContent = 'tap again to switch'; acctArm = setTimeout(() => { acctArm = 0; acctGo.textContent = 'switch account'; }, 3000); return; }
     clearTimeout(acctArm); acctArm = 0;
     acctGo.disabled = true; sfx('launch');

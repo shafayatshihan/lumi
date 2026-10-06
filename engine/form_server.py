@@ -80,8 +80,20 @@ WEB_PROMPT_PLAN = (' This is a PLANNING step: never stop to ask and never write 
                    'default, which the plan page shows and the person answers there. Finish with the [[aura:plan]] line.')
 
 
+# The interview is the one run where asking IS the job, so WEB_PROMPT_PLAN's "never stop to ask" must not reach it.
+WEB_PROMPT_INTERVIEW = (' This is the INTERVIEW step: asking IS the work. Find out what this talk must contain and how '
+                        'much work it is; never ask about colours, fonts, layout, slide count, the theme or 2D vs 3D '
+                        '(those are decided later, where their cost is visible). Ask with [[aura:choice ...]] lines when '
+                        'the answers are a short closed list and [[aura:text ...]] lines when no list could hold the '
+                        'answer, then [[aura:ask]] as the last line, and end your turn. Plan nothing and build nothing '
+                        'yet. When no doubt is left that would change a slide, write interview.json with "done": true '
+                        'and end with the line [[aura:interview-done]].')
+
+
 def web_prompt(kind=None):
     """The system prompt for one run (see the precedence note above)."""
+    if kind == 'interview':
+        return WEB_PROMPT + WEB_PROMPT_INTERVIEW
     return WEB_PROMPT + (WEB_PROMPT_PLAN if kind in ('plan', 'replan') else WEB_PROMPT_ASK)
 FIRST_MESSAGE = ('show your aura\n\n[from-web] Started from the Lumi web app. The brief is saved and the user '
                  'reviewed it, so skip the confirmation step and build the slides.')
@@ -145,6 +157,47 @@ def write_atomic(path, text):
     tmp = path.with_name(f'.{path.name}.{uuid.uuid4().hex[:8]}.tmp')
     _write_synced(tmp, text.encode('utf-8'))
     replace_retry(tmp, path)
+
+
+# ---------------------------------------------------------------- the interview artifact (interview plan section 4)
+# <work>/interview.json is the ONLY memory of the interview: never in memory like PLANQ, which does not survive a
+# restart. It is rewritten atomically BEFORE every launch and again on every parsed turn, and the open question is
+# written BEFORE it is shown, so a crash can never strand the person with a question the server cannot answer against.
+INTERVIEW_V = 1
+INTERVIEW_STATES = ('none', 'asking', 'waiting', 'ready', 'error')
+
+
+def interview_path(deck_id):
+    return work_dir(deck_id) / 'interview.json'
+
+
+def interview_rel(deck_id):
+    return f'{work_rel(deck_id)}/interview.json'
+
+
+def interview_args(deck_id):
+    """The `--interview <path>` flag for deck_check.js, or nothing at all. deck_check is handed a BUILD FOLDER and the
+    deck id cannot be read back off it, so whoever knows the deck has to name the file. Without the flag the checker
+    reads the old .aura/brief/brief.json, which is exactly what a deck made before the interview existed needs."""
+    try:
+        p = interview_path(deck_id) if deck_id else None
+        return ['--interview', str(p)] if p and p.is_file() else []
+    except (OSError, ValueError):
+        return []
+
+
+def read_interview(deck_id):
+    try:
+        d = json.loads(interview_path(deck_id).read_text(encoding='utf-8'))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_interview(deck_id, data):
+    data['updatedAt'] = now_iso()
+    write_atomic(interview_path(deck_id), json.dumps(data, indent=2, ensure_ascii=False))
+    return data
 
 
 def inside(child, base):
@@ -411,11 +464,15 @@ def rel_root(p):
 
 # ---------------------------------------------------------------- deck library (.aura/decks/<id>.json)
 DECK_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
-DECK_ROUTE = re.compile(r'^/api/decks/([A-Za-z0-9_-]{1,64})(?:/(thumb\.png|slides|slides/(\d{1,3})\.png|text|plan|plan/answer|'
+DECK_ROUTE = re.compile(r'^/api/decks/([A-Za-z0-9_-]{1,64})(?:/(thumb\.png|slides|slides/(\d{1,3})\.png|text|'
+                        r'interview/answer|interview|plan|plan/answer|'
                         r'plan/suggest|build|finalize|pptx))?$')
 DECK_LOCK = threading.RLock()
+# plannedAt: when a plan with slides was first written. It is NOT the same question as "does this deck have a Claude
+# session": with one shared conversation the interview opens the session long before planning, so the planning step must
+# resume on sessionId but still send the FULL briefing until plannedAt exists (otherwise the briefing is silently lost).
 DECK_FIELDS = ('id', 'title', 'file', 'look', 'quality', 'createdAt', 'updatedAt', 'sessionId', 'brief', 'build', 'flow',
-               'planState', 'buildRest', 'buildTarget', 'archived', 'caps')
+               'interviewState', 'interviewError', 'planState', 'plannedAt', 'buildRest', 'buildTarget', 'archived', 'caps')
 
 # What a deck is PINNED to when it is created (batch 6 spec section 0, item 8). v0.5.2 is public, so other people's
 # decks exist: a deck must keep rendering the way it was built, whatever Lumi's defaults become afterwards. A record
@@ -503,7 +560,7 @@ def new_deck(brief=None, **fields):
     t = now_iso()
     rec = {'id': uuid.uuid4().hex[:12], 'title': str(basics.get('title') or '').strip() or 'Untitled deck', 'file': None,
            'look': look_of(brief), 'quality': quality_of(brief), 'createdAt': t, 'updatedAt': t, 'sessionId': None,
-           'brief': brief, 'build': None, 'caps': dict(DECK_CAPS)}
+           'brief': brief, 'build': None, 'caps': dict(DECK_CAPS), 'interviewState': 'asking'}
     rec.update(fields)
     return save_deck(rec, touch=False)
 
@@ -749,14 +806,14 @@ def check_rules(packed):
 OVERFLOW_RE = re.compile(r'^\s*ERROR .*(cut off by its box|edge safe zone)', re.M)
 
 
-def overflow_count(packed):
+def overflow_count(packed, deck_id=None):
     """How many texts deck_check sees running off their box or into the slide edge (None if the check cannot run).
     check_rules only measures text size, so a long direct tweak could otherwise spill off the slide unnoticed."""
     node = node_exe()
     script = ENGINE / 'tools' / 'deck_check.js'
     if not node or not script.is_file(): return None
     try:
-        r = subprocess.run([node, str(script), str(packed), '--no-shots'], cwd=str(ROOT), capture_output=True, timeout=90,
+        r = subprocess.run([node, str(script), str(packed), '--no-shots'] + interview_args(deck_id), cwd=str(ROOT), capture_output=True, timeout=90,
                            stdin=subprocess.DEVNULL, creationflags=NO_WINDOW, env=child_env())
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -804,7 +861,7 @@ def edit_text(deck_id, edit_id, text):
         for f, data in after.items(): write_bytes_atomic(f, data)
         # the two checks are independent cold browser starts: run them side by side (was one after the other)
         box = {}
-        th = threading.Thread(target=lambda: box.update(spill=overflow_count(packed)), daemon=True)
+        th = threading.Thread(target=lambda: box.update(spill=overflow_count(packed, deck_id)), daemon=True)
         th.start()
         ok, out = check_rules(packed)
         th.join(120)
@@ -817,7 +874,7 @@ def edit_text(deck_id, edit_id, text):
         spill = box.get('spill')
         if spill:                               # compare with the deck as it was, so an older issue never blocks a tweak
             for f, data in before.items(): write_bytes_atomic(f, data)
-            was = overflow_count(packed)
+            was = overflow_count(packed, deck_id)
             if was is None or spill > was:
                 log('text tweak reverted (overflow)', deck_id, edit_id, spill, was)
                 return 200, {'ok': False, 'error': 'rules', 'detail': f'{spill} text(s) off the slide',
@@ -1350,7 +1407,7 @@ def check_built(deck_id, n, build, conv=None):
     node, script = node_exe(), ENGINE / 'tools' / 'deck_check.js'
     if not (node and script.is_file() and build and (BUILDS / build).is_dir()): return
     try:
-        r = subprocess.run([node, str(script), str(BUILDS / build), '--no-shots'], cwd=str(ROOT), capture_output=True, timeout=150,
+        r = subprocess.run([node, str(script), str(BUILDS / build), '--no-shots'] + interview_args(deck_id), cwd=str(ROOT), capture_output=True, timeout=150,
                            stdin=subprocess.DEVNULL, creationflags=NO_WINDOW, env=child_env())
     except (OSError, subprocess.TimeoutExpired) as e:
         RUNNER.add('status', 'Lumi could not run its own check on the slides just now.', code='check-skipped', deck=deck_id, conv=conv); return
@@ -1495,6 +1552,12 @@ class Runner:
             if interrupted and rec.get('buildTarget'): fields.update(buildTarget=None, buildRest=False)
             if rec.get('planState') == 'planning':
                 fields.update(planState='error', planError='Lumi was closed while Claude was planning. Try again.')
+            # An interview that was mid-question when Lumi closed has nothing that will ever finish it. 'waiting' is left
+            # alone on purpose: that question is in interview.json and re-renders by itself. 'error' is never terminal -
+            # the continue endpoint launches the next turn straight from it.
+            if rec.get('interviewState') == 'asking' and interview_path(rec['id']).is_file():
+                fields.update(interviewState='error',
+                              interviewError='Lumi was closed while Claude was thinking of the next question. Press continue.')
             stale = [x['id'] for x in plan_slides(rec) if x.get('status') in ('queued', 'replanning')]
             if not fields and not stale: continue
             if stale: set_slide_status(rec['id'], stale, None, only_if=('queued', 'replanning'))
@@ -1585,8 +1648,10 @@ class Runner:
         slide's OWN conversation (v0.5.2): resumed when it has one, else started fresh from slide_conv_message()."""
         self.wait_settled()
         again = {'message': message, 'kind': kind, 'quality': quality, 'meta': meta, 'slide': slide, 'conv': conv} if (resume and deck_id) else None
-        if not resume and kind in (None, 'start', 'plan', 'replan'):
-            ensure_extracted()                       # L-01: before Claude starts, never during
+        # L-01: before Claude starts, never during. Every interview turn counts, resumed or not: files may arrive
+        # between two questions, and an interview held against a stale extraction asks about a file that changed.
+        if kind == 'interview' or (not resume and kind in (None, 'start', 'plan', 'replan')):
+            ensure_extracted()
         with self.lock:
             if self.run or (self.settling and self.settling[1] != threading.get_ident()):
                 return 409, {'ok': False, 'error': 'busy'}
@@ -1628,9 +1693,16 @@ class Runner:
             args = cmd + ['-p', '--settings', '.claude/settings.json', '--output-format', 'stream-json', '--verbose',
                           '--permission-mode', 'acceptEdits', '--append-system-prompt', web_prompt(kind)] + quality_flags(quality)
             if resume: args += ['--resume', session]
+            # The Stop hook (engine/rules/check_rules.js) runs the full deck check inside this run, but it is handed a
+            # build folder and cannot recover the deck id from it. Name this deck's interview file for it, so L-15 asks
+            # for the people the interview actually established instead of whatever the old library brief happened to say.
+            run_env = child_env()
+            iv_arg = interview_args(rec['id']) if rec else []
+            if iv_arg: run_env['LUMI_INTERVIEW'] = iv_arg[1]
+            else: run_env.pop('LUMI_INTERVIEW', None)
             try:
                 proc = subprocess.Popen(args, cwd=str(ROOT), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE, creationflags=NO_WINDOW, env=child_env())
+                                        stderr=subprocess.PIPE, creationflags=NO_WINDOW, env=run_env)
             except OSError as e:
                 log('start failed', e)
                 return 500, {'ok': False, 'error': 'start-failed'}
@@ -2081,6 +2153,27 @@ def read_usage():
         return u if isinstance(u, dict) else None
     except (OSError, ValueError):
         return None
+
+
+# Claude only tells Lumi how much of the plan is used WHILE it is streaming, so this number stands still between runs.
+# After planning it is minutes old and worth showing; a day later it is about a window that has already rolled over.
+# Section 6's rule: never show a number that might be wrong - so a stale or missing reading returns None and the plan
+# page leaves the whole allowance line out rather than guessing.
+USAGE_FRESH_S = 5 * 3600            # the length of the window the figure describes
+
+
+def usage_share():
+    """{'pct', 'capturedAt', 'resetsAt'} when Lumi's last reading can still be trusted, else None."""
+    u = read_usage() or {}
+    try: pct = float(u.get('utilization'))
+    except (TypeError, ValueError): return None
+    try: cap = int(u.get('capturedAt') or 0)
+    except (TypeError, ValueError): return None
+    if not cap or time.time() - cap > USAGE_FRESH_S: return None
+    try: resets = int(u.get('resetsAt') or 0)
+    except (TypeError, ValueError): resets = 0
+    if resets and resets < time.time(): return None               # the window it counted has already restarted
+    return {'pct': pct * 100 if pct <= 1 else pct, 'capturedAt': cap, 'resetsAt': resets or None}
 
 
 # ---------------------------------------------------------------- loading-screen checks and fixes
@@ -2832,8 +2925,14 @@ def plan_payload(rec):
         q = PLANQ.get(rec['id']) or {}
     fin = final_of(rec)
     return {'ok': True, 'deckId': rec['id'], 'title': rec.get('title'), 'look': rec.get('look'), 'quality': rec.get('quality'),
+            # MIGRATION: a deck made by the old wizard always carries its answers in `brief.basics` (the kind of talk and
+            # the title were both required), and the wizard asked for the look on one of its screens. Such a deck counts
+            # as themed, so it goes straight to planning exactly as it does today.
+            'lookUser': bool(rec.get('lookUser')) or bool((rec.get('brief') or {}).get('basics')),
             'plan': rec.get('plan') or {'slides': [], 'doubts': []}, 'planState': rec.get('planState') or 'none',
             'planError': rec.get('planError'), 'wordCap': word_cap(rec.get('look')), 'running': busy,
+            'interviewState': interview_state(rec), 'interviewError': rec.get('interviewError'),
+            'interview': interview_view(rec),
             'runKind': RUNNER.run.kind if busy and RUNNER.run else None,
             'waiting': bool(RUNNER and RUNNER.waiting and RUNNER.deck_id == rec['id']),
             'queued': list(q.get('slides') or []) + [s['id'] for s in q.get('suggest') or []],
@@ -2843,6 +2942,9 @@ def plan_payload(rec):
             'exists': bool(f), 'mtime': int(f.stat().st_mtime) if f else None,
             'final': fin, 'changedSinceFinalize': bool(fin and rec.get('changedSinceFinalize')),
             'engines': {k: v for k, v in plan_engines(rec).items() if v.get('engine')},
+            # Section 6: what this deck costs the person, in time and in a plain share of today's allowance. `allowance`
+            # is null whenever the last reading is missing or stale, and the page then shows the time on its own.
+            'cost': {'build': deck_build_estimate(rec), 'allowance': usage_share()},
             'blender': {'available': blender_available(),
                         'status': {k: v.get('status') for k, v in bl_states(rec).items() if isinstance(v, dict)},
                         'estimates': bl_plan_estimates(rec)}}
@@ -3088,6 +3190,7 @@ def ingest_plan(run, rec):
         fields = {'planState': 'ready' if plan['slides'] else 'error',
                   'planError': None if plan['slides'] else 'The plan came back empty. Try again.'}
         if plan.get('title') and not (load_deck(rec['id']) or rec).get('titleUser'): fields['title'] = plan['title']
+        if plan['slides'] and not (load_deck(rec['id']) or rec).get('plannedAt'): fields['plannedAt'] = now_iso()
         write_plan(rec, plan, **fields)
 
 
@@ -3194,12 +3297,249 @@ def plan_start(body):
     work_dir(rec['id']).mkdir(parents=True, exist_ok=True)
     prev_state = rec.get('planState')
     rec = update_deck(rec['id'], flow='plan', planState='planning', planError=None)
-    resume = bool(rec.get('sessionId'))
-    msg = plan_message(rec) if not resume else (f'[plan-mode] Plan the deck again from the start, following planning.md. '
-                                                f'Write `{plan_rel(rec["id"])}` and end with [[aura:plan path="{plan_rel(rec["id"])}"]].')
+    resume = bool(rec.get('sessionId'))          # RESUME the conversation whenever one exists (the interview made it) ...
+    # ... but WHICH MESSAGE goes is decided by whether planning ever happened. `or plan_slides(rec)` keeps a legacy v0.5.3 deck
+    # (a session and a plan, no plannedAt) on exactly today's short "plan again" text.
+    planned = bool(rec.get('plannedAt')) or bool(plan_slides(rec))
+    msg = plan_message(rec) if not planned else (f'[plan-mode] Plan the deck again from the start, following planning.md. '
+                                                 f'Write `{plan_rel(rec["id"])}` and end with [[aura:plan path="{plan_rel(rec["id"])}"]].')
     code, res = RUNNER.launch(msg, resume=resume, user_text='plan my deck', deck_id=rec['id'], kind='plan', quality=PLAN_QUALITY)
     if code != 200: update_deck(rec['id'], planState=prev_state or 'none')
     return code, dict(res, deckId=rec['id'])
+
+
+# ---------------------------------------------------------------- the interview (interview plan sections 2-4)
+INTERVIEW_NUDGE_ROUND = int(os.environ.get('AURA_INTERVIEW_NUDGE') or 12)
+INTERVIEW_ANSWER_LINE = re.compile(r'^\s*([A-Za-z0-9-]+)\s*:\s*(.*)$')
+
+
+def interview_state(rec):
+    """The deck's interview state. MIGRATION (v0.5.3 is public): a record that has no interviewState is a deck made before the
+    interview existed; it reads 'ready' when it already has a brief or a plan, so it plans and builds exactly as before."""
+    v = rec.get('interviewState')
+    if v in INTERVIEW_STATES: return v
+    has_brief = bool(rec.get('brief'))
+    return 'ready' if has_brief or (rec.get('planState') or 'none') != 'none' else 'none'
+
+
+def interview_sources():
+    """The extracted files as [{path, hash}]. The manifest carries no hash, so the hash is sha1(size:mtime): enough to tell a
+    changed file from an unchanged one (a deviation from the plan's schema, which assumed a content hash)."""
+    out = []
+    for rel, e in sorted((read_manifest().get('files') or {}).items()):
+        e = e if isinstance(e, dict) else {}
+        out.append({'path': rel, 'hash': hashlib.sha1(f"{e.get('size')}:{e.get('mtime')}".encode('utf-8')).hexdigest()[:12]})
+    return out
+
+
+def new_interview(rec, topic):
+    return {'v': INTERVIEW_V, 'deckId': rec['id'], 'topic': topic or '', 'startedAt': now_iso(), 'updatedAt': now_iso(),
+            'round': 0, 'state': 'asking', 'sources': [], 'answers': [], 'open': None, 'openAll': [],
+            'conclusions': {'audience': '', 'formality': '', 'language': '', 'density': '', 'include': [], 'exclude': [],
+                            'topics': [], 'duration': '', 'notes': ''},
+            'identity': {'established': []}, 'done': False}
+
+
+def interview_rules():
+    """What the interviewer must do. interviewing.md is the home of these rules (a later batch); until that file exists the
+    short version is inlined so the interview runs on its own."""
+    f = ROOT / '.claude' / 'skills' / 'aura-slide' / 'interviewing.md'
+    if f.is_file(): return 'Follow `.claude/skills/aura-slide/interviewing.md` for how to interview.'
+    return ('How to interview: read the extracted files FIRST and never ask what they already answer; ask only what would change a slide '
+            '(the point of the talk, who listens and what they know, what they must do afterwards, minutes, formal or casual, how '
+            'much maths, what is in and out, how cautious the claims must be, what must not be shown, and which of presenter / '
+            'supervisor / institution exist at all). Each round: one short sentence of what you learned, then the questions, then '
+            '[[aura:ask]]. Use [[aura:choice ...]] when the answers are a short closed list and [[aura:text ...]] when no list could '
+            'hold the answer. Never ask about colours, fonts, layout, slide count, the theme or 2D vs 3D.')
+
+
+def interview_message(rec, iv, resume, added, answer=None):
+    did = rec['id']
+    text_dir = rel_root(TEMP / 'text')
+    lines = [f'[interview] Interview the person about their talk' + (f': "{iv["topic"]}"' if iv.get('topic') else '') + '. '
+             f'Their files are already read: the text is in `{text_dir}/` (index: `{text_dir}/manifest.json`). '
+             + ('' if resume else 'Read what you need first. ')
+             + f'Keep the interview in `{interview_rel(did)}` (you may edit only "conclusions", "identity" and "done"; Lumi owns '
+             'the rest, so never remove "answers"). ' + interview_rules()]
+    if added:
+        lines.append('New or changed files arrived since you last looked: ' + ', '.join(f'`{a}`' for a in added[:12]) + '. Read them before you ask more.')
+    if answer:
+        lines.append('The person answered your last questions:\n' + answer)
+    if int(iv.get('round') or 0) >= INTERVIEW_NUDGE_ROUND:
+        lines.append('You have enough to plan; write interview.json and finish: set "done": true and end with [[aura:interview-done]].')
+    return '\n'.join(lines)
+
+
+def interview_handoff_message(rec, iv, added, answer=None):
+    """A fresh conversation for a long interview (section 3): the artifact, the source manifest and the extracted text, never the
+    transcript. interview.json holds everything asked and answered, so nothing is lost."""
+    did = rec['id']
+    text_dir = rel_root(TEMP / 'text')
+    lines = [f'[interview] You are taking over an interview that is already in progress, in a fresh conversation. Read `{interview_rel(did)}` '
+             f'first: it holds every question asked, every answer given, what is concluded so far and what is still open. '
+             f'The files are extracted in `{text_dir}/` (index: `{text_dir}/manifest.json`). Continue from there; never repeat a question '
+             'that is answered. ' + interview_rules()]
+    if added: lines.append('New or changed files arrived: ' + ', '.join(f'`{a}`' for a in added[:12]) + '.')
+    if answer: lines.append('The person has just answered your last questions (also saved in the file):' + chr(10) + answer)
+    if int(iv.get('round') or 0) >= INTERVIEW_NUDGE_ROUND:
+        lines.append('You have enough to plan; write interview.json and finish: set "done": true and end with [[aura:interview-done]].')
+    return '\n'.join(lines)
+
+
+def interview_launch(rec, topic=None, user_text=None, answer=None):
+    did = rec['id']
+    work_dir(did).mkdir(parents=True, exist_ok=True)
+    ensure_extracted()
+    prev_state = interview_state(rec)
+    with DECK_LOCK:
+        rec = load_deck(did) or rec
+        old = read_interview(did)
+        iv = old if old.get('v') else new_interview(rec, topic)
+        if topic: iv['topic'] = topic
+        known = {x.get('path'): x.get('hash') for x in iv.get('sources') or [] if isinstance(x, dict)}
+        now = interview_sources()
+        added = [x['path'] for x in now if x['path'] not in known or known[x['path']] != x['hash']] if known else []
+        iv['sources'] = now
+        iv['round'] = int(iv.get('round') or 0) + 1
+        iv['state'] = 'asking'
+        write_interview(did, iv)            # BEFORE the launch: a crash can never leave a run the server has no record of
+        rec = update_deck(did, interviewState='asking', interviewError=None)
+    resume = bool(rec.get('sessionId'))
+    # Unlike a build step, an interview answer ALWAYS follows a question (RUNNER.waiting is true then), and the open question lives
+    # in interview.json, not in the conversation: so a hand-off is lossless there and must not wait for the runner to be idle.
+    handoff = resume and int(rec.get('ctxTokens') or 0) >= CTX_RESET
+    if handoff: msg, resume = interview_handoff_message(rec, iv, added, answer), False
+    else: msg = interview_message(rec, iv, resume, added, answer)
+    code, res = RUNNER.launch(msg, resume=resume, user_text=user_text or iv.get('topic') or 'interview', deck_id=did,
+                              kind='interview', quality=PLAN_QUALITY)
+    if code != 200:
+        with DECK_LOCK:                     # the turn never started: put the artifact and the state back
+            iv['round'] = max(0, int(iv['round']) - 1)
+            iv['state'] = prev_state if prev_state in INTERVIEW_STATES else 'none'
+            write_interview(did, iv)
+            if code == 409: update_deck(did, interviewState=prev_state)
+            else: update_deck(did, interviewState='error',
+                              interviewError='Claude could not start the interview. Check that you are signed in, then press continue.')
+    return code, res
+
+
+def interview_start(deck_id, body):
+    rec = load_deck(deck_id)
+    if not rec: return 404, {'ok': False, 'error': 'no-deck'}
+    st = interview_state(rec)
+    if st == 'ready': return 409, {'ok': False, 'error': 'done', 'reason': 'the interview is finished.'}
+    if build_started(rec): return 409, {'ok': False, 'error': 'built'}
+    if st == 'waiting': return 200, interview_payload(rec)            # idempotent: the question is already on the page
+    topic = safe_text(body.get('topic') or '', 600).strip() or None
+    code, res = interview_launch(rec, topic=topic)
+    return code, dict(res, deckId=deck_id)
+
+
+def interview_start_new(body):
+    """Where a deck is BORN now that the 40-field wizard is gone (interview plan section 9): the person types what the
+    talk is about, drops their files in, and this makes the library record and starts Claude reading. The draft brief is
+    deliberately NOT inherited - an old install may still hold one from the wizard, and its names are not this deck's."""
+    RUNNER.wait_settled()
+    if RUNNER.busy: return 409, {'ok': False, 'error': 'busy'}
+    topic = safe_text(body.get('topic') or '', 600).strip() or None
+    main = safe_text(body.get('mainReport') or '', 400).strip()
+    brief = {'files': {'mainReport': main}} if main else {}
+    rec = new_deck(brief=brief, flow='plan', interviewState='asking')
+    work_dir(rec['id']).mkdir(parents=True, exist_ok=True)
+    if topic:
+        rec = update_deck(rec['id'], title=' '.join(topic.split())[:120]) or rec
+    code, res = interview_launch(rec, topic=topic)
+    return code, dict(res, deckId=rec['id'])
+
+
+def interview_answer(deck_id, body):
+    rec = load_deck(deck_id)
+    if not rec: return 404, {'ok': False, 'error': 'no-deck'}
+    if interview_state(rec) != 'waiting': return 409, {'ok': False, 'error': 'not-waiting'}
+    text = safe_text(body.get('text') or '', 6000).strip()
+    if not text: return 400, {'ok': False, 'error': 'bad-answer'}
+    with DECK_LOCK:
+        iv = read_interview(deck_id)
+        asked = [q for q in iv.get('openAll') or ([iv['open']] if iv.get('open') else []) if isinstance(q, dict)]
+        by_id = {q.get('id'): q for q in asked}
+        answers = iv.setdefault('answers', [])
+        got = []
+        for line in text.splitlines():
+            m = INTERVIEW_ANSWER_LINE.match(line)
+            if not m: continue
+            key, val = m.group(1), m.group(2).strip()
+            if key == 'note':
+                if answers and val: answers[-1]['other'] = (answers[-1].get('other') + ' ' + val).strip() if answers[-1].get('other') else val
+                continue
+            q = by_id.get(key)
+            if q is None or not val: continue
+            e = {'id': key, 'question': q.get('question') or '', 'kind': q.get('kind') or 'choice', 'options': list(q.get('options') or []),
+                 'answer': val, 'other': '', 'at': now_iso()}
+            answers.append(e); got.append(e)
+        iv['open'], iv['openAll'] = None, []
+        write_interview(deck_id, iv)
+    code, res = interview_launch(load_deck(deck_id) or rec, user_text='my answers', answer=text)
+    return code, dict(res, deckId=deck_id)
+
+
+def ingest_interview(run, rec):
+    """After an interview turn: finished (interview-done AND done:true in interview.json) -> ready; questions + [[aura:ask]] ->
+    waiting, the open questions written to interview.json FIRST; anything else -> a plain, retryable error."""
+    text = '\n'.join(run.texts)
+    deck_id = rec['id']
+    with DECK_LOCK:
+        iv = read_interview(deck_id)
+        if not iv.get('v'): iv = new_interview(rec, '')
+        sc = aura_markers.scan(text)
+        opens, seen = [], set()
+        for m in sc['markers']:                                   # line order; one question per (id, when)
+            if m['name'] not in ('choice', 'text'): continue
+            a = m.get('choice') or m.get('text') or {}        # the NORMALISED form: options/default already split
+            if not a.get('id'): continue
+            key = (a.get('id'), a.get('when'))
+            if key in seen: continue
+            seen.add(key)
+            opens.append({'id': a['id'], 'question': a['question'], 'kind': 'text' if m['name'] == 'text' else 'choice',
+                          'options': list(a.get('options') or []), 'multi': bool(a.get('multi')),
+                          'default': list(a.get('default') or []), 'when': a.get('when') or ''})
+        done_marker = aura_markers.has(text, 'interview-done')
+        err = None
+        if run.stopped: err = 'You stopped the interview. Press continue when you are ready.'
+        elif done_marker and iv.get('done') is True: state = 'ready'
+        elif done_marker: err = 'Claude said the interview was finished but did not save it. Press continue to try again.'
+        elif opens and run.asked: state = 'waiting'
+        elif opens: err = 'Claude wrote questions but did not stop to wait for you. Press continue to try again.'
+        else: err = 'Claude finished without asking anything or saying it was done. Press continue to try again.'
+        if err:
+            iv['state'] = 'error'
+            write_interview(deck_id, iv)
+            update_deck(deck_id, interviewState='error', interviewError=err)
+            log('interview run ended without a result', deck_id, err)
+            return
+        iv['state'] = state
+        if state == 'waiting':
+            iv['open'], iv['openAll'] = opens[0], opens
+            iv['done'] = False
+        else:
+            iv['open'], iv['openAll'] = None, []
+        write_interview(deck_id, iv)                              # the file first, then the state the page reads
+        update_deck(deck_id, interviewState=state, interviewError=None)
+
+
+def interview_view(rec):
+    iv = read_interview(rec['id'])
+    if not iv.get('v'): return None
+    return {'round': int(iv.get('round') or 0), 'topic': iv.get('topic') or '', 'open': iv.get('open'),
+            'openAll': iv.get('openAll') or ([iv['open']] if iv.get('open') else []), 'done': bool(iv.get('done')),
+            'conclusions': iv.get('conclusions') or {}, 'identity': iv.get('identity') or {},
+            'answers': len(iv.get('answers') or [])}
+
+
+def interview_payload(rec):
+    rec = load_deck(rec['id']) or rec
+    busy = bool(RUNNER and RUNNER.running and RUNNER.deck_id == rec['id'])
+    return {'ok': True, 'deckId': rec['id'], 'interviewState': interview_state(rec), 'interviewError': rec.get('interviewError'),
+            'running': busy, 'interview': interview_view(rec)}
 
 
 STEP_CARD_RE = re.compile(r'<!-- step-card -->\s*(.*?)\s*<!-- /step-card -->', re.S)
@@ -3378,6 +3718,9 @@ def after_run(run):
             log('could not move the editable deck', e)
     if run.kind in ('plan', 'replan') or aura_markers.has(text, 'plan'):
         ingest_plan(run, rec)
+        rec = load_deck(deck_id)
+    if run.kind == 'interview':
+        ingest_interview(run, rec)
         rec = load_deck(deck_id)
     target = rec.get('buildTarget')
     finished_n = None                     # the slide number a build step finished in THIS run (also a reply after its questions)
@@ -3808,6 +4151,29 @@ def bl_plan_estimates(rec):
         out[s['id']] = {'still': a['full']['still']['seconds'], '720': b['full']['720']['seconds'], '1080': b['full']['1080']['seconds'],
                         'basis': a['full']['still']['basis'], 'iteration': a['iteration']}
     return out
+
+
+# How long one slide takes Claude to write, look at and correct, on top of any picture it has to make. A measured median
+# would be better, but nothing records it yet, so this is a flat, deliberately plain number: the deck total it feeds is
+# shown as "about N hours", never to the minute.
+SLIDE_WRITE_S = 240
+
+
+def deck_build_estimate(rec):
+    """Section 6: ONE number for the whole deck, in seconds - what bl_plan_estimates never gave, because it is keyed by slide
+    and never summed. Each slide costs the time Claude spends writing it, plus the time its picture takes to make: a flat
+    illustration or a live 3D scene is made as the slide is written and adds nothing, a studio render adds its own render.
+    {'seconds', 'slides', 'rendered'}; `rendered` is how many slides are studio renders, so the page can say why it is long."""
+    slides = plan_slides(rec)
+    if not slides: return {'seconds': 0, 'slides': 0, 'rendered': 0}
+    est, eng, total, rendered = bl_plan_estimates(rec), plan_engines(rec), 0.0, 0
+    for s in slides:
+        total += SLIDE_WRITE_S
+        e, pic = eng.get(s['id']) or {}, est.get(s['id'])
+        if e.get('engine') != 'blender' or not pic: continue
+        rendered += 1
+        total += float((pic['still'] if e.get('kind') == 'still' else pic['1080']) or 0)
+    return {'seconds': int(round(total)), 'slides': len(slides), 'rendered': rendered}
 
 
 def bl_url(deck_id, sid, name):
@@ -5262,6 +5628,7 @@ class H(BaseHTTPRequestHandler):
             sub = m.group(2) or ''
             if sub == '': return self.send(200, {'ok': True, 'deck': deck_view(rec, full=True)})
             if sub == 'plan': return self.send(200, plan_payload(rec))
+            if sub == 'interview': return self.send(200, interview_payload(rec))
             if sub == 'pptx': return self.send(200, dict(PPTX.status(rec['id']), ok=True))
             if sub == 'thumb.png' or sub.startswith('slides'):
                 if not deck_file(rec): return self.send(404, {'ok': False, 'error': 'no-file'})
@@ -5422,6 +5789,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send(409, {'ok': False, 'error': 'busy', 'reason': 'Lumi is working right now. Try again when it is done.'})
             return self.send(200, dict(reap(dry=bool(body.get('dry'))), ok=True))
         if path == '/api/plan/start': return self.send(*plan_start(body))
+        if path == '/api/interview/start': return self.send(*interview_start_new(body))
         if path == '/api/finalize/cancel': return self.send(*FINALIZER.cancel())
         if path == '/api/blender/benchmark': return self.send(*BLENDER.bench(force=bool(body.get('force'))))
         m = BLENDER_ROUTE.match(path)
@@ -5430,9 +5798,10 @@ class H(BaseHTTPRequestHandler):
         m = DECK_ROUTE.match(path)
         if m and m.group(2) == 'text':
             return self.send(*edit_text(m.group(1), body.get('editId'), body.get('text')))
-        if m and m.group(2) in ('plan', 'plan/answer', 'plan/suggest', 'build', 'finalize', 'pptx'):
+        if m and m.group(2) in ('plan', 'plan/answer', 'plan/suggest', 'build', 'finalize', 'pptx', 'interview', 'interview/answer'):
             if not load_deck(m.group(1)): return self.send(404, {'ok': False, 'error': 'no-deck'})
-            fn = {'plan': save_plan, 'plan/answer': answer_doubt, 'plan/suggest': suggest_slide, 'build': build_action,
+            fn = {'interview': interview_start, 'interview/answer': interview_answer,
+                  'plan': save_plan, 'plan/answer': answer_doubt, 'plan/suggest': suggest_slide, 'build': build_action,
                   'finalize': lambda d, b: FINALIZER.start(d, light=bool(b.get('light')), accept_stale=bool(b.get('acceptStale'))), 'pptx': lambda d, b: PPTX.start(d)}[m.group(2)]
             return self.send(*fn(m.group(1), body))
         m = re.fullmatch(r'/api/fix/([a-z]+)', path)
@@ -5458,14 +5827,12 @@ class H(BaseHTTPRequestHandler):
         self.send(404, {'error': 'not found'})
 
     def claude_start(self, body):
-        """A new deck build. Without a deckId a library record is made from the current draft brief first."""
+        """Build a deck in one go. The "skip, I'm in a hurry" flow is GONE (interview plan section 9): every deck is
+        interviewed and planned, so there is no longer a way to make a brand-new deck here. A deck made that way before
+        v0.5.4 can still be carried on, which is why the route itself stays."""
         deck_id = body.get('deckId') or None
-        if deck_id is not None:
-            if not load_deck(deck_id): return self.send(404, {'ok': False, 'error': 'no-deck'})
-        else:
-            RUNNER.wait_settled()
-            if RUNNER.busy: return self.send(409, {'ok': False, 'error': 'busy'})
-            deck_id = new_deck(flow='hurry')['id']
+        if deck_id is None: return self.send(400, {'ok': False, 'error': 'no-deck'})
+        if not load_deck(deck_id): return self.send(404, {'ok': False, 'error': 'no-deck'})
         return self.send(*RUNNER.launch(FIRST_MESSAGE, deck_id=deck_id))
 
     def do_DELETE(self):
@@ -5504,6 +5871,9 @@ class H(BaseHTTPRequestHandler):
                 if body['look'] is not None and (not isinstance(body['look'], str) or len(body['look']) > 100):
                     return self.send(400, {'ok': False, 'error': 'bad look'})
                 fields['look'] = body['look']
+                # The theme is its own step after the interview now (the wizard that used to ask it is gone), so the
+                # page needs to know the person has BEEN there - "Claude chooses" is both the default and a real answer.
+                fields['lookUser'] = True
             if 'quality' in body:
                 if body['quality'] not in QUALITIES: return self.send(400, {'ok': False, 'error': 'bad quality'})
                 fields['quality'] = body['quality']

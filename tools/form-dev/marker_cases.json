@@ -944,6 +944,239 @@
      "marker": "ask"
     }
    ]
+  },
+  {
+   "name": "text, bare values",
+   "text": "[[aura:text id=q1 question=\"What must they do after the talk?\"]]",
+   "markers": [
+    {
+     "name": "text",
+     "attrs": {
+      "id": "q1",
+      "question": "What must they do after the talk?"
+     },
+     "line": 1,
+     "text": {
+      "id": "q1",
+      "question": "What must they do after the talk?",
+      "placeholder": "",
+      "lines": 3,
+      "slide": "",
+      "scope": "",
+      "when": "",
+      "depends": []
+     }
+    }
+   ],
+   "problems": []
+  },
+  {
+   "name": "text, all quoted with placeholder and lines",
+   "text": "[[aura:text id=\"q2\" question=\"What must NOT be shown?\" placeholder=\"in your own words\" lines=\"2\" slide=\"3\"]]",
+   "markers": [
+    {
+     "name": "text",
+     "attrs": {
+      "id": "q2",
+      "question": "What must NOT be shown?",
+      "placeholder": "in your own words",
+      "lines": "2",
+      "slide": "3"
+     },
+     "line": 1,
+     "text": {
+      "id": "q2",
+      "question": "What must NOT be shown?",
+      "placeholder": "in your own words",
+      "lines": 2,
+      "slide": "3",
+      "scope": "",
+      "when": "",
+      "depends": []
+     }
+    }
+   ],
+   "problems": []
+  },
+  {
+   "name": "text without an id",
+   "text": "[[aura:text question=\"What is the one message?\"]]",
+   "markers": [],
+   "problems": [
+    {
+     "line": 1,
+     "reason": "missing-id",
+     "marker": "text"
+    }
+   ]
+  },
+  {
+   "name": "text without a question",
+   "text": "[[aura:text id=\"q1\"]]",
+   "markers": [],
+   "problems": [
+    {
+     "line": 1,
+     "reason": "missing-question",
+     "marker": "text"
+    }
+   ]
+  },
+  {
+   "name": "text with a bad id",
+   "text": "[[aura:text id=\"q 1\" question=\"What is the one message?\"]]",
+   "markers": [],
+   "problems": [
+    {
+     "line": 1,
+     "reason": "bad-id",
+     "marker": "text"
+    }
+   ]
+  },
+  {
+   "name": "text with too many lines",
+   "text": "[[aura:text id=\"q1\" question=\"What is the one message?\" lines=9]]",
+   "markers": [],
+   "problems": [
+    {
+     "line": 1,
+     "reason": "bad-value",
+     "marker": "text"
+    }
+   ]
+  },
+  {
+   "name": "text with zero lines",
+   "text": "[[aura:text id=\"q1\" question=\"What is the one message?\" lines=0]]",
+   "markers": [],
+   "problems": [
+    {
+     "line": 1,
+     "reason": "bad-value",
+     "marker": "text"
+    }
+   ]
+  },
+  {
+   "name": "text inside a sentence",
+   "text": "Tell me [[aura:text id=\"q1\" question=\"Why?\"]] please",
+   "markers": [],
+   "problems": [
+    {
+     "line": 1,
+     "reason": "not-alone",
+     "marker": "text"
+    }
+   ]
+  },
+  {
+   "name": "a text question and a choice question together",
+   "text": "[[aura:choice id=\"q1\" question=\"Who is in the room?\" options=\"Students|Examiners\" multi=\"no\" default=\"Students\"]]\n[[aura:text id=\"q2\" question=\"What do they already know?\"]]",
+   "markers": [
+    {
+     "name": "choice",
+     "attrs": {
+      "id": "q1",
+      "question": "Who is in the room?",
+      "options": "Students|Examiners",
+      "multi": "no",
+      "default": "Students"
+     },
+     "line": 1,
+     "choice": {
+      "id": "q1",
+      "question": "Who is in the room?",
+      "options": [
+       "Students",
+       "Examiners"
+      ],
+      "multi": false,
+      "default": [
+       "Students"
+      ],
+      "slide": "",
+      "scope": "",
+      "when": "",
+      "depends": []
+     }
+    },
+    {
+     "name": "text",
+     "attrs": {
+      "id": "q2",
+      "question": "What do they already know?"
+     },
+     "line": 2,
+     "text": {
+      "id": "q2",
+      "question": "What do they already know?",
+      "placeholder": "",
+      "lines": 3,
+      "slide": "",
+      "scope": "",
+      "when": "",
+      "depends": []
+     }
+    }
+   ],
+   "problems": []
+  },
+  {
+   "name": "a text variant with when and depends",
+   "text": "[[aura:text id=\"q2\" when=\"q1=2\" depends=\"q1\" question=\"What will the examiners press you on?\" lines=4]]",
+   "markers": [
+    {
+     "name": "text",
+     "attrs": {
+      "id": "q2",
+      "when": "q1=2",
+      "depends": "q1",
+      "question": "What will the examiners press you on?",
+      "lines": "4"
+     },
+     "line": 1,
+     "text": {
+      "id": "q2",
+      "question": "What will the examiners press you on?",
+      "placeholder": "",
+      "lines": 4,
+      "slide": "",
+      "scope": "",
+      "when": "q1=2",
+      "depends": [
+       "q1"
+      ]
+     }
+    }
+   ],
+   "problems": []
+  },
+  {
+   "name": "interview-done ok",
+   "text": "That is everything I need.\n[[aura:interview-done]]",
+   "markers": [
+    {
+     "name": "interview-done",
+     "attrs": {},
+     "line": 2
+    }
+   ],
+   "problems": []
+  },
+  {
+   "name": "interview-done with attributes",
+   "text": "[[aura:interview-done done=yes]]",
+   "markers": [
+    {
+     "name": "interview-done",
+     "attrs": {
+      "done": "yes"
+     },
+     "line": 1
+    }
+   ],
+   "problems": []
   }
  ]
 }

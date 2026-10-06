@@ -4,7 +4,15 @@
 // tools/form-dev/marker_cases.json. The prose for Claude is the "App markers" section of the aura-slide SKILL.md.
 //   [[aura:choice id="q1" question="..." options="A|B|C" multi="no" default="B" slide=3]]  -> option buttons + a free-text box
 //   [[aura:choice id="q2" when="q1=2" depends="q1" ...]]                                    -> a variant of q2 shown only when q1 was answered 2
+//   [[aura:text id="q3" question="..." placeholder="..." lines=3]]                          -> one textarea, for an answer no list could hold
 //   [[aura:hint slide=3 text="..."]]                                                        -> clickable suggestion chips
+// A `text` marker is a SIBLING of `choice`, not a choice with no options. parseMarkers puts both in the same `choices`
+// array (tagged kind:'pick' / kind:'text', a text question carrying options: []), so stepping, MAX_VARIANTS, variants and
+// `depends` work for it unchanged.
+// LIMIT, deliberate: `when` / `depends` may only reference a PICK question. whenMatches below reads an answer as its list
+// of selected options and a text answer selects nothing, so a condition naming a text question can never hold. SKILL.md
+// says so too. Free-text answers go through safeAnswer() before they are composed: newlines collapse to one space, because
+// parseAnswer is line-based and a raw newline would split one answer into a fake "qN:" line.
 // A marker is one whole line; attribute order is free; a value is "quoted" or a bare token. A line that mentions [[aura: but
 // cannot be used is reported in `problems` (never dropped silently); the server shows it to the person and logs it.
 // `slide` (a 1-based number or a plan id) says which slide a question is about (the window shows that slide's plan).
@@ -17,12 +25,14 @@
 
 export const MARKER_SPEC = {
   stages: ['read', 'plan', 'build', 'check', 'export', 'done'],
-  limits: { options: 8, questionChars: 200, optionChars: 60, whenChars: 200 },
+  limits: { options: 8, questionChars: 200, optionChars: 60, whenChars: 200, answerChars: 1200, placeholderChars: 60, maxLines: 6 },
   markers: {
     stage: { form: 'value' },
     ask: { required: [], optional: [] },
     done: { required: ['path'], optional: [] },
     choice: { required: ['id', 'question', 'options'], optional: ['multi', 'default', 'slide', 'scope', 'when', 'depends'] },
+    text: { required: ['id', 'question'], optional: ['placeholder', 'lines', 'slide', 'scope', 'when', 'depends'] },
+    'interview-done': { required: [], optional: [] },
     hint: { required: ['slide', 'text'], optional: [] },
     plan: { required: [], optional: ['path'] },
     'plan-ok': { required: ['slide'], optional: [] },
@@ -48,6 +58,24 @@ function normaliseChoice(a) {
     when: String(a.when || '').trim().slice(0, LIM.whenChars), depends: String(a.depends || '').split(/[\s,]+/).filter(d => ID.test(d)) };
 }
 
+function normaliseText(a) {
+  const raw = String(a.lines || '').trim();
+  return { id: String(a.id || '').trim(), question: String(a.question || '').trim().slice(0, LIM.questionChars),
+    placeholder: String(a.placeholder || '').trim().slice(0, LIM.placeholderChars),
+    lines: /^\d+$/.test(raw) ? parseInt(raw, 10) : 3,
+    slide: String(a.slide || '').trim(), scope: String(a.scope || '').trim().toLowerCase(),
+    when: String(a.when || '').trim().slice(0, LIM.whenChars), depends: String(a.depends || '').split(/[\s,]+/).filter(d => ID.test(d)) };
+}
+
+// The person's own words, made safe before they are composed into the answer (mirrors form_server.safe_text, which is
+// re-applied server-side): no control characters, no line breaks (parseAnswer is line-based), nothing that could be read
+// back as one of our markers, no backticks, capped at answerChars.
+export function safeAnswer(v) {
+  const s = [...String(v === undefined || v === null ? '' : v)]
+    .map(ch => { const c = ch.codePointAt(0); return (c < 32 || c === 127 || c === 133) ? ' ' : ch; }).join('');
+  return s.replace(/\[\[aura:/g, '[ [aura:').replace(/`/g, "'").replace(/\s+/g, ' ').trim().slice(0, LIM.answerChars);
+}
+
 function build(name, body) {
   const spec = MARKER_SPEC.markers[name];
   if (!spec) return { why: 'unknown' };
@@ -67,6 +95,11 @@ function build(name, body) {
     if (!ID.test(attrs.id.trim())) return { why: 'bad-id' };
     mk.choice = normaliseChoice(attrs);
     if (mk.choice.options.length < 2) return { why: 'few-options' };
+  }
+  if (name === 'text') {
+    if (!ID.test(attrs.id.trim())) return { why: 'bad-id' };
+    if ('lines' in attrs && !(/^\d+$/.test(String(attrs.lines).trim()) && parseInt(attrs.lines, 10) >= 1 && parseInt(attrs.lines, 10) <= LIM.maxLines)) return { why: 'bad-value' };
+    mk.text = normaliseText(attrs);
   }
   return { mk };
 }
@@ -123,7 +156,14 @@ export function parseMarkers(text) {
     if (mk.name === 'choice') {
       const c = mk.choice, key = c.when ? `${c.id}@${c.when}` : c.id;
       if (choices.some(x => x.key === key) || choices.length >= MAX_VARIANTS) continue;
-      choices.push({ id: c.id, key, question: c.question, options: c.options, multi: c.multi, defaults: c.default,
+      choices.push({ id: c.id, key, kind: 'pick', question: c.question, options: c.options, multi: c.multi, defaults: c.default,
+        slide: c.slide, scope: c.scope, when: c.when, conds: parseWhen(c.when), depends: c.depends });
+    } else if (mk.name === 'text') {
+      // the SAME array as the picks: one card, stepped the same way, one MAX_VARIANTS budget, one `depends` pass
+      const c = mk.text, key = c.when ? `${c.id}@${c.when}` : c.id;
+      if (choices.some(x => x.key === key) || choices.length >= MAX_VARIANTS) continue;
+      choices.push({ id: c.id, key, kind: 'text', question: c.question, options: [], multi: false, defaults: [],
+        placeholder: c.placeholder, lines: c.lines,
         slide: c.slide, scope: c.scope, when: c.when, conds: parseWhen(c.when), depends: c.depends });
     } else if (mk.name === 'hint') {
       hints.push({ slide: parseInt(mk.attrs.slide, 10), text: mk.attrs.text.trim() });
@@ -150,6 +190,8 @@ const TICK = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"
 
 // A card with one block per question; questions are shown one at a time ("next question"), only the LAST one has the
 // submit button, so nothing can be skipped, and Enter never submits (in the free-text box it is just a new line).
+// A question is either a PICK (options, tagged "pick one" / "pick any") or free TEXT (kind:'text': one box, tagged
+// "in your words"). They share one card, one step strip and one submit, so an interview round can mix them freely.
 // Variants (see the top of the file): the card shows the variant whose `when` holds and re-evaluates on every pick.
 // onSend(text) is called with the composed answer. onStep(choice) tells the window which question (and slide) is shown.
 // Returns { el, lock(sentText?), compose(extra), pending, choices, setEnabled(on), active() }.
@@ -190,9 +232,24 @@ export function choiceCard(choices, { onSend, sfx = () => {}, sendLabel = 'send 
     }
   }
   const free = h('textarea', { class: 'ch-free', rows: '1', maxlength: '4000', placeholder: freeLabel, 'aria-label': 'your own words' });
-  const complete = c => picks.get(c.key).size > 0 || !!free.value.trim();
+  const boxes = new Map();                                                      // key -> the textarea of a free-TEXT question
+  const isText = c => c.kind === 'text';
+  const valOf = c => { const t = boxes.get(c.key); return t ? t.value.trim() : ''; };
+  // a question is answered when it has a pick (or words), or when the shared free box has something to say
+  const complete = c => (isText(c) ? !!valOf(c) : picks.get(c.key).size > 0) || !!free.value.trim();
 
   const blocks = new Map(choices.map(c => {
+    const panelId = `${uid}-p-${c.key.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+    if (isText(c)) {
+      // No list could hold this answer, so there is a box instead of options. Same card, same steps, same submit.
+      const box = h('textarea', { class: 'ch-in', rows: String(Math.max(2, Math.min(LIM.maxLines, parseInt(c.lines, 10) || 3))),
+        maxlength: String(LIM.answerChars), placeholder: c.placeholder || '', 'aria-label': c.question });
+      box.addEventListener('keydown', e => { if (e.key === 'Enter') e.stopPropagation(); });   // Enter is a new line, never send
+      box.addEventListener('input', () => { if (box.value.trim()) touched.add(c.key); else touched.delete(c.key); paint(); });
+      boxes.set(c.key, box);
+      return [c.key, { c, btns: [], row: box, el: h('div', { class: 'ch-q ch-q-text', 'data-q': c.id, id: panelId, ...(stepped ? { role: 'tabpanel' } : {}) },
+        h('p', { class: 'ch-qt' }, c.question, h('span', { class: 'ch-tag' }, 'in your words')), box) }];
+    }
     const row = h('div', { class: 'ch-opts', role: c.multi ? 'group' : 'radiogroup', 'aria-label': c.question });
     const btns = c.options.map(opt => {
       const b = h('button', { type: 'button', class: 'ch-opt', 'data-nosfx': '', 'data-cursor-label': 'pick' },
@@ -210,7 +267,7 @@ export function choiceCard(choices, { onSend, sfx = () => {}, sendLabel = 'send 
     row.append(...btns.map(x => x.b));
     if (!c.multi) roving(row, '[role=radio]');                                  // F-13: arrows move through and pick, one tab stop
     const tag = c.multi ? 'pick any' : 'pick one';
-    return [c.key, { c, btns, row, el: h('div', { class: 'ch-q', 'data-q': c.id, id: `${uid}-p-${c.key.replace(/[^A-Za-z0-9_-]/g, '_')}`, ...(stepped ? { role: 'tabpanel' } : {}) },
+    return [c.key, { c, btns, row, el: h('div', { class: 'ch-q', 'data-q': c.id, id: panelId, ...(stepped ? { role: 'tabpanel' } : {}) },
       h('p', { class: 'ch-qt' }, c.question, h('span', { class: 'ch-tag' }, tag)), row) }];
   }));
   const send = h('button', { type: 'button', class: 'ch-send', 'data-nosfx': '', 'data-cursor-label': 'send' }, sendLabel);
@@ -252,6 +309,7 @@ export function choiceCard(choices, { onSend, sfx = () => {}, sendLabel = 'send 
     const why = stalled ? 'claude is still working, so answers wait until it stops' : '';
     send.title = why; if (next) next.title = why;
     for (const { c, btns } of blocks.values()) {
+      if (isText(c)) { boxes.get(c.key).disabled = locked || !enabled; continue; }
       const set = picks.get(c.key);
       for (const { b, opt } of btns) {
         const on = set.has(opt);
@@ -269,7 +327,12 @@ export function choiceCard(choices, { onSend, sfx = () => {}, sendLabel = 'send 
   }
   function compose(extra = '') {
     const lines = [];
-    for (const c of act) { const sel = selOf(c); if (sel.length) lines.push(`${c.id}: ${sel.join(' | ')}`); }
+    // one line per answered question. safeAnswer() on free text because parseAnswer (and the server) read these LINE BY
+    // LINE: a raw newline in someone's answer would otherwise split it into a second, invented "qN:" line.
+    for (const c of act) {
+      if (isText(c)) { const v = safeAnswer(valOf(c)); if (v) lines.push(`${c.id}: ${v}`); continue; }
+      const sel = selOf(c); if (sel.length) lines.push(`${c.id}: ${sel.join(' | ')}`);
+    }
     const own = [free.value.trim(), String(extra || '').trim()].filter(Boolean).join('\n');
     if (own) lines.push(lines.length ? 'note: ' + own.replace(/\n+/g, ' ') : own);   // labelled, so it is never read as part of an answer
     return lines.join('\n');
@@ -290,6 +353,7 @@ export function choiceCard(choices, { onSend, sfx = () => {}, sendLabel = 'send 
         for (const a of parseAnswer(sent).answers) {
           const c = act.find(x => x.id === a.id);
           if (!c) continue;
+          if (isText(c)) { boxes.get(c.key).value = a.answer; continue; }
           picks.set(c.key, new Set(a.answer.split('|').map(s => s.trim()).filter(o => c.options.includes(o))));
           settle();
         }

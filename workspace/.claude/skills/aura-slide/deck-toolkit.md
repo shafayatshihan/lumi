@@ -7,7 +7,7 @@ Use these tools instead of improvising. All commands run from the Aura folder (t
 | Read their files | `.aura/venv/Scripts/python.exe .aura/engine/tools/extract_text.py` |
 | Start a deck | `node .aura/engine/tools/new_deck.js "<Title>" --theme <theme>` |
 | Add missing text ids | `node .aura/engine/tools/new_deck.js --ids .aura/temp/build/<slug>` (`--check` only reports) |
-| Check + screenshots | `node .aura/engine/tools/deck_check.js .aura/temp/build/<slug> [--notes] [--mode document] [--no-shots]` (`--mode document` only for a deck meant to be read; presenter is the default) |
+| Check + screenshots | `node .aura/engine/tools/deck_check.js .aura/temp/build/<slug> [--notes] [--mode document] [--no-shots] [--interview <deck folder>/interview.json]` (`--mode document` only for a deck meant to be read; presenter is the default. Add `--interview` whenever a deck folder was named for you: it is how the title-slide check knows which people the interview actually established, so a deck with no supervisor is not failed for missing one) |
 | Pack (one offline file) | `.aura/venv/Scripts/python.exe .aura/engine/tools/pack_deck.py .aura/temp/build/<slug> --title "<Title>" --out ".aura/decks/<id>" --replace` (where the file goes: "Where you write" in `CLAUDE.md`; without `--out` an old one-shot start writes `4 - Your slides/<Title>.html`) |
 | Re-pack after an edit | the same command (`--replace` overwrites in place, nothing moves to Older versions) |
 | PDF backup (old one-shot decks only; Finalize does it otherwise) | `node .aura/engine/tools/export_pdf.js "4 - Your slides/<Title>.html"` |

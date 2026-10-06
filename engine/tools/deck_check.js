@@ -31,6 +31,10 @@ const argv = process.argv.slice(2);
 const flag = n => { const i = argv.indexOf(n); if (i < 0) return false; argv.splice(i, 1); return true; };
 const val = n => { const i = argv.indexOf(n); return i >= 0 ? argv.splice(i, 2)[1] : null; };
 const wantFinalize = flag('--finalize'), wantNotes = flag('--notes'), noShots = flag('--no-shots'), wantStills = flag('--stills'), modeArg = val('--mode');
+// L-15 reads the identity from THIS deck's interview, not the whole library's old brief. The deck id cannot be read off
+// a build folder path, so the caller names the file: --interview .aura/decks/<id>/interview.json. Without it the old
+// .aura/brief/brief.json is used, exactly as before, which is what keeps a v0.5.3 deck behaving the same.
+const interviewArg = val('--interview');
 
 /* ------------------------------------------------------------------ in-page measuring ------------------------------- */
 function collect({ MIN_PX, TOL, BODY_MIN, BODY_EXEMPT }) {
@@ -345,9 +349,25 @@ async function analysePixels({ si, plain, normal, bareOnly }) {
     const verdict = claims.judge({ slides: info.slides.map((s, i) => ({ n: i + 1, text: s.claimText, notes: s.notesText, visibleIllustrative: s.illustrative, figures: s.figures })), corpus, prov, brief: briefJson });
     verdict.errors.forEach(x => err(x.slide, x.msg)); verdict.warnings.forEach(x => warn(x.slide, x.msg));
     if (!corpus.files && verdict.stat.numbers) warn(0, 'no extracted text of your files was found (.aura/temp/text), so every number needed a provenance entry; if you did upload files, they were not read.');
-    // L-15: the title slide carries what the brief gives (presenters, supervisor, institution, event, date)
+    // L-15: the title slide carries the names the interview established - and only those. When this deck's
+    // interview.json is named, its `identity` wins; otherwise the old brief is read and nothing changes.
+    let identityOf = briefJson;
+    if (interviewArg) {
+      try {
+        const iv = JSON.parse(fs.readFileSync(path.isAbsolute(interviewArg) ? interviewArg : path.join(auraRoot || '.', interviewArg), 'utf8'));
+        const ivId = iv && iv.identity && typeof iv.identity === 'object' ? iv.identity : {};
+        const est = Array.isArray(ivId.established) ? ivId.established : [];
+        const flat = [];
+        for (const f of est) {
+          const v = ivId[f];
+          if (Array.isArray(v)) v.forEach(x => { const s = typeof x === 'object' && x ? x.name : x; if (s && String(s).trim()) flat.push({ label: f.replace(/s$/, ''), value: String(s) }); });
+          else if (v != null && String(v).trim()) flat.push({ label: f, value: String(v) });
+        }
+        identityOf = { identity: flat };
+      } catch (e) { warn(0, `could not read the interview file "${interviewArg}"; the title-slide check fell back to the old brief.`); }
+    }
     const ti = info.slides.findIndex(x => x.kind === 'title'), tsl = info.slides[ti >= 0 ? ti : 0];
-    if (tsl && briefJson) { const miss = claims.titleFields(briefJson, tsl.claimText); if (miss.length) err((ti >= 0 ? ti : 0) + 1, `the title slide is missing what the brief gives: ${miss.join('; ')}. These are required on the title slide, not a suggestion to offer later.`); }
+    if (tsl && identityOf) { const miss = claims.titleFields(identityOf, tsl.claimText); if (miss.length) err((ti >= 0 ? ti : 0) + 1, `the title slide is missing what the brief gives: ${miss.join('; ')}. These are required on the title slide, not a suggestion to offer later.`); }
     if (deckFonts.size > P.maxTypefaces) err(0, `${deckFonts.size} typefaces (${[...deckFonts].join(', ')}); ${lookKey ? P.name + ' uses' : 'Aura allows'} at most ${P.maxTypefaces}.`);
     if (deckSizes.size > P.maxSizesPerDeck) warn(0, `${deckSizes.size} text sizes across the deck (${[...deckSizes].sort((a, b) => a - b).join(', ')}); aim for ${P.maxSizesPerDeck} or fewer.`);
     info.failedFonts.forEach(f => err(0, `font "${f}" failed to load (check its url).`));

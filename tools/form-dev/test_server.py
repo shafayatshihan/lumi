@@ -165,6 +165,8 @@ def main():
         stop_server(srv)
     print('\n[health checks and fixes]')
     run_health_suite()
+    import test_interview               # interview batch 1: state machine, restart, nudge, hand-off, the plan_start crux
+    test_interview.run(sys.modules[__name__])
     import test_blender                 # Blender batch 1: locator, render pipeline (fake blender), estimates, failures
     test_blender.run(sys.modules[__name__])
     import test_blender_deck            # Blender batch 2: renders in the deck (embed, pack, runtime, finalize) + the checker rules
@@ -327,9 +329,13 @@ def run_main_suite():
     s, st = jget('/api/claude/status?refresh=1')
     check('status: cli + signed in', st.get('cli') is True and st.get('signedIn') is True and st.get('running') is False, st)
     check('reply without a session refused', jpost('/api/claude/reply', {'text': 'hi'})[0] == 409)
-    s, j = jpost('/api/claude/start')
+    # The "skip, i'm in a hurry" flow is gone (interview plan section 9): a brand-new deck is never born here any
+    # more, so this route only carries on a deck that already exists.
+    check('start without a deckId is refused now that the hurry flow is gone', jpost('/api/claude/start')[0] == 400)
+    H = legacy_one_go(jpost('/api/decks')[1].get('id'))
+    s, j = jpost('/api/claude/start', {'deckId': H})
     check('start ok', s == 200 and j.get('ok'), (s, j))
-    s2, _ = jpost('/api/claude/start')
+    s2, _ = jpost('/api/claude/start', {'deckId': H})
     check('second start while running -> 409', s2 == 409, s2)
     j = wait_run()
     kinds = [e['kind'] for e in j['events']]
@@ -388,6 +394,18 @@ def run_and_wait(path, body):
     s, j = jpost(path, body)
     ev = wait_run(60)['events'][n:] if s == 200 else []
     return s, j, ev
+
+
+def legacy_one_go(deck_id):
+    """Turn a fresh record into exactly a v0.5.3 "skip, i'm in a hurry" deck: in the one-go flow and from before the
+    interview existed. Lumi cannot make one of these any more (the hurry flow is deleted), but published installs are
+    full of them, so the build path they use has to keep working."""
+    f = AURA / 'decks' / f'{deck_id}.json'
+    rec = json.loads(f.read_text(encoding='utf-8'))
+    rec['flow'] = 'hurry'
+    rec.pop('interviewState', None)
+    f.write_text(json.dumps(rec, indent=2), encoding='utf-8')
+    return deck_id
 
 
 def fake_argv(evs):
@@ -464,10 +482,10 @@ def run_v3_suite():
 
     print('\n[new deck from start + choice marker]')
     jpost('/api/brief', {'basics': {'title': 'Ask deck'}, 'extra': {'notes': 'ask-me please'}})
-    s, j, ev = run_and_wait('/api/claude/start', {})
-    B = j.get('deckId')
+    B = legacy_one_go(jpost('/api/decks')[1].get('id'))
+    s, j, ev = run_and_wait('/api/claude/start', {'deckId': B})
     argv = fake_argv(ev)
-    check('start without deckId makes a record', s == 200 and B and B != A and (AURA / 'decks' / f'{B}.json').is_file(), j)
+    check('a record made from the draft brief can still be built in one go', s == 200 and B and B != A and (AURA / 'decks' / f'{B}.json').is_file(), j)
     check('default quality is best (opus/high)', flag(argv, '--model') == 'opus' and flag(argv, '--effort') == 'high', argv)
     choice = '[[aura:choice id="q1" question="Which look?" options="Bold Blue|Flat-Pack|Claude chooses"]]'
     check('choice marker passes through untouched', any(e['kind'] == 'say' and choice in e['text'] for e in ev) and

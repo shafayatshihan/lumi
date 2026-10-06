@@ -77,8 +77,13 @@ function stopMain() {
   const isBuild = f => /[\\/]temp[\\/]build[\\/]/i.test(f);
   const pick = [files.find(isBuild), files.find(f => !isBuild(f))].filter(Boolean);
   const lines = [];
+  // L-15: the deck being built in this run has an interview.json naming the people the interview actually established.
+  // A build folder does not carry the deck id, so the server puts that file's path in LUMI_INTERVIEW when it starts
+  // Claude. Without it the checker reads the old library brief, exactly as it always did.
+  const ivFile = process.env.LUMI_INTERVIEW || '';
+  const ivArgs = ivFile && fs.existsSync(ivFile) ? ['--interview', ivFile] : [];
   for (const f of pick) {
-    const r = cp.spawnSync(process.execPath, [path.join(__dirname, '..', 'tools', 'deck_check.js'), f, '--no-shots'],
+    const r = cp.spawnSync(process.execPath, [path.join(__dirname, '..', 'tools', 'deck_check.js'), f, '--no-shots', ...ivArgs],
       { cwd: ROOT, encoding: 'utf8', timeout: 150000, env: Object.assign({}, process.env, { CLAUDE_PROJECT_DIR: ROOT }) });
     const out = ((r.stdout || '') + (r.stderr || '')).split(/\r?\n/);
     if (r.status === 0) continue;

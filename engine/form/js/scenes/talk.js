@@ -212,7 +212,7 @@ export function makeStage(el, ctx, name) {
   return S;
 }
 
-// The kinds of talk (values from steps.js) -> short label and icon.
+// The kinds of talk (the old form's values; a deck may still carry one) -> short label and icon.
 export const TYPES = {
   'Thesis defence': ['thesis defence', 'cap'], 'Thesis progress / interim': ['thesis progress', 'progress'],
   'Project presentation': ['project', 'rocket'], 'Class presentation': ['class talk', 'board'], Seminar: ['seminar', 'chat'],

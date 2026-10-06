@@ -4,6 +4,25 @@
 import { upload, files, removeFile } from './api.js';
 import { emit } from './bus.js';
 
+// The seven folders under "3 - Put your files here", in the order they are offered. This list used to live in the
+// 40-field form (steps.js), which is gone; it belongs beside the panel that actually fills the folders.
+export const FOLDERS = [
+  { name: 'Report', title: 'your report', hint: 'pdf or word', accept: '.pdf,.doc,.docx',
+    blurb: 'your thesis, report or write-up. claude reads this one first, so it matters most.' },
+  { name: 'Images and photos', title: 'photos and pictures', hint: 'jpg, png, heic, svg', accept: 'image/*,.heic',
+    blurb: 'setups, samples, prototypes, people. real photos make a talk feel real.' },
+  { name: 'Data (csv, excel, graphs)', title: 'data and graphs', hint: 'csv, excel, chart images', accept: '.csv,.tsv,.xlsx,.xls,.json,.txt,.png,.jpg,.jpeg,.svg',
+    blurb: 'spreadsheets or chart images. claude can redraw your graphs nice and clean.' },
+  { name: 'Logo and university template', title: 'logos and templates', hint: 'images, pptx or pdf', accept: 'image/*,.pptx,.potx,.pdf',
+    blurb: 'your university logo, or a template you have been asked to follow.' },
+  { name: 'Previous year reports', title: 'earlier examples', hint: 'pdf, word or powerpoint', accept: '.pdf,.doc,.docx,.ppt,.pptx',
+    blurb: 'past reports or slides help claude match what your department expects.' },
+  { name: 'Journal papers', title: 'journal papers', hint: 'pdf', accept: '.pdf',
+    blurb: 'the key papers you lean on. claude takes references and context from them.' },
+  { name: 'Anything else', title: 'anything else', hint: 'any file', accept: '',
+    blurb: 'videos, notes, odds and ends. if in doubt, drop it in.' },
+];
+
 const MAX_BYTES = 2 * 1024 ** 3;
 const ROW_H = 46, ROW_GAP = 6;
 const MAIN_RE = /\.(pdf|docx|doc)$/i;

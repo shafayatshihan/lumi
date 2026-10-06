@@ -4,9 +4,8 @@
 /* ---------------------------------------------------------------- routes */
 .route{position:absolute;inset:0;z-index:3;visibility:hidden;pointer-events:none}
 .route > *{pointer-events:auto}
-#stage[data-route=loading] #loading,#stage[data-route=home] #home,#stage[data-route=editor] #editor{visibility:visible}
-#stage:not([data-route=wizard]) #welcome,#stage:not([data-route=wizard]) #ask{visibility:hidden}
-#stage:not([data-route=wizard]) #welcomeLayer{display:none}
+#stage[data-route=loading] #loading,#stage[data-route=home] #home,#stage[data-route=start] #start,
+#stage[data-route=editor] #editor{visibility:visible}
 
 /* character modes for the new screens (bottom aligned, like stage mode) */
 #stage[data-mode=home] #char{left:0;top:630px;width:480px;height:270px}
@@ -19,7 +18,6 @@
 .home-pill:hover svg{transform:rotate(-8deg) scale(1.08)}
 .home-pill svg{transition:transform .35s var(--ease)}
 .home-pill:active{transform:scale(.95)}
-#stage:not([data-route=wizard]) #saved{display:none}
 
 .usage{display:inline-flex;align-items:center;gap:11px;height:44px;padding:0 16px 0 13px;border-radius:100px;background:var(--pill);
   animation:usIn .5s var(--ease) both}
@@ -273,6 +271,12 @@
 .ch-opt.on{background:var(--accent);color:var(--pill);padding-left:11px}
 .ch-opt.on .ch-tick{width:14px;margin-right:6px}
 .ch-opt:disabled{cursor:default}
+/* a free-text question ([[aura:text]]): a box where the options would be. same card, same steps, same submit. */
+.ch-in{width:100%;min-height:62px;max-height:180px;padding:10px 12px;border:0;border-radius:14px;background:var(--white);font-size:14px;line-height:1.45;
+  resize:vertical;outline:2px solid transparent;transition:outline-color .2s}
+.ch-in:focus{outline-color:var(--lilac)}
+.ch-in::placeholder{color:var(--faint)}
+.ch-in:disabled{opacity:.6}
 .ch-foot{display:flex;align-items:flex-end;gap:6px}
 .ch-free{flex:1;min-width:0;height:36px;max-height:80px;padding:8px 12px;border:0;border-radius:14px;background:var(--white);font-size:14px;line-height:1.4;resize:none;
   outline:2px solid transparent;transition:outline-color .2s}

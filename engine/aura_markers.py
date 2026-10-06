@@ -6,7 +6,7 @@ tools/form-dev/marker_cases.json so they cannot drift apart.
 
 scan(text) -> {'markers': [...], 'problems': [...]}
   markers   one entry per well-formed marker line: {'name', 'attrs', 'line'} (+ 'choice', the normalised question, for
-            a choice marker)
+            a choice marker; + 'text', the normalised question, for a text marker)
   problems  one entry per line that mentions [[aura: but could not be used: {'line', 'reason', 'marker', 'text'}.
             reasons: not-alone, unclosed, unknown, bad-attrs, missing-<attr>, bad-value, few-options, bad-id
 Nothing is dropped silently: a caller that ignores `problems` is making that choice on purpose.
@@ -34,9 +34,10 @@ REASON_TEXT = {
     'few-options': 'has fewer than two options',
     'bad-id': 'has an id with unusual characters',
 }
-WHAT = {'choice': 'a question', 'hint': 'a suggestion', 'stage': 'a progress note', 'ask': 'a "waiting for you" signal',
-        'done': 'the "finished" signal', 'plan': 'the plan signal', 'plan-ok': 'a plan check',
-        'built': 'the "slide built" signal'}
+WHAT = {'choice': 'a question', 'text': 'a question in your own words', 'hint': 'a suggestion', 'stage': 'a progress note',
+        'ask': 'a "waiting for you" signal', 'done': 'the "finished" signal', 'plan': 'the plan signal',
+        'plan-ok': 'a plan check', 'built': 'the "slide built" signal',
+        'interview-done': 'the "interview finished" signal'}
 
 
 def _split(v, sep='|'):
@@ -53,6 +54,21 @@ def normalise_choice(a):
     default = (defs if multi else defs[:1]) or options[:1]
     return {'id': str(a.get('id') or '').strip(), 'question': str(a.get('question') or '').strip()[:L['questionChars']],
             'options': options, 'multi': multi, 'default': default,
+            'slide': str(a.get('slide') or '').strip(), 'scope': str(a.get('scope') or '').strip().lower(),
+            'when': str(a.get('when') or '').strip()[:L['whenChars']],
+            'depends': [d for d in re.split(r'[\s,]+', str(a.get('depends') or '')) if ID_RE.match(d)]}
+
+
+def normalise_text(a):
+    """A text marker's attributes -> the one normal form. A text marker is a sibling of choice, NOT a choice with zero
+    options: options stays required for choice, the few-options guard stays, and when="q1=2" keeps its meaning.
+    LIMIT (documented in markers.js and SKILL.md): `when` / `depends` may only name a CHOICE question. The browser sees a
+    text answer as nothing selected, so a condition on a text question can never hold."""
+    L = LIMITS
+    raw = str(a.get('lines') or '').strip()
+    return {'id': str(a.get('id') or '').strip(), 'question': str(a.get('question') or '').strip()[:L['questionChars']],
+            'placeholder': str(a.get('placeholder') or '').strip()[:L['placeholderChars']],
+            'lines': int(raw) if raw.isdigit() else 3,
             'slide': str(a.get('slide') or '').strip(), 'scope': str(a.get('scope') or '').strip().lower(),
             'when': str(a.get('when') or '').strip()[:L['whenChars']],
             'depends': [d for d in re.split(r'[\s,]+', str(a.get('depends') or '')) if ID_RE.match(d)]}
@@ -93,6 +109,12 @@ def _build(name, body):
         if len(c['options']) < 2:
             return None, 'few-options'
         out['choice'] = c
+    if name == 'text':
+        if not ID_RE.match(attrs['id'].strip()):
+            return None, 'bad-id'
+        if 'lines' in attrs and not (str(attrs['lines']).strip().isdigit() and 1 <= int(attrs['lines']) <= LIMITS['maxLines']):
+            return None, 'bad-value'
+        out['text'] = normalise_text(attrs)
     return out, None
 
 

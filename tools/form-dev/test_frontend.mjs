@@ -127,11 +127,52 @@ const src = Object.fromEntries(jsFiles.map(f => [f, read(f)]));
   // that can close the gate is setEnabled(false) while Claude is still working - and that has to say so.
   check('Q: a suggested answer is a real pick (picks starts from the defaults, complete() reads picks)',
     /picks = new Map\(choices\.map\(c => \[c\.key, new Set\(c\.defaults\)\]\)\)/.test(src['markers.js'])
-    && /const complete = c => picks\.get\(c\.key\)\.size > 0/.test(src['markers.js']));
+    && /const complete = c => \(isText\(c\) \? !!valOf\(c\) : picks\.get\(c\.key\)\.size > 0\)/.test(src['markers.js']));
+  // a free-text question ([[aura:text]]) is gated the same way a pick is: its own words, or the shared free box
+  check('Q: a free-text question has a box, is tagged "in your words", and is sent through safeAnswer()',
+    /class: 'ch-in'/.test(src['markers.js']) && /'in your words'/.test(src['markers.js'])
+    && /lines\.push\(`\$\{c\.id\}: \$\{v\}`\)/.test(src['markers.js']) && /const v = safeAnswer\(valOf\(c\)\)/.test(src['markers.js']));
+  // section 5/6 of the interview plan: the interview screen, and what the plan page says a deck costs
+  check('IV: the interview is its own centred scene, not docked under a slide preview',
+    /\.iv-col\{width:720px/.test(fs.readFileSync(path.join(cssDir, 'plan.css'), 'utf8'))
+    && !/bd-qdock/.test(src['interview.js']));
+  check('IV: progress is what is BANKED (a round line and settled chips), never a countdown',
+    /round \$\{round\} . claude keeps asking/.test(src['interview.js']) && /settledChips/.test(src['interview.js'])
+    && !/class: 'iv-(bar|progress)'/.test(src['interview.js']));
+  check('COST: the allowance line is left out when lumi has no trustworthy reading, and costs are time, never money or tokens',
+    /if \(!a \|\| !isFinite\(a\.pct\)\) return out;/.test(src['plan.js'])
+    && !/token|costUsd|fmtCost/.test(src['plan.js'].slice(src['plan.js'].indexOf('what this deck costs'), src['plan.js'].indexOf('const PER_PAGE_TALL'))));
   check('Q: a card switched off while claude works says so (is-waiting, a visible note and button titles)',
     /const stalled = !locked && !enabled;/.test(src['markers.js']) && /classList\.toggle\('is-waiting', stalled\)/.test(src['markers.js'])
     && /waitNote\.hidden = !stalled;/.test(src['markers.js']) && /ch-wait/.test(src['markers.js']));
   check('W-03: beforeunload asks only when something would be lost', /const risky = /.test(src['app.js']) && !/e\.preventDefault\(\); e\.returnValue = ''; return ''; \}\);\n/.test(src['app.js'].replace(/\r/g, '')));
+  // the 'second tap never signs out' launch blocker: the first tap rewrites the button's label, so a handler that
+  // re-derives signedIn from that label reads false on the second tap and skips api.claude.logout() entirely.
+  check('switch account: signed-in state is never re-derived from the button label',
+    !/signedIn\s*=\s*acctGo\.textContent/.test(src['home.js'])
+    && /let acctArm = 0, acctSignedIn = false;/.test(src['home.js'])
+    && /acctSignedIn = !!st\.signedIn;/.test(src['home.js'])
+    && /const signedIn = acctSignedIn;/.test(src['home.js']));
+  check('switch account: a status poll cannot disarm the confirm mid-countdown',
+    /if \(!acctArm\) acctGo\.textContent = st\.signedIn \?/.test(src['home.js']));
+  // section 9: the 40-field form and the hurry flow are DELETED. These are the checks that would catch a half-removal,
+  // which is worse than either state: a route nothing can reach, or a button that still promises an unplanned deck.
+  check('W-09: the form is gone - no steps.js, no fields.js, and nothing imports them',
+    !jsFiles.includes('steps.js') && !jsFiles.includes('fields.js')
+    && !jsFiles.some(f => /from '\.\/(steps|fields)\.js'/.test(src[f])), jsFiles.filter(f => /from '\.\/(steps|fields)\.js'/.test(src[f])).join(', '));
+  check('W-09: the shell has no wizard route left, and the index page has no wizard markup',
+    !/'wizard'/.test(src['app.js']) && !/id="ask"|id="welcome"/.test(fs.readFileSync(path.join(jsDir, '..', 'index.html'), 'utf8')));
+  check('W-09: a deck starts in start.js - what it is about, then the files',
+    jsFiles.includes('start.js') && /what’s your talk about\?/.test(src['start.js']) && /drop in your files/.test(src['start.js'])
+    && /api\.interview\.create/.test(src['start.js']));
+  check('W-09: the seven upload folders moved to the panel that fills them', /export const FOLDERS/.test(src['uploads.js'])
+    && (src['uploads.js'].match(/\{ name: '/g) || []).length === 7);
+  check('W-09: the "skip, i’m in a hurry" path is gone from the pages (one route for everyone)',
+    !/onHurry|startHurry/.test(src['plan.js'] + src['app.js']) && !/claude\.start\(/.test(src['app.js'])
+    && !/i’m in a hurry'/.test(src['plan.js']));
+  check('W-09: the look is its own step, after the interview and before the plan',
+    /function showTheme/.test(src['plan.js']) && /interviewState === 'ready' && !pay\.lookUser/.test(src['plan.js'])
+    && /mountLooks/.test(src['plan.js']));
   check('F-15: the custom pointer has an opt-out and a forced-colors guard', /setNativePointer/.test(src['cursor.js']) && /forced-colors:active/.test(fs.readFileSync(path.join(cssDir, 'cursor.css'), 'utf8')));
 }
 // the font floor (F-01, decided): nothing under 12 px; 12 px only for micro-labels (a short, named allow-list); everything you read is 14+

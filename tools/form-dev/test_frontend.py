@@ -93,8 +93,27 @@ def e2e():
                     try: srv.wait(10)
                     except subprocess.TimeoutExpired: srv.kill()
                 srv_out.close()
+                # Every walk needs an EMPTY library: the home-page checks count cards, so one deck left behind by the
+                # previous walk fails them for no reason at all. On Windows the server it just killed can still hold a
+                # handle for a moment, and ignore_errors=True would swallow that silently and hand the next walk a
+                # dirty library. So: retry, and if it still will not empty, say so loudly instead of pretending.
+                # ...and "4 - Your slides" with them. Emptying only .aura/decks is not enough: on start the server
+                # adopts every packed deck still sitting in that folder (migrate_decks), so the previous walk's slides
+                # come straight back as fresh library cards and the counting checks fail for no reason at all.
+                for f in SANDBOX.glob('4 - Your slides/*'):
+                    try:
+                        shutil.rmtree(f) if f.is_dir() else f.unlink()
+                    except OSError as e:
+                        print(f'  WARNING could not clear {f.name} between walks: {e}')
                 for d in ('decks', 'brief', 'temp'):
-                    shutil.rmtree(SANDBOX / '.aura' / d, ignore_errors=True); (SANDBOX / '.aura' / d).mkdir(parents=True, exist_ok=True)
+                    for attempt in range(10):
+                        shutil.rmtree(SANDBOX / '.aura' / d, ignore_errors=True)
+                        if not (SANDBOX / '.aura' / d).exists(): break
+                        time.sleep(0.4)
+                    else:
+                        left = [p.name for p in (SANDBOX / '.aura' / d).glob('*')][:8]
+                        print(f'  WARNING could not empty .aura/{d} between walks; the next walk starts dirty: {left}')
+                    (SANDBOX / '.aura' / d).mkdir(parents=True, exist_ok=True)
     print(f'  screenshots in {OUT}')
     return ok
 
