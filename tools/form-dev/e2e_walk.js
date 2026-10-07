@@ -123,6 +123,26 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     // ---- the look: its own step, after the interview and before the plan
     await page.waitForSelector('.th-list .lk-opt', { timeout: 120000 }); await sleep(1500); await shot('theme-step');
     R.themeStep = true;
+    // the look step also carries the quality choice now, in the same left column: check it is really there, that the
+    // plain surface names no model, that the advanced control opens, and above all that nothing is pushed off the stage
+    R.theme = await page.evaluate(() => {
+      const L = document.querySelector('.th-left'), st = document.querySelector('.th') || document.body;
+      const r = L ? L.getBoundingClientRect() : null, s = st.getBoundingClientRect();
+      const note = (document.querySelector('.ql-note') || {}).textContent || '';
+      return { rows: document.querySelectorAll('.th-qual .ql-row').length, adv: !!document.querySelector('.ql-adv-b'),
+               advOpen: !!document.querySelector('.ql-adv:not([hidden])'), note,
+               over: r ? Math.round(Math.max(0, r.bottom - s.bottom)) : -1,
+               goVisible: !!document.querySelector('.th-left .pl-big.pl-ink') };
+    });
+    if (R.theme.adv) {
+      await page.click('.ql-adv-b'); await sleep(400); await shot('theme-advanced');
+      R.themeAdv = await page.evaluate(() => ({
+        open: !!document.querySelector('.ql-adv:not([hidden])'),
+        models: [...document.querySelectorAll('.ql-adv .ql-pills')].map(x => [...x.children].map(b => b.textContent)),
+        over: (() => { const L = document.querySelector('.th-left'), s = (document.querySelector('.th') || document.body).getBoundingClientRect();
+          const r = L.getBoundingClientRect(); return Math.round(Math.max(0, r.bottom - s.bottom)); })() }));
+      await page.click('.ql-adv-b'); await sleep(250);
+    }
     await page.locator('.th-list .lk-opt').nth(1).click(); await sleep(800);
     await page.click('.th-left .pl-big.pl-ink');
     await sleep(1200); await shot('planning');
@@ -245,6 +265,29 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     R.afterStop = await page.evaluate(() => ({ main: document.querySelector('.bd-main .lbl').textContent, disabled: document.querySelector('.bd-main').disabled }));
     await shot('build-stopped');
     await page.click('.bd-main'); await waitBuilt(); await sleep(1200); await shot('build-all-built');
+    // 0.5.5: a BUILT slide can be removed too, from the slide itself, and it says in a few words that the work goes.
+    // Afterwards the counter and the strip beside it must agree - both of them now read the one plan and nothing else.
+    const planCount = () => page.evaluate(async () => {
+      const l = await (await fetch('/api/decks')).json();
+      const d = l.decks.find(x => x.planCount);
+      return (await (await fetch('/api/decks/' + d.id + '/plan')).json()).count;
+    });
+    R.builtBefore = await planCount();
+    await page.click('.ed-rem'); await page.waitForSelector('.bd-rmdlg'); await sleep(400); await shot('build-remove-built-dialog');
+    R.rmWords = await page.evaluate(() => (document.querySelector('.pl-dlg-p') || {}).textContent || '');
+    await dlg('remove it');
+    await until(async () => (await planCount()) === R.builtBefore - 1, 60000, 500);
+    R.builtAfter = await planCount();
+    await until(() => page.evaluate(() => document.querySelector('.pl-modal').hidden
+      && /of \d+/.test(document.querySelector('.ed-pos').textContent)), 30000, 500);
+    await sleep(1500);
+    R.builtCounters = await page.evaluate(() => ({
+      modalOpen: !document.querySelector('.pl-modal').hidden,
+      pos: +(document.querySelector('.ed-pos').textContent.match(/of (\d+)/) || [])[1],
+      pg: document.querySelector('.ed-strip-pg').textContent,
+      say: document.querySelector('.bd-say').textContent,
+    }));
+    await shot('build-built-removed');
     // ---- finalize
     // "make next slide" goes enabled from the page's own poll, which can still be a second behind the server while the
     // last run settles. Clicking straight away makes the server answer 409 busy ("claude is still working on this
@@ -284,6 +327,19 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     ok('a round mixes a multiple choice and a question in your own words', R.ivKinds.includes('in your words') && R.ivKinds.length > 1);
     ok('a reload in the middle of the interview loses nothing', R.ivReloadKept === true);
     ok('the look is asked once, after the interview, before the plan', R.themeStep === true);
+    ok('the look step offers the four quality tiers and keeps the plan button reachable',
+      R.theme && R.theme.rows === 4 && R.theme.goVisible, JSON.stringify(R.theme));
+    ok('the look step fits the stage: nothing is pushed off the bottom', R.theme && R.theme.over === 0, JSON.stringify(R.theme));
+    ok('the plain quality surface names no model and no "effort"', R.theme && !/opus|sonnet|haiku|effort/i.test(R.theme.note),
+      R.theme && R.theme.note);
+    ok('the plain quality surface says the pictures look the same', R.theme && /pictures look the same/.test(R.theme.note),
+      R.theme && R.theme.note);
+    ok('the advanced control is closed by default and opens to model + effort',
+      R.theme && R.theme.adv && !R.theme.advOpen && R.themeAdv && R.themeAdv.open
+      && R.themeAdv.models.length === 2 && R.themeAdv.models[0].length === 3 && R.themeAdv.models[1].length === 5,
+      JSON.stringify(R.themeAdv));
+    ok('...and opening it still does not push the step off the stage', R.themeAdv && R.themeAdv.over === 0,
+      JSON.stringify(R.themeAdv));
     ok('the plan page says how long the whole deck takes', R.cost.some(t => /to make this deck/.test(t)));
     // Lumi has just run Claude, so a fresh allowance reading usually exists here. What must never happen is a bare
     // number: an allowance line always carries its "as of" stamp, and no cost is ever quoted in tokens or money.
@@ -300,6 +356,14 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     ok('add / remove a slide mid-build (W-01)', R.addedListed === true && R.removedGone === true
       && R.slidesAfterAdd <= R.upBefore + 1 && R.slidesAfterAdd >= R.upBefore
       && R.slidesAfterRemove < R.slidesAfterAdd);
+    // 0.5.5: the owner's ask. A built slide goes too - with a few words saying its work is thrown away, never a paragraph.
+    ok('a built slide can be removed, and says plainly that its work goes (0.5.5)',
+      /thrown away/.test(R.rmWords || '') && R.rmWords.trim().split(/\s+/).length <= 10 && R.builtAfter === R.builtBefore - 1);
+    ok('the dialog closes behind it, so it can never eat the next click', R.builtCounters && R.builtCounters.modalOpen === false);
+    // N2 again, from the one plan this time: "slide n of m" beside the strip's count beside "all m slides are built"
+    ok('the counter, the strip and the build line all say the same number',
+      R.builtCounters && R.builtCounters.pos === R.builtAfter && R.builtCounters.pg === String(R.builtAfter)
+      && new RegExp(`\\b${R.builtAfter}\\b`).test(R.builtCounters.say), JSON.stringify(R.builtCounters));
     ok("claude's questions lock the build and take focus", R.locked === true && R.popFocus === true);
     ok('a question card is never a dead end (an answer chosen, nothing to press, no reason)', /^ok/.test(R.deadEnd || ''));
     ok('stop leaves a buildable deck', R.afterStop.main === 'make next slide' && R.afterStop.disabled === false);
@@ -309,7 +373,7 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     ok('delete moves to the bin and undo brings it back (W-02)', R.afterDelete.cards === 0 && /moved to the bin/.test(R.afterDelete.toast) && R.afterUndo === 1);
     ok('no console errors', errs.length === 0);
     ok('no request was refused', bad.length === 0);
-  } catch (e) { log('ERR', e.message.split('\n')[0]); log(JSON.stringify(R)); total++; try { await page.screenshot({ path: OUT + 'zz-error.png' }); } catch (x) { /* gone */ } }
+  } catch (e) { log('ERR', e.message.replace(/[\r\n]+/g, ' | ').slice(0, 900)); log(JSON.stringify(R)); total++; try { await page.screenshot({ path: OUT + 'zz-error.png' }); } catch (x) { /* gone */ } }
   finally { log('CONSOLE ERRORS:', errs.join(' | ') || 'none'); log('REFUSED REQUESTS:', bad.join(' | ') || 'none'); await browser.close(); }
   log(`${pass}/${total} e2e checks passed`);
   process.exit(pass === total && total > 0 ? 0 : 1);

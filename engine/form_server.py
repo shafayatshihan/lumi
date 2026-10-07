@@ -144,6 +144,63 @@ def replace_retry(tmp, path):
             time.sleep(0.025)
 
 
+def keep_replace(tmp, path, tries=8, wait=0.15):
+    """replace_retry's slower cousin for the FINISHED files a person can have open (the packed deck, the PDF, the PowerPoint).
+    A browser tab or PowerPoint holding the old file makes os.replace fail with WinError 5/32 on Windows; it nearly always
+    lets go within a second. Unlike replace_retry it leaves tmp alone, so the caller can say what to close and try again."""
+    for i in range(tries):
+        try:
+            os.replace(tmp, path); return
+        except OSError as e:
+            if i == tries - 1 or not file_locked(e): raise
+            time.sleep(wait)
+
+
+def file_locked(e):
+    """True when an OSError is Windows saying another program holds the file open."""
+    return isinstance(e, PermissionError) or getattr(e, 'winerror', None) in (5, 32, 33)
+
+
+def locked_msg(name):
+    return (f'"{name}" is open in another program. Close the deck in your browser (or in PowerPoint, or a preview window) '
+            'and try again.')
+
+
+def os_reason(e, what='a file Lumi needs'):
+    """One plain sentence for an OSError - never its `str()`, which carries the errno and the full path. Batch A fixed this
+    shape inside the packer and the finalizer; these are the two that were left, on the sign-in and self-repair paths, where
+    `{'message': str(e)}` put `[Errno 13] Permission denied: 'C:\\Lumi\\.aura\\account.json'` in front of a client."""
+    if file_locked(e):
+        return f'{what} is open in another program. Close it and try again.'
+    if getattr(e, 'errno', None) == 28 or getattr(e, 'winerror', None) == 112:
+        return 'the disk is full. Free some space and try again.'
+    if isinstance(e, FileNotFoundError):
+        return f'{what} is missing. Restart Lumi and try again.'
+    return f'Lumi could not write {what}. Try again; if it keeps happening, restart Lumi.'
+
+
+TRACEBACK_RE = re.compile(r'^\s*(Traceback \(most recent call last\)|File "|\w+Error: |\w+Exception: |at [\w.<>$]+ ?\(|'
+                          r'node:internal/|\w+Error \[\w+\]: )')
+
+
+def friendly_tool_error(out, fallback='Lumi could not finish that step. Try it again.'):
+    """The last line of a tool's output, made safe to show a person (HANDOFF rule 12). A tool that died on an unhandled
+    exception prints a Python traceback, and its last line is `PermissionError: [WinError 5] Access is denied: '<path>'` -
+    exactly what reached the user at 11:07:23 in deck b45622aef312. A traceback is never shown; the common Windows file
+    lock is translated, anything else becomes one plain sentence."""
+    lines = [ln.rstrip() for ln in (out or '').strip().splitlines() if ln.strip()]
+    if not lines: return fallback
+    text = '\n'.join(lines[-30:])
+    if re.search(r'WinError (?:5|32|33)\b|PermissionError', text):
+        m = re.search(r"[\\/]([^\\/'\"]+\.(?:html|pdf|pptx|docx))", text)
+        return locked_msg(m.group(1)) if m else locked_msg('the deck file')
+    last = lines[-1]
+    if TRACEBACK_RE.match(last) or any(TRACEBACK_RE.match(ln) for ln in lines[-6:]):
+        kind = re.search(r'(\w*(?:Error|Exception))\b', text)
+        return fallback + (f' (Lumi hit an internal {kind.group(1)}.)' if kind else '')
+    return last[:200]
+
+
 def _write_synced(tmp, data):
     """Write and flush to disk BEFORE the rename, so an unclean shutdown cannot leave a zero-length target (S-04)."""
     with open(tmp, 'wb') as f:
@@ -183,6 +240,22 @@ def interview_args(deck_id):
         p = interview_path(deck_id) if deck_id else None
         return ['--interview', str(p)] if p and p.is_file() else []
     except (OSError, ValueError):
+        return []
+
+
+def blender_args(deck_id):
+    """The `--blender-slides <sid,sid,...>` flag for deck_check.js: the slides Lumi really will render in Blender. Only the
+    server knows them (the engine is resolved from the plan, the look and whether Blender is installed), and without the flag
+    the checker cannot tell a holder that is simply waiting for its render from one that no render will ever fill. Nothing at
+    all when the deck has no plan, so a hand-run check behaves exactly as it did before."""
+    try:
+        rec = load_deck(deck_id) if deck_id else None
+        if not (rec and plan_slides(rec)): return []
+        sids = [sid for sid, e in plan_engines(rec).items() if e.get('engine') == 'blender']
+        sids += [sid for sid in bl_states(rec) if sid not in sids]      # a slide whose engine changed keeps its old render
+        return ['--blender-slides', ','.join(sids)]
+    except Exception as e:                                              # never let the check fail over this
+        log('blender slide list not built', repr(e))
         return []
 
 
@@ -231,21 +304,106 @@ QUALITY_MODEL = {'best': ('opus', 'high'), 'maximum': ('opus', 'max'), 'balanced
                  'plan': ('sonnet', 'high')}
 PLAN_QUALITY = 'plan'              # the planning page always runs Sonnet / high, whatever the deck's quality
 
+# ---- the advanced pair (owner request, 0.5.5). A named tier and an explicit (model, effort) pair are THE SAME SETTING seen
+# two ways, never two settings that can disagree: `quality` stays the one stored value, and it holds either a tier name or the
+# literal string "<model>/<effort>". `pair_quality()` canonicalises, so choosing opus + medium by hand stores "balanced" and
+# the plain surface shows "Balanced" again; only a pair no tier covers (say opus + xhigh) is stored as a pair and reads
+# "Custom". Every user-facing string in this product is written for someone non-technical, so the model names live ONLY behind
+# the advanced control - the look step keeps the four calm tiers.
+# MODELS / EFFORTS are what `claude -p` really accepts, checked against the installed CLI (`--effort <low|medium|high|xhigh|max>`;
+# `--model` takes an alias). All 15 combinations run. `fable` is a real alias but needs usage credits, so it is NOT offered:
+# the rule is never to offer a combination the runner cannot run.
+QUALITY_MODELS = ('opus', 'sonnet', 'haiku')
+QUALITY_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+MODEL_TEXT = {'opus': 'Opus', 'sonnet': 'Sonnet', 'haiku': 'Haiku'}
+EFFORT_TEXT = {'low': 'low', 'medium': 'medium', 'high': 'high', 'xhigh': 'extra high', 'max': 'max'}
+
+
+def pair_quality(model, effort):
+    """The canonical stored value for one (model, effort) pair: the tier's name when a tier means exactly that, else
+    "<model>/<effort>". None when either half is not something the CLI takes."""
+    model, effort = str(model or '').strip().lower(), str(effort or '').strip().lower()
+    if model not in QUALITY_MODELS or effort not in QUALITY_EFFORTS: return None
+    for tier in QUALITIES:
+        if QUALITY_MODEL[tier] == (model, effort): return tier
+    return f'{model}/{effort}'
+
 
 def norm_quality(q):
+    """A stored quality, canonicalised: a tier name, 'plan', or '<model>/<effort>' for a pair no tier covers."""
     q = str(q or '').strip().lower()
-    return q if q in QUALITIES or q == PLAN_QUALITY else DEFAULT_QUALITY
+    if q in QUALITIES or q == PLAN_QUALITY: return q
+    if '/' in q:
+        m, _, e = q.partition('/')
+        return pair_quality(m, e) or DEFAULT_QUALITY
+    return DEFAULT_QUALITY
+
+
+def quality_pair(q):
+    """(model, effort) for any stored quality."""
+    q = norm_quality(q)
+    if q in QUALITY_MODEL: return QUALITY_MODEL[q]
+    m, _, e = q.partition('/')
+    return (m, e)
+
+
+def quality_tier(q):
+    """The tier name a stored quality shows as, or None when it is a custom pair."""
+    q = norm_quality(q)
+    return q if q in QUALITIES else None
+
+
+def quality_text(q):
+    """One plain line for a stored quality. A custom pair names the model, because only the advanced control can make one."""
+    q = norm_quality(q)
+    if q in QUALITY_TEXT: return QUALITY_TEXT[q]
+    m, e = quality_pair(q)
+    return f'Custom ({MODEL_TEXT.get(m, m)}, {EFFORT_TEXT.get(e, e)} effort)'
+
+
+def quality_view(q):
+    """What the page needs to show one stored quality both ways at once: never two values, always one read two ways."""
+    q = norm_quality(q)
+    m, e = quality_pair(q)
+    return {'quality': q, 'tier': quality_tier(q), 'model': m, 'effort': e, 'label': quality_text(q)}
+
+
+# How much of the allowance one tier uses against another, and how much longer it takes. ROUGH, and said so wherever it is
+# shown: the only measurement is deck b45622aef312, where the plan conversation (Sonnet) cost $1.46 for 6.64 M tokens against
+# slide 1's $1.82 for a comparable 7.13 M - about a fifth of the per-token price. Effort does not change the price per token;
+# it changes how much Claude writes and how many turns it takes, so its weights are an estimate, not a measurement.
+# WHAT NO TIER CHANGES: the renders. BLENDER_DEFAULTS is a fixed dict, so the pictures are identical on every tier and only
+# Claude's own time and allowance move. That is the whole point of showing this.
+MODEL_WEIGHT = {'opus': 1.0, 'sonnet': 0.2, 'haiku': 0.07}
+EFFORT_WEIGHT = {'low': 0.72, 'medium': 0.8, 'high': 1.0, 'xhigh': 1.25, 'max': 1.5}
+
+
+def quality_weight(q):
+    m, e = quality_pair(q)
+    return round(MODEL_WEIGHT.get(m, 1.0) * EFFORT_WEIGHT.get(e, 1.0), 4)
+
+
+def quality_options():
+    """Everything the look step needs to offer the choice both ways: the four plain tiers, and the explicit model / effort
+    matrix behind the advanced control. `share` is this tier's allowance use against the default one (1.0 = the default);
+    `claudeShare` is how much of a build is Claude at all - the rest is Blender, which no tier touches."""
+    base = quality_weight(DEFAULT_QUALITY) or 1.0
+    return {'default': DEFAULT_QUALITY,
+            'tiers': [dict(quality_view(t), share=round(quality_weight(t) / base, 3)) for t in QUALITIES],
+            'models': [{'id': m, 'label': MODEL_TEXT[m]} for m in QUALITY_MODELS],
+            'efforts': [{'id': e, 'label': EFFORT_TEXT[e]} for e in QUALITY_EFFORTS],
+            # deck b45622aef312: Claude 4,152 s of 7,101 s of machine time. Used to say what a cheaper tier does NOT speed up.
+            'claudeShare': 0.585}
 
 
 def quality_of(brief):
     st = brief.get('style') if isinstance(brief, dict) and isinstance(brief.get('style'), dict) else {}
-    q = norm_quality(st.get('quality'))
-    return q if q in QUALITIES else DEFAULT_QUALITY
+    return norm_quality(st.get('quality'))
 
 
 def quality_flags(q):
     """Claude command-line flags for the quality vs speed choice. Opus runs can fall back to Sonnet."""
-    model, effort = QUALITY_MODEL[norm_quality(q)]
+    model, effort = quality_pair(q)
     return ['--model', model, '--effort', effort] + (['--fallback-model', 'sonnet'] if model == 'opus' else [])
 
 
@@ -259,28 +417,68 @@ def yes_no(v):
     return v
 
 
-# Bold Blue is defined by the owner's reference deck. When it is the chosen look, its spec decides everything about the
-# design (3D, 2D motion, amount, layout, type, colour, wording) and overrides these form answers and Lumi's general
-# design rules. The facts (title, people, results, files, plan, things to include or avoid) still come from the brief.
+# A look that has its own spec decides everything about the design (3D, 2D motion, amount, layout, type, colour,
+# wording) and overrides these form answers and Lumi's general design rules. The facts (title, people, results, files,
+# plan, things to include or avoid) still come from the brief.
+#
+# The split (B1): LOOK_BASE_SPEC holds the structural rules EVERY look obeys - composition, the clash matrix,
+# subject-first staging, fidelity, data honesty, voice, notes. Each entry in LOOK_SPECS adds only brand: palette,
+# type, motion feel, figure idiom. Claude reads the base first, then the look's own file.
 BOLD_BLUE = 'Bold Blue'
-BOLD_BLUE_SPEC = '.claude/skills/aura-slide/looks/bold-blue/LOOK.md'
-BOLD_BLUE_OVERRIDES = ('style.threeD', 'style.twoD', 'style.amount', 'style.amountLabel', 'aura-blend', 'power-design')
+LOOK_BASE_SPEC = '.claude/skills/aura-slide/looks/_shared/LOOK-BASE.md'
+LOOK_SPECS = {
+    'bold-blue': '.claude/skills/aura-slide/looks/bold-blue/LOOK.md',
+    'flat-pack': '.claude/skills/aura-slide/looks/flat-pack/LOOK.md',
+}
+BOLD_BLUE_SPEC = LOOK_SPECS['bold-blue']                        # kept: older records and tests name it
+LOOK_OVERRIDES = ('style.threeD', 'style.twoD', 'style.amount', 'style.amountLabel', 'aura-blend', 'power-design')
+BOLD_BLUE_OVERRIDES = LOOK_OVERRIDES
+
+# Every look's 3D ENGINE POLICY, written down rather than implied. 'blender' = a STILL 3D figure defaults to a Blender
+# studio render when Blender is installed (animations stay live three.js); 'threejs' = this look never uses Blender,
+# its 3D is live three.js whatever the motion. A look that is not listed gets LOOK_3D_DEFAULT, so a 3D slide ALWAYS
+# resolves to an engine - a 3D slide with no engine at all is the slide-14 finalize bug (BACKLOG B1).
+LOOK_3D = {'bold-blue': 'blender', 'flat-pack': 'threejs'}
+LOOK_3D_DEFAULT = 'threejs'
+
+
+def look_slug(look):
+    """A look name as a folder slug ("Bold Blue" -> bold-blue). '' for nothing / Claude chooses."""
+    import re as _re
+    s = _re.sub(r'[^a-z0-9]+', '-', str(look or '').strip().lower()).strip('-')
+    return '' if s in ('', 'claude-chooses') else s
+
+
+def look_spec(look):
+    """The look's own LOOK.md path, or None when the look has no spec of its own yet."""
+    return LOOK_SPECS.get(look_slug(look))
+
+
+def look_3d_engine(look):
+    """Which 3D engine this look's STILL figures default to. Never None."""
+    return LOOK_3D.get(look_slug(look), LOOK_3D_DEFAULT)
+
+
+def brief_look(b):
+    lk = b.get('look') if isinstance(b, dict) and isinstance(b.get('look'), dict) else {}
+    return str(lk.get('theme') or '').strip()
 
 
 def is_bold_blue(b):
-    lk = b.get('look') if isinstance(b, dict) and isinstance(b.get('look'), dict) else {}
-    return str(lk.get('theme') or '').strip().lower() == BOLD_BLUE.lower()
+    return brief_look(b).lower() == BOLD_BLUE.lower()
 
 
 def mark_look(b):
-    """Record in brief.json which spec rules the look (so the skill and the checker agree); cleared for other looks."""
+    """Record in brief.json which spec rules the look (so the skill and the checker agree); cleared for a look with none."""
     lk = b.get('look')
     if not isinstance(lk, dict): return b
-    if is_bold_blue(b):
-        lk['spec'] = BOLD_BLUE_SPEC
-        lk['overrides'] = list(BOLD_BLUE_OVERRIDES)
+    spec = look_spec(lk.get('theme'))
+    if spec:
+        lk['spec'] = spec
+        lk['base'] = LOOK_BASE_SPEC
+        lk['overrides'] = list(LOOK_OVERRIDES)
     else:
-        lk.pop('spec', None); lk.pop('overrides', None)
+        lk.pop('spec', None); lk.pop('base', None); lk.pop('overrides', None)
     return b
 
 
@@ -336,26 +534,28 @@ def as_markdown(b):
         amount_text = f"{n} / 100 ({st.get('amountLabel') or amount_label(n)})"
     except (TypeError, ValueError):
         amount_text = st.get('amountLabel')
-    if is_bold_blue(b):
-        row('Theme', 'Bold Blue (the recommended look)')
-        L.append(f'- **Bold Blue overrides the style answers and the general design rules.** Read `{BOLD_BLUE_SPEC}` '
-                 'first and follow it for every slide: photoreal studio 3D renders, 2D motion, amount, layout, type, '
-                 'colour, wording and speaker notes are decided by Bold Blue, not by the answers below or by '
-                 'aura-blend / power-design. The checker holds the deck to the Bold Blue numbers.')
-        row('3D simulations', 'Bold Blue decides (photoreal 3D on most slides)')
-        row('2D animations', 'Bold Blue decides')
-        row('Amount of illustration and animation', 'Bold Blue decides (the reference deck)')
+    spec = look_spec(theme)
+    if spec:
+        row('Theme', f'{theme}' + (' (the recommended look)' if is_bold_blue(b) else ''))
+        L.append(f'- **{theme} overrides the style answers and the general design rules.** Read '
+                 f'`{LOOK_BASE_SPEC}` (the structural rules every look obeys) and then `{spec}` (this look: palette, '
+                 'type, motion feel and figure idiom), and follow both for every slide: illustration, 2D motion, '
+                 'amount, layout, type, colour, wording and speaker notes are decided by the look, not by the answers '
+                 f'below or by aura-blend / power-design. The checker holds the deck to the {theme} numbers.')
+        row('3D simulations', f'{theme} decides')
+        row('2D animations', f'{theme} decides')
+        row('Amount of illustration and animation', f'{theme} decides')
         asked = []
         if st.get('threeD') not in (None, ''): asked.append(f"3D {str(yes_no(st.get('threeD'))).lower()}")
         if st.get('twoD') not in (None, ''): asked.append(f"2D {str(yes_no(st.get('twoD'))).lower()}")
         if amount_text: asked.append(f'amount {amount_text}')
-        if asked: row('They had also answered (overridden by Bold Blue)', ', '.join(asked))
+        if asked: row(f'They had also answered (overridden by {theme})', ', '.join(asked))
     else:
         row('Theme', theme if theme and theme != 'Claude chooses' else 'Claude chooses (pick the Aura theme that suits the topic and audience)')
         row('3D simulations', yes_no(st.get('threeD')))
         row('2D animations', yes_no(st.get('twoD')))
         row('Amount of illustration and animation', amount_text)
-    row('Quality', QUALITY_TEXT[quality_of(b)])
+    row('Quality', quality_text(quality_of(b)))
     p = sec('people')
     L.append('\n## People')
     for m in p.get('presenters') or []:
@@ -466,7 +666,8 @@ def rel_root(p):
 DECK_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 DECK_ROUTE = re.compile(r'^/api/decks/([A-Za-z0-9_-]{1,64})(?:/(thumb\.png|slides|slides/(\d{1,3})\.png|text|'
                         r'interview/answer|interview|plan|plan/answer|'
-                        r'plan/suggest|build|finalize|pptx))?$')
+                        r'plan/picture|plan/suggest|plan/slide/add|plan/slide/save|plan/slide/remove|'
+                        r'build|finalize|pptx))?$')
 DECK_LOCK = threading.RLock()
 # plannedAt: when a plan with slides was first written. It is NOT the same question as "does this deck have a Claude
 # session": with one shared conversation the interview opens the session long before planning, so the planning step must
@@ -699,6 +900,7 @@ def deck_view(rec, full=False):
     slides = plan_slides(rec)
     px = rec.get('pptx') if isinstance(rec.get('pptx'), dict) else None
     if px and not (isinstance(px.get('file'), str) and inside(ROOT / px['file'], SLIDES) and (ROOT / px['file']).is_file()): px = None
+    v['qualityView'] = quality_view(rec.get('quality'))      # one stored value, read two ways (tier + explicit model/effort)
     v.update(final=fin, finalized=bool(fin), pptx=px, ctxTokens=rec.get('ctxTokens'), sessionLostAt=rec.get('sessionLostAt'), changedSinceFinalize=bool(fin and rec.get('changedSinceFinalize')),
              finalizing=FINALIZER.busy_with(rec['id']), planCount=len(slides),
              builtCount=sum(1 for x in slides if x.get('built')), slideIds=[x.get('id') for x in slides])
@@ -1055,6 +1257,15 @@ def conv_session(rec, conv):
     return conv_of(rec, conv).get('sessionId') if conv else (rec or {}).get('sessionId')
 
 
+def session_cost_so_far(rec, conv):
+    """What the CLI's running `total_cost_usd` stood at when this conversation last finished a run (problem 6). 0.0 for a
+    conversation that has never run, and for every deck saved by 0.5.4 or earlier - which is right: there is no earlier
+    total to subtract, so the first run after an upgrade records its session total and every run after it is a true delta."""
+    d = conv_of(rec, conv) if conv else (rec or {})
+    v = (d or {}).get('costUsdSession')
+    return float(v) if isinstance(v, (int, float)) and v > 0 else 0.0
+
+
 def set_conv(deck_id, conv, **fields):
     """Update the deck conversation's fields (conv None: top-level sessionId/ctxTokens/...) or one slide conversation's
     (a None value removes that key)."""
@@ -1384,6 +1595,8 @@ def pack_built(deck_id, build, ids=True):
     if node and ids and ids_tool.is_file():
         code, out = tool_run([node, ids_tool, BUILDS / build], timeout=60)
         if code != 0: log('text ids could not be added', deck_id, code, (out or '')[-200:])
+        for ln in re.findall(r'^\s*problem: (.+)$', out or '', re.M)[:3]:    # a shared data-edit prefix (problem 8)
+            RUNNER.add('status', ln.strip()[:300], code='edit-ids', deck=deck_id)
     out_dir = work_dir(deck_id)
     out_dir.mkdir(parents=True, exist_ok=True)
     code, out = tool_run([VENV_PY, pack, BUILDS / build, '--title', deck_display_title(rec) or rec.get('title') or 'Deck',
@@ -1391,7 +1604,8 @@ def pack_built(deck_id, build, ids=True):
     m = re.search(r'^Packed: (.+)$', out or '', re.M)
     if code != 0 or not m:
         log('Lumi could not pack the deck', deck_id, code, (out or '')[-300:])
-        RUNNER.add('status', 'Lumi could not pack the deck after this step: ' + ((out or '').strip().splitlines() or ['unknown error'])[-1][:160],
+        RUNNER.add('status', 'Lumi could not pack the deck after this step: '
+                   + friendly_tool_error(out, 'Lumi could not write the deck file. Try the step again.'),
                    code='pack-failed', deck=deck_id)
         return None
     p = Path(m.group(1).strip())
@@ -1401,13 +1615,76 @@ def pack_built(deck_id, build, ids=True):
     return rel_root(p)
 
 
+# ---------------------------------------------------------------- taking one built slide out of the deck
+# W-01 (0.5.5): a slide that is already BUILT can be removed too. The plan entry is only half of it - the section is in the
+# deck file, so it has to come out of the build folder and the packed copy as well, or the plan and the deck drift apart
+# (post-mortem problem 2). Nothing is renumbered: `data-edit` ids are names, not positions (engine/tools/lib/edit_ids.js),
+# and new_deck.js --ids never hands one prefix to two sections, so the freed "s<k>-" prefix is safe to mint again.
+SLIDE_SECTION_RE = re.compile(r'<section\b[^>]*\bclass\s*=\s*(?:"[^"]*\bslide\b[^"]*"|\'[^\']*\bslide\b[^\']*\')[^>]*>', re.I)
+SECTION_TAG_RE = re.compile(r'<section\b|</section\s*>', re.I)
+
+
+def section_end(html, at):
+    """Where the <section> that starts at `at` ends (just past its </section>), counting nesting. None when it is unclosed."""
+    depth = 0
+    for m in SECTION_TAG_RE.finditer(html, at):
+        if m.group(0).startswith('</'):
+            depth -= 1
+            if depth <= 0: return m.end()
+        else:
+            depth += 1
+    return None
+
+
+def cut_slide_section(html, n):
+    """The deck's HTML without its nth slide section (1-based), or None when there is no such section."""
+    starts = [m.start() for m in SLIDE_SECTION_RE.finditer(html)]
+    if not (1 <= int(n or 0) <= len(starts)): return None
+    a = starts[n - 1]
+    b = section_end(html, a)
+    if b is None: return None
+    while a > 0 and html[a - 1] in ' \t': a -= 1               # the blank line the section sat on goes with it
+    if a > 0 and html[a - 1] == '\n': a -= 1
+    return html[:a] + html[b:]
+
+
+def drop_built_section(deck_id, n):
+    """Take the nth slide out of the deck's files: the build folder first (Lumi then packs it again, exactly as a build step
+    does), and the packed copy directly when there is no build folder. True when the deck really lost the slide."""
+    rec = load_deck(deck_id)
+    if not rec: return False
+    build, packed_ok = rec.get('build'), False
+    src = (BUILDS / build / 'index.html') if build else None
+    if src and src.is_file():
+        try: html = src.read_text(encoding='utf-8', errors='replace')
+        except OSError: html = None
+        if html is not None:
+            out = cut_slide_section(html, n)
+            if out is None: return False
+            write_bytes_atomic(src, out.encode('utf-8'))
+            packed_ok = bool(pack_built(deck_id, build, ids=False))
+    if not packed_ok:                       # no build folder, or the pack failed: the editable copy still has to lose it
+        packed = deck_file(load_deck(deck_id) or rec)
+        if not packed: return False
+        try: html = packed.read_text(encoding='utf-8', errors='replace')
+        except OSError: return False
+        out = cut_slide_section(html, n)
+        if out is None: return False
+        write_bytes_atomic(packed, out.encode('utf-8'))
+        update_deck(deck_id, changedSinceFinalize=True)
+    # the thumbnail cache is NOT deleted here: render_slides() keys it on the deck file's mtime and size, so the file
+    # this just rewrote invalidates it by itself. Deleting the folder would only race a render that is writing into it.
+    return True
+
+
 def check_built(deck_id, n, build, conv=None):
     """B-04: after a build step, run the full deck check on that deck from the server and put the answer in the chat, so errors are
     visible even if Claude did not run the check or ignored it. Never blocks the next step."""
     node, script = node_exe(), ENGINE / 'tools' / 'deck_check.js'
     if not (node and script.is_file() and build and (BUILDS / build).is_dir()): return
     try:
-        r = subprocess.run([node, str(script), str(BUILDS / build), '--no-shots'] + interview_args(deck_id), cwd=str(ROOT), capture_output=True, timeout=150,
+        r = subprocess.run([node, str(script), str(BUILDS / build), '--no-shots'] + interview_args(deck_id) + blender_args(deck_id),
+                           cwd=str(ROOT), capture_output=True, timeout=150,
                            stdin=subprocess.DEVNULL, creationflags=NO_WINDOW, env=child_env())
     except (OSError, subprocess.TimeoutExpired) as e:
         RUNNER.add('status', 'Lumi could not run its own check on the slides just now.', code='check-skipped', deck=deck_id, conv=conv); return
@@ -1443,7 +1720,13 @@ class Run:
         self.errors = []                  # the result event's own `errors` list (the real "No conversation found" lives here)
         self.again = None                 # what to launch again if the conversation turns out to be lost
         self.ctx = 0                      # tokens of context the conversation held at its last message (L-17)
-        self.usage_total, self.out_tokens, self.cost = 0, 0, None     # tokens + cost of this run (Blender estimates)
+        self.usage_total, self.out_tokens, self.cost = 0, 0, None     # tokens + cost of THIS RUN (Blender estimates)
+        # Post-mortem problem 6: the headless CLI's final `result` event reports `usage` for the turn but `total_cost_usd` for
+        # the whole RESUMED SESSION. Both were read off the same object and stored side by side, so `tokens` was per-run and
+        # the `costUsd` next to it was cumulative, and bl_estimates took the median of one and the median of the other for the
+        # same prediction. The session total is kept separately now and `cost` is the delta: same scope as `usage_total`.
+        self.cost_session = None          # the CLI's running total for the conversation this run belongs to
+        self.cost_prev = 0.0              # that total before this run (0.0 for a fresh conversation)
         self.bad_markers = set()
         self.stage = None                 # L-08: the furthest stage derived from the tools Claude called
         self.denials = 0                  # L-02: permission refusals seen in this run
@@ -1719,8 +2002,9 @@ class Runner:
                 self.last_deck = None
                 self.add('status', 'Claude is getting ready', code='start')
                 if recovered and handoff:
-                    self.add('status', 'Starting a fresh conversation for this slide so Claude stays quick: it gets your plan and the '
-                             'slides already built.', code='handoff')
+                    # problem 5: the deck conversation hands off too now, so the sentence can no longer say "this slide".
+                    self.add('status', ('Starting a fresh conversation for this slide' if conv else 'Starting a fresh conversation for this deck')
+                             + ' so Claude stays quick: it gets your plan and the slides already built.', code='handoff')
                     if user_text: self.add('user', user_text, slide=slide)
                 elif recovered:
                     self.add('status', 'I lost the earlier conversation (account switched or it expired), so I rebuilt my notes from your '
@@ -1736,6 +2020,10 @@ class Runner:
             run = self.run = Run(proc, self.deck_id, kind or ('reply' if resume else 'start'), meta)
             run.conv = self.conv
             run.resumed, run.after_loss = bool(resume), _after_loss
+            # problem 6: `total_cost_usd` is the RESUMED SESSION's running total. Subtract what the same conversation had
+            # already spent, so the recorded cost has the same scope as the recorded tokens. A conversation that starts fresh
+            # (a hand-off, a recovery, a slide's first run) has spent nothing yet, so nothing is subtracted.
+            run.cost_prev = session_cost_so_far(rec, self.conv) if resume else 0.0
             run.again = again if resume and not _after_loss else None
             if run.kind == 'build-slide': run.stage = 'build'
             if (run.kind == 'build-slide' or (run.kind == 'reply' and not run.conv and plan_slides(rec))) and rec and rec.get('build'):
@@ -1846,7 +2134,10 @@ class Runner:
                 u = m.get('usage') if isinstance(m.get('usage'), dict) else {}
                 run.usage_total = sum(int(u.get(k) or 0) for k in ('input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens',
                                                                    'output_tokens') if isinstance(u.get(k), (int, float)))
-                if isinstance(m.get('total_cost_usd'), (int, float)): run.cost = round(float(m['total_cost_usd']), 4)
+                if isinstance(m.get('total_cost_usd'), (int, float)):
+                    tot = round(float(m['total_cost_usd']), 4)
+                    run.cost_session = tot                                  # cumulative, for the next run's subtraction
+                    run.cost = round(max(0.0, tot - (run.cost_prev or 0.0)), 4)     # problem 6: this run only, like usage_total
                 run.texts.append(text)
                 run.ok, run.asked = not err, (not err) and aura_markers.has(text, 'ask')
                 self._deck_from(text)
@@ -1878,7 +2169,8 @@ class Runner:
             if key in run.bad_markers: continue
             run.bad_markers.add(key)
             log('marker could not be read', run.kind, run.deck_id or '-', p['reason'], p['text'])
-            self.add('marker-problem', aura_markers.describe(p), code=p['reason'], marker=p['marker'], line=p['text'])
+            self.add('marker-problem', aura_markers.describe(p), code=p['reason'], marker=p['marker'], line=p['text'],
+                     fix=aura_markers.repair(p))      # problem 3: say what the line should have been, not only that it failed
 
     def _deck_from(self, text):
         hits = [m['attrs']['path'] for m in aura_markers.find(text, 'done')]
@@ -1893,6 +2185,7 @@ class Runner:
         if run.conv:
             cf = {'sessionId': self.session_id} if self.session_id else {}
             if run.ctx: cf['ctxTokens'] = run.ctx
+            if run.cost_session is not None: cf['costUsdSession'] = run.cost_session   # problem 6: the next run subtracts it
             if cf: set_conv(run.deck_id, run.conv, **cf)
         if run.deck_done:
             p = Path(run.deck_done)
@@ -1900,6 +2193,7 @@ class Runner:
             if (inside(p, SLIDES) or inside(p, DECKS)) and p.is_file(): fields['file'] = rel_root(p)
         if run.build: fields['build'] = run.build
         if run.ctx and not run.conv: fields['ctxTokens'] = run.ctx
+        if run.cost_session is not None and not run.conv: fields['costUsdSession'] = run.cost_session
         rec = update_deck(run.deck_id, **fields)
         if rec and rec.get('file'):     # a migrated stand-in for the same file is no longer needed
             for other in all_decks():
@@ -2076,7 +2370,7 @@ class Runner:
             write_atomic(ACCOUNT_FILE, json.dumps({'account': key, 'email': a.get('email'), 'plan': a.get('plan'),
                                                    'confirmedAt': time.strftime('%Y-%m-%dT%H:%M:%S')}, indent=2))
         except OSError as e:
-            return 500, {'ok': False, 'error': 'save-failed', 'message': str(e)}
+            return 500, {'ok': False, 'error': 'save-failed', 'message': os_reason(e, 'the sign-in record')}
         return 200, {'ok': True, 'confirmed': True}
 
     def logout(self):
@@ -2238,6 +2532,22 @@ def find_edge():
              env('ProgramFiles') and Path(env('ProgramFiles')) / 'Microsoft' / 'Edge' / 'Application' / 'msedge.exe',
              env('LOCALAPPDATA') and Path(env('LOCALAPPDATA')) / 'Microsoft' / 'Edge' / 'Application' / 'msedge.exe']
     return next((c for c in cands if c and c.is_file()), None)
+
+
+def find_chromium():
+    """Any browser `deckpage.launch()` can drive: Edge first, then Chrome - the same two, in the same order. Used to refuse
+    a finalize BEFORE it copies the deck and starts a recording that cannot possibly work. `AURA_FAKE_EDGE` steers it the
+    way it already steers sign-in ('none' means "pretend nothing is installed"), so tests can reach both answers."""
+    fake = os.environ.get('AURA_FAKE_EDGE')
+    if fake: return None if fake == 'none' else fake
+    hit = find_edge()
+    if hit: return hit
+    env = os.environ.get
+    cands = [env('ProgramFiles(x86)') and Path(env('ProgramFiles(x86)')) / 'Google' / 'Chrome' / 'Application' / 'chrome.exe',
+             env('ProgramFiles') and Path(env('ProgramFiles')) / 'Google' / 'Chrome' / 'Application' / 'chrome.exe',
+             env('LOCALAPPDATA') and Path(env('LOCALAPPDATA')) / 'Google' / 'Chrome' / 'Application' / 'chrome.exe']
+    hit = next((c for c in cands if c and c.is_file()), None)
+    return hit or (shutil.which('msedge') or shutil.which('chrome') or None)
 
 
 def version_tuple(v):
@@ -2495,7 +2805,7 @@ class Fixer:
             write_atomic(settings, json.dumps({'permissions': {'allow': HELP_ALLOW if mode == 'fix' else [],
                                                               'deny': ['WebFetch', 'WebSearch']}}, indent=2))
         except OSError as e:
-            return 500, {'ok': False, 'error': 'start-failed', 'message': str(e)[:120]}
+            return 500, {'ok': False, 'error': 'start-failed', 'message': os_reason(e, "Lumi's own settings file")}
         args = cmd + ['-p', '--settings', str(settings), '--output-format', 'json', '--model', 'sonnet', '--effort', 'low']
         name = 'claude-' + mode
         with self.lock:
@@ -2655,6 +2965,10 @@ MAIN_ALIAS = {'3-d': '3d', 'three-d': '3d', '3d model': '3d', 'model': '3d', 'gr
 SLIDE_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,23}$')
 DEFAULT_WORD_CAP = 25          # only if hard-rules.json is unreadable: the real number is hard-rules.json -> generic.wordBudget.content
 MAX_PLAN_SLIDES = 40
+# How many ANSWERED doubts a plan keeps. They are kept so a re-plan never re-asks something, and nothing used to drop one:
+# a long deck (b45622 answered 74 across 9 re-plans) grew its record without any limit, and the whole record is rewritten on
+# every conversation update. 200 is far more than any real deck answers, and far less than unbounded.
+MAX_ANSWERED_DOUBTS = 200
 PLAN_LOCK = threading.RLock()
 PLANQ = {}                       # deck id -> queued re-plan work {slides:[ids], answers:[...], suggest:[...], deck:bool}
 
@@ -2758,6 +3072,9 @@ def norm_visual(v, where, strict, problems, repairs):
     out = {'main': main, 'companions': comps, 'detail': detail, 'motion': motion,
            'phrase': str(v.get('phrase') or '').strip()[:160]}
     if eng: out['engine'] = eng
+    # problem 2: `builtAs` is a FACT Lumi wrote after the step ran, not an intent anyone may edit. It is server-owned, so it
+    # survives this sanitiser and every re-plan, and nothing Claude or the page sends can set it to something else.
+    if v.get('builtAs') in ('blender', 'threejs', 'flat'): out['builtAs'] = v['builtAs']
     return out, extra
 
 
@@ -2925,6 +3242,7 @@ def plan_payload(rec):
         q = PLANQ.get(rec['id']) or {}
     fin = final_of(rec)
     return {'ok': True, 'deckId': rec['id'], 'title': rec.get('title'), 'look': rec.get('look'), 'quality': rec.get('quality'),
+            'qualityView': quality_view(rec.get('quality')), 'qualityOptions': quality_options(),
             # MIGRATION: a deck made by the old wizard always carries its answers in `brief.basics` (the kind of talk and
             # the title were both required), and the wizard asked for the look on one of its screens. Such a deck counts
             # as themed, so it goes straight to planning exactly as it does today.
@@ -3109,7 +3427,7 @@ def pump_plan(deck_id):
     set_slide_status(deck_id, marked, 'replanning')
     rec = load_deck(deck_id) or rec
     code, res = RUNNER.launch(replan_message(rec, q), resume=True, user_text=friendly_replan(q), deck_id=deck_id,
-                              kind='replan', quality=PLAN_QUALITY,
+                              kind='replan', quality=PLAN_QUALITY, handoff=deck_handoff(rec),   # problem 5
                               meta={'slides': q['slides'], 'suggest': [s['id'] for s in q['suggest']],
                                     'deck': q['deck'] or bool(q['answers'])})
     if code != 200:
@@ -3169,6 +3487,15 @@ def ingest_plan(run, rec):
             if d.get('answer') and ((run.meta.get('deck') and d.get('scope') == 'deck') or d.get('slide') in targets):
                 d['applied'] = True
             keep.append(d)
+        # An ANSWERED doubt is kept for ever so a re-plan never asks it twice, and nothing ever dropped one: deck b45622
+        # answered 74 questions across 9 re-plans and its record reached 32 KB, every byte of it rewritten on every single
+        # `set_conv`. The count is bounded now - unanswered doubts are never touched, and the oldest answered-and-applied
+        # ones go first, because a doubt that has been applied is already baked into the plan it changed.
+        done = [d for d in keep if d.get('answer')]
+        over = len(done) - MAX_ANSWERED_DOUBTS
+        if over > 0:
+            gone = {id(d) for d in done[:over]}            # the OLDEST answered ones; order in `keep` is chronological
+            keep = [d for d in keep if id(d) not in gone]
         plan['doubts'] = keep + new_doubts
         open_slides = {d['slide'] for d in plan['doubts'] if d.get('slide') and not d.get('answer')}
         for s in plan['slides']:
@@ -3235,6 +3562,133 @@ def save_plan(deck_id, body):
     return 200, plan_payload(load_deck(deck_id))
 
 
+# ---------------------------------------------------------------- one slide at a time: add, save, remove (0.5.5)
+# WHY THESE EXIST. `save_plan` takes the WHOLE plan from the page, and the page cannot hold a plan that is still true: a
+# build step writes `visual.engine` (pin_engine) and `visual.builtAs` (pin_built_visual) into the slide it just finished,
+# so the moment slide 1 is done every copy of the plan older than that differs from the server's in exactly the field
+# `content_of` compares. Removing an UNBUILT slide from such a copy was then refused as an edit to a BUILT one
+# (409 "built"), which is the bug this fills. Re-reading before saving only narrows the race; sending the CHANGE instead
+# of the result closes it. The server owns the plan; the page says what it wants done to it.
+def edit_plan_slides(deck_id, change):
+    """Apply one change to the server's OWN current plan under the deck lock, normalise it and store it.
+    `change(plan)` edits the draft in place and returns None, or an (code, body) refusal."""
+    rec = load_deck(deck_id)
+    if not rec: return 404, {'ok': False, 'error': 'no-deck'}
+    with DECK_LOCK:
+        rec = load_deck(deck_id)
+        old = rec.get('plan') if isinstance(rec.get('plan'), dict) else {'slides': [], 'doubts': []}
+        draft = json.loads(json.dumps(old))
+        draft.setdefault('slides', [])
+        bad = change(draft)
+        if bad: return bad
+        plan, problems, _ = normalize_plan(draft, old, strict=True)
+        if problems:
+            return 400, {'ok': False, 'error': 'clash' if any(p['error'] == 'clash' for p in problems) else 'bad-plan',
+                         'problems': problems, 'reason': problems[0]['reason']}
+        olds, t = {s.get('id'): s for s in old.get('slides') or [] if isinstance(s, dict)}, time.time()
+        for s in plan['slides']:
+            if s['id'] not in olds or content_of(s) != content_of(olds[s['id']]): s['editedAt'] = t
+        ids = {s['id'] for s in plan['slides']}
+        plan['doubts'] = [d for d in plan['doubts'] if not d.get('slide') or d['slide'] in ids]
+        write_plan(rec, plan)
+    return 200, plan_payload(load_deck(deck_id))
+
+
+def building_now(deck_id, sid):
+    """True while Claude is writing that very slide: its words are already in the message Claude works from."""
+    rec = load_deck(deck_id)
+    return bool(sid and rec and rec.get('buildTarget') == sid and RUNNER and RUNNER.busy and RUNNER.deck_id == deck_id)
+
+
+def plan_slide_add(deck_id, body):
+    """Add one slide to the plan. `after`: the id it follows (none = last). The id is minted here, never by the page."""
+    want = body.get('slide') if isinstance(body.get('slide'), dict) else {}
+    after = str(body.get('after') or '') or None
+    made = {}
+
+    def change(plan):
+        slides = plan['slides']
+        if len(slides) >= MAX_PLAN_SLIDES:
+            return 400, {'ok': False, 'error': 'too-many', 'reason': f'a deck can hold {MAX_PLAN_SLIDES} slides.'}
+        at = len(slides)
+        if after:
+            i = next((k for k, x in enumerate(slides) if x.get('id') == after), None)
+            if i is None: return 404, {'ok': False, 'error': 'no-slide'}
+            at = i + 1
+        # W-01: a new slide may go anywhere after the slides that are already built
+        if at < sum(1 for x in slides if x.get('built')):
+            return 409, {'ok': False, 'error': 'built', 'reason': 'a new slide can only go after the slides that are already built.'}
+        made['id'] = new_slide_id({x.get('id') for x in slides})
+        s = {k: v for k, v in want.items() if k in PLAN_CLAUDE_SLIDE and k != 'id'}
+        if not isinstance(s.get('visual'), dict):      # a blank new slide is words only until someone says otherwise
+            s['visual'] = {'main': 'text', 'companions': [], 'detail': None, 'motion': None, 'phrase': ''}
+        s['id'] = made['id']
+        slides.insert(at, s)
+        return None
+
+    code, res = edit_plan_slides(deck_id, change)
+    return (code, dict(res, newId=made.get('id'))) if code == 200 else (code, res)
+
+
+def plan_slide_save(deck_id, body):
+    """Change one slide's content. A built slide is still changed on the slide itself (or through plan/picture)."""
+    want = body.get('slide') if isinstance(body.get('slide'), dict) else {}
+    sid = str(want.get('id') or body.get('id') or '')
+    if not sid: return 400, {'ok': False, 'error': 'no-slide'}
+    if building_now(deck_id, sid):
+        return 409, {'ok': False, 'error': 'building', 'reason': 'claude is building that slide right now. change it as soon as it is done.'}
+
+    def change(plan):
+        i = next((k for k, x in enumerate(plan['slides']) if x.get('id') == sid), None)
+        if i is None: return 404, {'ok': False, 'error': 'no-slide'}
+        if plan['slides'][i].get('built'):
+            return 409, {'ok': False, 'error': 'built', 'reason': 'slides that are already built stay as they are here. '
+                         'change them on the slide itself.'}
+        plan['slides'][i] = dict(plan['slides'][i], **{k: v for k, v in want.items() if k in PLAN_CLAUDE_SLIDE and k != 'id'})
+        return None
+
+    return edit_plan_slides(deck_id, change)
+
+
+def plan_slide_remove(deck_id, body):
+    """Remove one slide. Unbuilt: it just goes. Built: its work is thrown away, so the page must say `discard`, and the
+    section comes out of the deck file too."""
+    rec = load_deck(deck_id)
+    if not rec: return 404, {'ok': False, 'error': 'no-deck'}
+    sid = str(body.get('slide') or '')
+    slides = plan_slides(rec)
+    i = next((k for k, x in enumerate(slides) if x.get('id') == sid), None)
+    if i is None: return 404, {'ok': False, 'error': 'no-slide'}
+    was_built = bool(slides[i].get('built'))
+    if not was_built:
+        if building_now(deck_id, sid):
+            return 409, {'ok': False, 'error': 'building', 'reason': 'claude is building that slide right now. remove it as soon as it is done.'}
+    else:
+        if not body.get('discard'):
+            return 409, {'ok': False, 'error': 'confirm', 'built': True, 'reason': 'it is built. its work is thrown away.'}
+        if RUNNER and RUNNER.busy and RUNNER.deck_id == deck_id:
+            return 409, {'ok': False, 'error': 'busy', 'reason': 'claude is working on this deck right now. remove it when that is done.'}
+        if FINALIZER.busy_with(deck_id):
+            return 409, {'ok': False, 'error': 'finalizing', 'reason': 'lumi is finalizing this deck. try again when it is finished.'}
+        if not drop_built_section(deck_id, i + 1):
+            return 500, {'ok': False, 'error': 'no-section', 'reason': 'lumi could not take that slide out of the deck file. nothing was removed.'}
+
+    def change(plan):
+        k = next((x for x, y in enumerate(plan['slides']) if y.get('id') == sid), None)
+        if k is None: return 404, {'ok': False, 'error': 'no-slide'}
+        plan['slides'].pop(k)
+        return None
+
+    code, res = edit_plan_slides(deck_id, change)
+    if code != 200: return code, res
+    rec = load_deck(deck_id)
+    if build_started(rec):              # one slide fewer: "every slide is built" may be true now, or true no longer
+        left = [s for s in plan_slides(rec) if not s.get('built')]
+        rec = update_deck(deck_id, planState='building' if left else 'built')
+        res = plan_payload(rec)
+    return 200, dict(res, removed=sid, wasBuilt=was_built)
+
+
 def answer_doubt(deck_id, body):
     rec = load_deck(deck_id)
     if not rec: return 404, {'ok': False, 'error': 'no-deck'}
@@ -3258,6 +3712,80 @@ def answer_doubt(deck_id, body):
                        answer={'slide': d.get('slide'), 'question': d['question'], 'answer': d['answer'], 'other': other})
         pump_plan(deck_id)
     return 200, plan_payload(load_deck(deck_id))
+
+
+def change_picture(deck_id, body):
+    """Change ONE slide's main picture after it has been built, and make the slide again.
+
+    THE HOLE THIS FILLS. `visual.main` is chosen on the plan page, and the plan page is gone the moment building starts.
+    `save_plan` then refuses any change to a built slide outright (409 `built`, "change them on the slide itself") - and
+    `content_of` counts `visual`, so the picture is part of what it refuses. On the slide itself there was nothing to
+    change it with either: a 2D slide has no engine, so no Blender card, no live-3D holder and no render ever appear.
+    Asking Claude in the chat cannot fix it, because the chat edits the HTML while `plan.json` still says 'text' - and
+    then `pin_engine()` and the finalize gate work from a plan that disagrees with the deck, which is post-mortem
+    problem 2 all over again. So the change goes through the PLAN, and the slide is made again from it.
+
+    In one step: write the new `visual` into the plan, forget the facts that were true of the old picture (`built`,
+    `builtAs`, and the Blender state when the slide is no longer a studio render), and - unless the caller says
+    otherwise - start the slide again. `build_next` takes the first unbuilt slide, which is now exactly this one.
+
+    What it does NOT do: touch any other slide, remove the section that is on screen (it stays until the new one replaces
+    it), or decide the engine itself. The engine is resolved at build time by `slide_engine()` and written into the plan
+    once by `pin_engine()`, exactly as for a first build, so the plan, the engine and what was really drawn cannot drift
+    apart again."""
+    rec = load_deck(deck_id)
+    if not rec: return 404, {'ok': False, 'error': 'no-deck'}
+    sid = str(body.get('slide') or '')
+    main = MAIN_ALIAS.get(str(body.get('main') or '').strip().lower(), str(body.get('main') or '').strip().lower())
+    if main not in MAINS: return 400, {'ok': False, 'error': 'bad-main', 'reason': 'pick one main picture for this slide.'}
+    eng = str(body.get('engine') or '').strip().lower() or None
+    if eng is not None and eng not in ENGINES: return 400, {'ok': False, 'error': 'bad-engine'}
+    motion = str(body.get('motion') or '').strip().lower() or None
+    if motion is not None and motion not in MOTIONS: return 400, {'ok': False, 'error': 'bad-motion'}
+    if RUNNER.busy and RUNNER.deck_id == deck_id:
+        return 409, {'ok': False, 'error': 'busy', 'reason': 'claude is working on this deck right now. change the picture when it is done.'}
+    if FINALIZER.busy_with(deck_id):
+        return 409, {'ok': False, 'error': 'finalizing', 'reason': 'lumi is finalizing this deck. try again when it is finished.'}
+    with DECK_LOCK:
+        rec = load_deck(deck_id) or rec
+        plan = rec.get('plan') if isinstance(rec.get('plan'), dict) else None
+        if not plan: return 409, {'ok': False, 'error': 'no-plan'}
+        s = next((x for x in plan_slides(rec) if x.get('id') == sid), None)
+        if not s: return 404, {'ok': False, 'error': 'no-slide'}
+        v = s.get('visual') if isinstance(s.get('visual'), dict) else {}
+        was_3d = v.get('main') == '3d'
+        v['main'] = main
+        v['companions'] = [c for c in (v.get('companions') or []) if c != main]
+        if main == '3d':
+            v['detail'] = v.get('detail') or 'detailed'
+            v['motion'] = motion or v.get('motion') or 'still'
+            # An explicit engine is honoured; otherwise the field is cleared so slide_engine() decides and pin_engine()
+            # writes the answer down at build time - never a stale engine left over from the picture this slide used to be.
+            if eng: v['engine'] = eng
+            else: v.pop('engine', None)
+        else:
+            v.pop('engine', None)
+            v['detail'] = v['motion'] = None
+        v.pop('builtAs', None)              # problem 2: the recorded fact belonged to the picture that is being replaced
+        s['visual'] = v
+        s['built'] = False
+        s.pop('builtAt', None)
+        # NOT 'queued': that word means "waiting for a re-plan", and `build_next` refuses to start while any slide has it.
+        # This slide is waiting for its BUILD, which is the plain unbuilt state.
+        s.pop('status', None)
+        s['editedAt'] = time.time()
+        rec = write_plan(rec, plan, planState='building', buildTarget=None)
+    if was_3d and main != '3d':             # a slide that is no longer a studio render keeps no render state
+        set_bl(deck_id, sid, status=None, error=None, job=None)
+    n = next((i for i, x in enumerate(plan_slides(rec), 1) if x.get('id') == sid), None)
+    note = f'slide {n} is being made again, with {"a 3D picture" if main == "3d" else "a " + main} this time.'
+    if body.get('rebuild') is False:
+        return 200, dict(plan_payload(load_deck(deck_id)), changed=sid, note=note, started=False)
+    code, res = build_next(deck_id)
+    if code != 200:                         # the plan change stands; the person can press "make this slide" themselves
+        return 200, dict(plan_payload(load_deck(deck_id)), changed=sid, note=note, started=False,
+                         why=res.get('reason') or res.get('error'))
+    return 200, dict(plan_payload(load_deck(deck_id)), changed=sid, note=note, started=True)
 
 
 def suggest_slide(deck_id, body):
@@ -3303,7 +3831,8 @@ def plan_start(body):
     planned = bool(rec.get('plannedAt')) or bool(plan_slides(rec))
     msg = plan_message(rec) if not planned else (f'[plan-mode] Plan the deck again from the start, following planning.md. '
                                                  f'Write `{plan_rel(rec["id"])}` and end with [[aura:plan path="{plan_rel(rec["id"])}"]].')
-    code, res = RUNNER.launch(msg, resume=resume, user_text='plan my deck', deck_id=rec['id'], kind='plan', quality=PLAN_QUALITY)
+    code, res = RUNNER.launch(msg, resume=resume, user_text='plan my deck', deck_id=rec['id'], kind='plan', quality=PLAN_QUALITY,
+                              handoff=deck_handoff(rec))        # problem 5: the deck conversation is bounded too
     if code != 200: update_deck(rec['id'], planState=prev_state or 'none')
     return code, dict(res, deckId=rec['id'])
 
@@ -3565,6 +4094,26 @@ CTX_RESET = int(os.environ.get('AURA_CTX_RESET') or CFG.get('contextResetTokens'
 SLIDE_CTX_RESET = int(os.environ.get('AURA_SLIDE_CTX_RESET') or CFG.get('slideContextResetTokens') or 2 * CTX_RESET)
 
 
+def deck_handoff(rec):
+    """Post-mortem problem 5: should the DECK conversation start fresh now? Until 0.5.4 `CTX_RESET` was read on exactly one
+    code path - the interview launcher - so the plan, the re-plan and whole-deck chat grew without any bound at all and the
+    failure, when it came, would land mid-turn. They are handed off on the same rule the slide conversations already use.
+
+    A hand-off is lossless here for the same reason it is lossless for a slide: `recovery_message()` is SELF-CONTAINED. It
+    restates the plan file, the look, the quality, which slides are built and which are not, the plan digest and the deck
+    file - everything the deck conversation was carrying that is not already on disk. It costs one short message (the
+    measured cold start of a conversation in this deck was ~40 K tokens) against ~115 K per turn of replaying a conversation
+    that is never read again.
+
+    Never mid-question: `RUNNER.waiting` means Claude asked something whose text lives only in the transcript, and a fresh
+    conversation would not know what was asked. (The interview is the exception that proves the rule - its open question is
+    in interview.json, so it hands off even then.)"""
+    try:
+        return bool(rec and rec.get('sessionId')) and int((rec or {}).get('ctxTokens') or 0) >= CTX_RESET and not RUNNER.waiting
+    except Exception:
+        return False
+
+
 def source_texts(slide):
     """The already-extracted text files (.aura/temp/text/<file>.txt) of a slide's sources, as project-relative paths."""
     out = []
@@ -3595,8 +4144,9 @@ def build_message(rec, slide, n, total, shell=None):
              'Follow `.claude/skills/aura-slide/building.md`: build ONLY this slide, exactly as planned'
              + (' (this first step also sets up the deck shell)' if n == 1 and not shell else '') + '.',
              *([f'Lumi already made the deck shell: `.aura/temp/build/{shell}/index.html` (template, theme, fonts and look scripts wired, '
-                f'an `assets/` folder). Build into it; do not run new_deck.js to start a deck. For a Bold Blue archetype, Read '
-                '`.aura/engine/deck/looks/bold-blue/archetypes/<name>.html` with the Read tool (replace {{N}} with the slide number).']
+                f'an `assets/` folder). Build into it; do not run new_deck.js to start a deck.'
+                + (f' For an archetype, Read `.aura/engine/deck/looks/{look_slug(rec.get("look"))}/archetypes/<name>.html` with the '
+                   'Read tool (replace {{N}} with the slide number).' if look_spec(rec.get('look')) else '')]
                if shell else []),
              f'This slide\'s plan entry (from `{plan_rel(rec["id"])}`, so you need not open it): {slide_card(slide)}',
              f'Look: {rec.get("look") or "Claude chooses"}. Already built (match its style; do not redo it): ' +
@@ -3608,6 +4158,7 @@ def build_message(rec, slide, n, total, shell=None):
              f'Lumi packs the deck into `{work_rel(rec["id"])}/` and runs its own check after this step: you do not run pack_deck.py.']
     eng = slide_engine(rec, slide)
     if eng.get('engine') == 'blender': lines.append(bl_build_block(rec, slide, eng))     # docs/blender-contract.md section 9
+    elif eng.get('engine') == 'threejs': lines.append(bl_live_block(slide, eng))         # ...and say so when it is NOT a studio render
     lines.append(step_card(slide['id'], n))
     doubts = (rec.get('plan') or {}).get('doubts') or []
     if n == 1:
@@ -3669,6 +4220,7 @@ def build_next(deck_id, rest=None):
     shell = ensure_shell(rec)
     if shell: rec = load_deck(deck_id) or rec
     eng = slide_engine(rec, s)
+    rec = pin_engine(rec, s['id'], eng) or rec       # the engine this slide is built with is written into the plan, once
     was = bl_state(rec, s['id']).get('status')
     if eng.get('engine') == 'blender':                 # the server previews it when the step ends (bl_after_build)
         bl_dir(deck_id, s['id']).mkdir(parents=True, exist_ok=True)
@@ -3696,9 +4248,42 @@ def build_action(deck_id, body):
     return 400, {'ok': False, 'error': 'bad-mode'}
 
 
+RUNLOG_MAX_BYTES = 2 * 1024 * 1024        # ~10,000 runs; a long deck writes well under 200 KB
+
+
+def log_run(run):
+    """One line per Claude run, appended to `.aura/decks/<id>/runs.jsonl`.
+
+    WHY THIS EXISTS. Everything part 1 of the post-mortem knows - who spent what, how many turns, how context grew - was
+    reconstructed from `~/.claude/projects/C--Lumi/<sessionId>.jsonl`, which Lumi neither owns nor references. Those files
+    are Claude Code's, and Claude Code prunes them: the transcripts of the earlier deck `93a68b191a2a` were already gone,
+    which is why no preference in the proposal is confirmed on a second deck and why that deck can never be analysed at
+    all. This is the cheap half of that evidence, kept by Lumi, in the deck's own folder, where backing up the deck backs
+    it up too: about 200 bytes a run against the ~85 MB of transcript it summarises.
+
+    Deliberately NOT the conversation: no prompt text, no reply text, nothing the person wrote. Only the measurements the
+    post-mortem actually needed, and the session id, so a transcript that still exists can still be found.
+    Best effort throughout - a deck must never fail to build because a log line could not be written."""
+    try:
+        if not run.deck_id: return
+        p = work_dir(run.deck_id) / 'runs.jsonl'
+        if p.exists() and p.stat().st_size > RUNLOG_MAX_BYTES: return      # bounded: never grows without end
+        row = {'at': now_iso(), 'kind': run.kind, 'conv': run.conv, 'session': getattr(RUNNER, 'session_id', None),
+               'durationS': round(max(0.0, time.time() - run.started), 2), 'tokensRun': run_tokens(run),
+               'costUsdRun': run.cost, 'costUsdSession': run.cost_session, 'ctxTokens': run.ctx,
+               'ok': bool(run.ok), 'stopped': bool(run.stopped), 'lost': bool(run.lost), 'limited': bool(run.limited),
+               'asked': bool(run.asked), 'toolErrors': len(getattr(run, 'errors', []) or [])}
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, 'a', encoding='utf-8') as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + '\n')
+    except Exception as e:
+        log('run not logged', repr(e))
+
+
 def after_run(run):
     """Bookkeeping when a run ends: the plan, built slides, the editable file's home, then the next queued step."""
     if not run.deck_id: return
+    log_run(run)                     # before anything else can fail: the measurement outlives the transcript
     deck_id = run.deck_id
     rec = load_deck(deck_id)
     if not rec: return
@@ -3769,6 +4354,12 @@ def after_run(run):
                 RUNNER.add('status', 'While building slide %s Claude also changed slide %s. If that was not what you wanted, say so and it can be put back.' %
                            (n, ', '.join(map(str, moved[:4]))), code='other-slide-touched', deck=deck_id, conv=run.conv or 'deck')
         pack_built(deck_id, b)              # v0.5.1: Lumi packs, so the step needs no pack command from Claude
+        if n and b:                         # problem 2: the plan records what was really drawn, and says so when it differs
+            try:
+                why = pin_built_visual(deck_id, n, b)
+                if why: RUNNER.add('status', why, code='visual-divergence', deck=deck_id, conv=run.conv or 'deck')
+            except Exception as e:
+                log('built visual not recorded', deck_id, n, repr(e))
         threading.Thread(target=check_built, args=(deck_id, n, b, run.conv or 'deck'), daemon=True).start()
     if run.deck_done and good:
         rec = update_deck(deck_id, changedSinceFinalize=True)
@@ -3798,7 +4389,7 @@ def after_run(run):
 # ---------------------------------------------------------------- Blender (docs/blender-contract.md is the contract)
 # Claude writes .aura/decks/<id>/blender/<sid>/scene.py with lumi_bpy; this server renders the preview the user judges and, after
 # approval, the full render (a 1080p still, or a 20 fps loop at 720p/1080p). Finalize only embeds what is here.
-BLENDER_HELPER = ENGINE / 'deck' / 'looks' / 'bold-blue' / 'blender'
+BLENDER_HELPER = ENGINE / 'deck' / 'blender'       # look-neutral: any look whose LOOK.md opts into Blender uses it
 BLENDER_DEFAULTS = {'fps': 20, 'previewRes': 30, 'previewSamples': 16, 'stillHeight': 1080, 'stillSamples': 128,
                     'animHeight': 720, 'animSamples': 64, 'animFrames': 80}
 BLENDER_FIND = {'at': 0.0, 'hit': None}
@@ -4034,9 +4625,14 @@ def slide_engine(rec, slide, available=None):
     avail = blender_available() if available is None else available
     want = v.get('engine')
     if want == 'blender':
+        if look_3d_engine(rec.get('look')) != 'blender':                 # the look's own policy forbids Blender
+            return {'engine': 'threejs', 'kind': kind, 'note': 'look-no-blender', 'chosen': True}
         return {'engine': 'blender' if avail else 'threejs', 'kind': kind, 'note': None if avail else 'blender-missing', 'chosen': True}
     if want == 'threejs': return {'engine': 'threejs', 'kind': kind, 'note': None, 'chosen': True}
-    auto = bool(avail) and str(rec.get('look') or '').strip().lower() == BOLD_BLUE.lower() and kind == 'still'
+    # No explicit choice: the LOOK's own 3D policy decides (LOOK_3D). A look whose policy is 'threejs' never renders in
+    # Blender; a 'blender' look uses it for stills only, and only when Blender is installed. Either way an engine is
+    # always returned - a 3D slide must never end up with none (BACKLOG B1).
+    auto = bool(avail) and look_3d_engine(rec.get('look')) == 'blender' and kind == 'still'
     return {'engine': 'blender' if auto else 'threejs', 'kind': kind, 'note': None, 'chosen': False}
 
 
@@ -4057,6 +4653,13 @@ def run_tokens(run):
     return int(getattr(run, 'usage_total', 0) or 0) or int((run.ctx or 0) + (getattr(run, 'out_tokens', 0) or 0))
 
 
+def _run_tok(d):
+    """Tokens of ONE run from a stored record. `tokensRun` is the name since 0.5.5; the plain `tokens` of an older deck meant
+    the same thing (it came from run.usage_total), so it is read as well. Its neighbour `costUsd` did NOT - see bl_estimates."""
+    v = d.get('tokensRun')
+    return v if isinstance(v, (int, float)) else d.get('tokens')
+
+
 def _median(xs):
     xs = sorted(x for x in xs if isinstance(x, (int, float)) and x > 0)
     if not xs: return None
@@ -4073,10 +4676,11 @@ def bl_stats():
 
 
 def bl_stats_add(tokens, cost):
+    """Problem 6: the keys say their scope. `tokensRun` / `costUsdRun` are ONE run; a cumulative number never goes in here."""
     if not tokens: return
     d = bl_stats()
     runs = [r for r in d.get('changes') or [] if isinstance(r, dict)]
-    runs.append({'tokens': int(tokens), 'costUsd': cost, 'at': now_iso()})
+    runs.append({'tokensRun': int(tokens), 'costUsdRun': cost, 'at': now_iso()})
     try:
         write_atomic(TEMP / 'blender-stats.json', json.dumps({'changes': runs[-50:]}, indent=1))
     except OSError as e:
@@ -4129,12 +4733,17 @@ def bl_estimates(rec, sid, renderer=None, kind=None, model=None):
         for h in (720, 1080):
             s = m['startup_s'] + frames * (f * per(_px(h), D['animSamples']) + 0.3) + frames * 0.05
             full[str(h)] = rng(s, basis, res=h, frames=frames, fps=D['fps'])
-    mine = [c.get('tokens') for c in st.get('changes') or [] if isinstance(c, dict)]
+    # Problem 6: BOTH medians are now per-run. `tokens` was always per-run and keeps being read under its old name for a
+    # deck saved by 0.5.4 or earlier; the old `costUsd` beside it was the SESSION TOTAL, so it is deliberately NOT read -
+    # mixing it in is exactly the bug (slide 1 of deck b45622 would have been estimated at 679 K tokens and $1.82, where
+    # $1.82 is what the whole slide had cost by then). An old deck simply has no cost estimate until it runs once more.
+    mine = [_run_tok(c) for c in st.get('changes') or [] if isinstance(c, dict)]
     tok, tb = _median(mine), 'slide'
-    if not tok: tok, tb = _median([r.get('tokens') for r in bl_stats().get('changes') or [] if isinstance(r, dict)]), 'history'
+    if not tok: tok, tb = _median([_run_tok(r) for r in bl_stats().get('changes') or [] if isinstance(r, dict)]), 'history'
     if not tok: tok, tb = DEFAULT_ITER_TOKENS, 'default'
-    costs = [c.get('costUsd') for c in st.get('changes') or [] if isinstance(c, dict) and c.get('costUsd')]
-    it = {'tokens': int(tok), 'low': int(tok * 0.6), 'high': int(tok * 1.6), 'costUsd': _median(costs), 'basis': tb,
+    costs = [c.get('costUsdRun') for c in st.get('changes') or [] if isinstance(c, dict) and c.get('costUsdRun')]
+    if not costs: costs = [r.get('costUsdRun') for r in bl_stats().get('changes') or [] if isinstance(r, dict) and r.get('costUsdRun')]
+    it = {'tokensRun': int(tok), 'low': int(tok * 0.6), 'high': int(tok * 1.6), 'costUsdRun': _median(costs), 'basis': tb,
           'seconds': 90 + preview['seconds']}
     q = (renderer or BLENDER).queue_info(rec['id'], sid) if (renderer or BLENDER) and model is None else {'ahead': 0, 'waitS': 0}
     return {'preview': preview, 'iteration': it, 'full': full, 'queue': q, 'model': {k: m.get(k) for k in ('c', 'a', 'k', 'startup_s', 'basis')}}
@@ -4228,10 +4837,14 @@ class BlenderJob:
         self.lane = 'full' if kind == 'full' else 'preview'
         self.args, self.out, self.meta = list(args), out, dict(meta or {})
         self.proc, self.cancelled, self.state = None, False, 'queued'
+        self.yielding = False                  # a running animation asked to stop at a frame boundary (problem 9)
+        self.yields = 0                        # how many times it has already done so, so it can never be starved
+        self.queued_at = time.time()
         self.progress, self.frame, self.frames, self.sample, self.samples = 0.0, 0, 0, 0, 0
         self.done_frames, self.frame_s, self.device, self.cpu, self.fallback = 0, [], None, False, False
         self.started = self.last_out = None
         self.est = 0
+        self.est_basis, self.est_first = None, None   # problem 12: what was predicted, and on what, so it can be scored
         self.emit_at, self.emit_pct = 0.0, -1
         self.log, self.log_rel = None, None
 
@@ -4282,12 +4895,14 @@ class BlenderRenderer:
 
     def queue_info(self, deck_id, sid):
         with self.lock:
-            ahead, wait = 0, 0
+            ahead, wait, now = 0, 0, time.time()
             for lane in ('preview', 'full'):
                 r = self.running[lane]
                 if r and not (r.deck_id == deck_id and r.sid == sid):
                     ahead += 1; wait += (r.info().get('etaS') or 0) if lane == 'full' else 0
-                for j in self.lanes[lane]:
+                # the full lane is no longer FIFO (problem 9), so "ahead of you" has to follow the same order _kick picks in
+                order = sorted(self.lanes[lane], key=lambda j: self._rank(j, now)) if lane == 'full' else list(self.lanes[lane])
+                for j in order:
                     if j.deck_id == deck_id and j.sid == sid: break
                     ahead += 1; wait += j.est if lane == 'full' else 0
             return {'ahead': ahead, 'waitS': int(wait)}
@@ -4297,14 +4912,49 @@ class BlenderRenderer:
 
     def submit(self, job):
         with self.lock:
+            job.queued_at = time.time()
             self.lanes[job.lane].append(job)
+            self._ask_yield(job)               # the flag only; the render loop stops it at the next frame boundary
             self._kick(job.lane)
         return job
+
+    # ---- scheduling (post-mortem problem 9)
+    # One Blender job at a time on the GPU stays the rule (2 GB VRAM; two jobs thrash). What changes is the ORDER.
+    # In deck b45622aef312 an approved 78-second still waited 44.6 minutes behind an 80-frame animation, because the
+    # full lane was plain FIFO and the animation had started two minutes earlier. Two things fix it:
+    #   * stills go first, then the shortest estimate - a still is minutes, an animation is most of an hour, and running
+    #     the short one first costs the long one nothing it would not have paid anyway;
+    #   * a RUNNING animation yields the GPU to a newly approved still at the next frame boundary. Blender writes each
+    #     frame as a finished PNG, so stopping costs only the frame in flight (~34 s on the owner's MX350); the job is
+    #     re-queued at once and `--resume` carries on from the first missing frame.
+    # Fairness: a job that has waited longer than QUEUE_FAIR_S goes first whatever its size, and an animation yields at
+    # most MAX_YIELDS times, so a stream of stills can never starve it.
+    QUEUE_FAIR_S = 20 * 60
+    MAX_YIELDS = 3
+
+    def _rank(self, job, now):
+        waited = now - (job.queued_at or now)
+        if waited >= self.QUEUE_FAIR_S: return (0, -waited)        # waited too long: it goes first
+        return (1 if job.meta.get('kind') == 'animation' else 0, job.est or 0, job.queued_at or 0)
+
+    def _ask_yield(self, still):
+        """A newly queued still asks a running animation to stop at its next frame boundary. True when it was asked."""
+        if still.lane != 'full' or still.kind != 'full' or still.meta.get('kind') == 'animation': return False
+        run = self.running.get('full')
+        if not (run and run.kind == 'full' and run.meta.get('kind') == 'animation'): return False
+        if run.yielding or run.cancelled or run.yields >= self.MAX_YIELDS: return False
+        if run.done_frames < 1 or run.done_frames >= (run.frames or 0): return False    # nothing saved yet, or nearly done
+        if (still.est or 0) >= (run.est or 0): return False                             # never swap a long job for a longer one
+        run.yielding = True
+        return True
 
     def _kick(self, lane):
         with self.lock:
             if self.running[lane] or not self.lanes[lane]: return
-            job = self.running[lane] = self.lanes[lane].popleft()
+            q, now = self.lanes[lane], time.time()
+            pick = min(range(len(q)), key=lambda i: self._rank(q[i], now)) if lane == 'full' else 0
+            job = self.running[lane] = q[pick]
+            del q[pick]
             job.state = 'running'
         threading.Thread(target=self._work, args=(job,), daemon=True).start()
 
@@ -4365,8 +5015,9 @@ class BlenderRenderer:
         out = bl_dir(deck_id, sid) / 'previews' / f'preview-{nn}.png'
         job = BlenderJob(deck_id, sid, 'preview', ['--preview', '--res', str(D['previewRes']), '--samples', str(D['previewSamples'])], out,
                          {'n': nn, 'res': D['previewRes'], 'height': 1080, 'samples': D['previewSamples'], 'change': change,
-                          'tokens': tokens, 'costUsd': cost, 'prev': st.get('status')})
-        job.est = bl_estimates(rec, sid, self)['preview']['seconds']
+                          'tokensRun': tokens, 'costUsdRun': cost, 'prev': st.get('status')})
+        _e = bl_estimates(rec, sid, self)['preview']
+        job.est, job.est_basis = _e['seconds'], _e.get('basis')      # problem 12: kept, so the prediction can be scored later
         eng = slide_engine(rec, slide)
         set_bl(deck_id, sid, status='previewing', error=None, engine='blender', kind=st.get('kind') or eng.get('kind') or 'still',
                scene=f'{bl_rel(deck_id, sid)}/scene.py')
@@ -4405,11 +5056,16 @@ class BlenderRenderer:
         job = BlenderJob(deck_id, sid, 'full', args, out, {'kind': kind, 'res': res, 'samples': samples, 'prev': st.get('status'),
                                                            'sceneHash': bl_hash(deck_id, sid)})
         est = bl_estimates(rec, sid, self)['full']
-        job.est = (est.get('still') or est.get(str(res)) or {}).get('seconds') or 600
+        _e = est.get('still') or est.get(str(res)) or {}
+        job.est, job.est_basis = _e.get('seconds') or 600, _e.get('basis')     # problem 12: scored against render_s afterwards
+        job.est_first = job.est                      # the FIRST prediction, kept whole: a yield re-estimates job.est downwards
         set_bl(deck_id, sid, status='rendering', error=None)
+        qi = self.queue_info(deck_id, sid)         # problem 9: say where it is in the queue, not only that it is queued
         bl_event(deck_id, sid, 'render-started' if not self.running['full'] else 'render-queued',
-                 f'Lumi is making the full render of slide {n}' + (f' ({res}p, 20 fps).' if kind != 'still' else ' (1080p).'),
-                 job=job.id, estimate=job.est, res=res, renderKind=kind)
+                 f'Lumi is making the full render of slide {n}' + (f' ({res}p, 20 fps).' if kind != 'still' else ' (1080p).')
+                 + (f' {qi["ahead"]} render ahead of it, about {max(1, qi["waitS"] // 60)} min.' if qi['ahead'] == 1 and qi['waitS']
+                    else f' {qi["ahead"]} renders ahead of it, about {max(1, qi["waitS"] // 60)} min.' if qi['ahead'] > 1 and qi['waitS'] else ''),
+                 job=job.id, estimate=job.est, res=res, renderKind=kind, ahead=qi['ahead'], waitS=qi['waitS'])
         self.submit(job)
         return 200, {'ok': True, 'job': job.info()}
 
@@ -4477,6 +5133,7 @@ class BlenderRenderer:
             except subprocess.TimeoutExpired:
                 pass
             if job.cancelled: self._kill(job); why = 'cancelled'; break
+            if job.yielding: self._kill(job); why = 'yielded'; break   # frame boundary: a shorter job wants the GPU
             now = time.time()
             if now - t0 > self._limit(job): self._kill(job); why = 'timeout'; break
             if now - (job.last_out or now) > STALL_LIMIT: self._kill(job); why = 'stalled'; break
@@ -4550,8 +5207,8 @@ class BlenderRenderer:
                  job=job.id, estimate=job.est)
         set_bl(job.deck_id, job.sid, job=dict(job.info(), state='running'))
         out = Path(job.out)
-        if job.kind == 'full' and job.meta.get('kind') == 'animation':
-            shutil.rmtree(out, ignore_errors=True)
+        if job.kind == 'full' and job.meta.get('kind') == 'animation' and not job.meta.get('resume'):
+            shutil.rmtree(out, ignore_errors=True)   # a resumed render keeps the frames it already has (problem 9)
         out.parent.mkdir(parents=True, exist_ok=True)
         with self._open_log(job, f'{job.kind}-{job.meta.get("n") or job.meta.get("res") or 1}') as logf:
             rc, tail, why = self._exec(job, scene, out, job.args, job.cpu, logf)
@@ -4566,6 +5223,7 @@ class BlenderRenderer:
                     if rc != 0 and why is None and not job.cancelled and 'Traceback' not in '\n'.join(tail): why = 'gpu-failed'
         wall = time.time() - job.started
         if job.cancelled: return self._cancelled(job)
+        if job.yielding or why == 'yielded': return self._yielded(job, n)
         produced = out.is_file() if out.suffix.lower() == '.png' else (out.is_dir() and any(out.glob('frame_*.png')))
         if why or rc != 0 or not produced:
             code, detail = self._classify(tail, rc, why) if (why or rc != 0) else ('no-output', '')
@@ -4577,13 +5235,17 @@ class BlenderRenderer:
                     'samples': job.meta['samples'], 'render_s': render_s, 'wall_s': round(wall, 2), 'device': job.device or ('CPU' if job.cpu else None),
                     'frames': job.meta.get('sceneFrames') or 1, 'fps': job.meta.get('fps') or BLENDER_DEFAULTS['fps'], 'sceneHash': sh,
                     'frameTimes': frame_times,
-                    'change': job.meta.get('change'), 'tokens': job.meta.get('tokens'), 'costUsd': job.meta.get('costUsd')}
+                    'change': job.meta.get('change'), 'tokensRun': job.meta.get('tokensRun'), 'costUsdRun': job.meta.get('costUsdRun'),
+                    # problem 12: estimates were computed for every job, shown to the person for up to 45 minutes, and then
+                    # thrown away - so nobody could say whether the progress bar was ever honest. Three numbers per job
+                    # (predicted, its basis, measured) turn the whole corpus into a calibration set.
+                    'est_s': _num(getattr(job, 'est', None)), 'est_basis': getattr(job, 'est_basis', None)}
             with BLENDER_LOCK:
                 cur = bl_state(load_deck(job.deck_id) or {}, job.sid)
                 prevs = [p for p in cur.get('previews') or [] if isinstance(p, dict)] + [prev]
                 set_bl(job.deck_id, job.sid, previews=prevs[-40:], status='preview', job=None, error=None)
             bl_event(job.deck_id, job.sid, 'preview-done', f'The preview of slide {n} is ready. Do you like the design?', job=job.id,
-                     png=bl_url(job.deck_id, job.sid, 'previews/' + out.name), n=prev['n'], render_s=render_s, tokens=prev['tokens'])
+                     png=bl_url(job.deck_id, job.sid, 'previews/' + out.name), n=prev['n'], render_s=render_s, tokens=prev['tokensRun'])
             self.ensure_bench()
             bl_embed_async(job.deck_id, job.sid)
             return
@@ -4615,7 +5277,7 @@ class BlenderRenderer:
                 os.replace(d / 'final-poster.part.png', d / 'final-poster.png')
                 os.replace(part, d / 'final.mp4')
             except OSError as e:
-                return self._fail(job, 'encode-failed', repr(e)[:160])
+                return self._fail(job, 'encode-failed', locked_msg('the render') if file_locked(e) else e.__class__.__name__)
             try: shutil.copyfile(out / 'labels.json', d / 'final.labels.json')
             except OSError:
                 try: (d / 'final.labels.json').unlink()
@@ -4631,7 +5293,7 @@ class BlenderRenderer:
                     try: (d / 'final.labels.json').unlink()
                     except OSError: pass
             except OSError as e:
-                return self._fail(job, 'no-output', repr(e)[:160])
+                return self._fail(job, 'no-output', locked_msg('the render') if file_locked(e) else e.__class__.__name__)
             final_file, nframes = d / 'final.png', 1
         h = res or 1080
         fin = {'kind': kind, 'res': h, 'width': int(round(h * 16 / 9 / 2)) * 2, 'height': h, 'fps': job.meta.get('fps') or BLENDER_DEFAULTS['fps'],
@@ -4639,7 +5301,9 @@ class BlenderRenderer:
                'poster': rel_root(d / 'final-poster.png') if kind == 'animation' else None, 'render_s': render_s,
                'wall_s': round(time.time() - job.started, 2), 'at': now_iso(), 'device': job.device or ('CPU' if job.cpu else None),
                'fallback': bool(job.fallback), 'sceneHash': job.meta.get('sceneHash'), 'stale': False,
-               'frameTimes': frame_times, 'bytes': file_bytes(final_file)}
+               'frameTimes': frame_times, 'bytes': file_bytes(final_file),
+               # problem 12: what Lumi predicted, and on what basis, beside what it measured
+               'est_s': _num(getattr(job, 'est_first', None) or getattr(job, 'est', None)), 'est_basis': getattr(job, 'est_basis', None)}
         set_bl(job.deck_id, job.sid, final={k: v for k, v in fin.items() if v is not None}, status='rendered', job=None, error=None, deferred=None)
         timing_touch(job.deck_id, 'render-done')           # Part D: keep the timing record current even without a finalize
         if final_of(load_deck(job.deck_id) or {}): update_deck(job.deck_id, changedSinceFinalize=True)
@@ -4657,6 +5321,27 @@ class BlenderRenderer:
         log('blender job failed', job.kind, job.deck_id, job.sid, code, detail[:160])
         bl_event(job.deck_id, job.sid, ('preview' if job.kind == 'preview' else 'render') + '-failed',
                  (f'Slide {n}: ' if n else '') + reason, job=job.id, error=code, reason=reason)
+
+    def _yielded(self, job, n):
+        """Problem 9: the animation stopped at a frame boundary so a short job could have the GPU. Every finished frame is a
+        complete PNG on disk, so nothing is thrown away; the job goes straight back in the queue and `--resume` carries on
+        from the first missing frame. Only the frame that was in flight is paid twice."""
+        job.yielding = False
+        done, total = job.done_frames or 0, job.frames or 0
+        per = (job.est or 0) / max(1, total)
+        args = list(job.args) + ([] if '--resume' in job.args else ['--resume'])
+        nxt = BlenderJob(job.deck_id, job.sid, 'full', args, job.out, dict(job.meta, resume=True))
+        nxt.est = int(max(30, (job.est or 0) - done * per))
+        # problem 12: the prediction that gets scored is the ORIGINAL one for the whole render, not the shortened one a
+        # yield leaves behind - otherwise pausing a job would flatter its own accuracy record.
+        nxt.est_basis, nxt.est_first = getattr(job, 'est_basis', None), getattr(job, 'est_first', None) or job.est
+        nxt.yields, nxt.done_frames, nxt.frames = job.yields + 1, done, total
+        set_bl(job.deck_id, job.sid, status='rendering', error=None, job=dict(nxt.info(), state='queued'))
+        bl_event(job.deck_id, job.sid, 'render-paused',
+                 f'Slide {n} paused at frame {done} of {total} so a shorter render can go first; it carries on straight after.',
+                 job=nxt.id, frame=done, frames=total, estimate=nxt.est)
+        log('blender render yielded', job.deck_id, job.sid, f'{done}/{total}', f'yield {nxt.yields}')
+        self.submit(nxt)
 
     def _cancelled(self, job):
         if not job.deck_id: return
@@ -4746,7 +5431,7 @@ def bl_build_block(rec, slide, eng):
     anim = eng.get('kind') == 'animation'
     return '\n'.join([
         f'BLENDER SLIDE: this slide\'s 3D figure is a STUDIO RENDER made in Blender (engine blender, {"a seamless 20 fps animation" if anim else "a 1080p still"}). '
-        'Follow `.claude/skills/aura-slide/looks/bold-blue/BLENDER.md`.',
+        'Follow `.claude/skills/aura-slide/looks/bold-blue/BLENDER.md` (the Blender recipe; it is look-neutral).',
         f'- Write the scene to `{r}/scene.py`: copy the template in BLENDER.md section 2 exactly (its first lines find lumi_bpy by '
         'themselves) and change only the SUBJECT block' + ('; add `L.loop(4.0)` and spin/wave/turntable keys for a 3-6 s loop (section 2b)' if anim else '') + '.',
         f'- At most two check renders, each as ONE plain command, exactly: `{bl_check_cmd(rec["id"], sid)}`, then Read the PNG. '
@@ -4760,6 +5445,88 @@ def bl_build_block(rec, slide, eng):
         'canvas for a plain slide, stage for bb-stage-bg, blueprint, title, close. Labels over the picture: `L.anchor(name, part)` in the scene and '
         '`<div class="bb-tag" data-anchor="name">` inside the holder.',
     ])
+
+
+def bl_live_block(slide, eng):
+    """The live-3D counterpart of bl_build_block (contract section 9). Until v0.5.4 a build step said nothing at all when the
+    slide's engine was three.js, so on a look that does not auto-pick Blender Claude sometimes wrote a `.bb-blender` holder
+    anyway. Lumi only renders for slides whose engine IS blender, so that holder could never be filled and finalize died at
+    the very end with a raw error. The engine is named on every 3D slide now, and the wrong holder is forbidden in words."""
+    return '\n'.join([
+        f'LIVE 3D SLIDE: this slide\'s 3D figure is drawn LIVE with three.js (engine threejs, '
+        f'{"a still frame" if eng.get("kind") == "still" else "animated"}), not a Blender studio render.',
+        '- Build the figure the normal way for this look: an `.aura-3d` holder with `Aura.scene(<id>, setup, { period: <seconds> })` '
+        '(a 3D slide must register a loop period so Lumi can record it).',
+        f'- Do NOT write a `<div class="bb-blender">` holder, a `data-blender` attribute or a `scene.py` for slide "{slide["id"]}". '
+        'Lumi renders Blender pictures only for slides whose engine is blender, so such a holder would stay empty for ever and the '
+        'deck could not be finalized. If this figure really needs a ray-traced studio render, say so instead of writing the holder: '
+        'the user chooses the engine on the plan page.',
+    ])
+
+
+def built_visual_kind(build, n):
+    """What the nth section of a build folder ACTUALLY contains as its main picture: 'blender' (a studio-render holder),
+    'threejs' (a live `.aura-3d` scene holder) or 'flat' (neither - svg, image, chart, text). None when it cannot be read."""
+    try:
+        html = (BUILDS / build / 'index.html').read_text(encoding='utf-8', errors='replace')
+    except (OSError, TypeError):
+        return None
+    parts = re.split(r'(?=<section\b[^>]*class="[^"]*\bslide\b)', html)[1:]
+    if not (1 <= int(n or 0) <= len(parts)): return None
+    sec = parts[n - 1]
+    if re.search(r'class\s*=\s*["\'][^"\']*\bbb-blender\b', sec): return 'blender'
+    if re.search(r'class\s*=\s*["\'][^"\']*\baura-3d\b', sec): return 'threejs'
+    return 'flat'
+
+
+def pin_built_visual(deck_id, n, build):
+    """Post-mortem problem 2. `plan.json` said deck b45622 had five 3D slides; the deck had two Blender renders, one three.js
+    scene, one hand-drawn animated SVG (slide 12) and one empty hole (slide 14). Nothing in the pipeline ever reconciled the
+    plan's CLAIM with what was built, so every report, estimate and re-render driven off the plan was wrong, and nobody could
+    see it. Batch A's `pin_engine()` closes half of this - it writes the resolved ENGINE forward before the step runs, so
+    slide 12 would now carry `engine: "threejs"` - but it says nothing about what the step then drew, and a three.js engine
+    with a hand-written SVG is exactly the case it cannot catch.
+
+    So the fact is recorded beside the intent, never on top of it: `visual.builtAs` is what the section really holds, and
+    `visual.main` keeps saying what was asked for. Overwriting the intent would make the next re-plan forget that a 3D
+    picture was ever wanted; dropping the fact is what left the audit impossible. When the two disagree the person is told
+    once, in the chat, naming the slide - a divergence nobody is told about is the same as no record at all."""
+    kind = built_visual_kind(build, n)
+    if not kind: return None
+    with DECK_LOCK:
+        rec = load_deck(deck_id)
+        plan = rec.get('plan') if rec else None
+        if not isinstance(plan, dict): return None
+        slides = plan_slides(rec)
+        if not (1 <= int(n) <= len(slides)): return None
+        s = slides[int(n) - 1]
+        v = s.get('visual')
+        if not isinstance(v, dict): return None
+        was, main = v.get('builtAs'), v.get('main')
+        if was == kind: return None
+        v['builtAs'] = kind
+        write_plan(rec, plan)
+    if main == '3d' and kind == 'flat':
+        return (f'The plan asks for a 3D picture on slide {n}, and the slide was built with a flat one (an SVG, a chart or '
+                'an image). The slide itself is fine - but the plan now records what is really there, so an estimate or a '
+                're-render cannot be built on a 3D picture that does not exist. Say so if you wanted the 3D one.')
+    return None
+
+
+def pin_engine(rec, sid, eng):
+    """Write the engine Lumi just resolved into the plan (contract section 2), so the slide is BUILT and FINALIZED with the same
+    engine it was planned with. Without this the engine was recomputed from the look and from whether Blender happens to be
+    installed, so it could change under a deck that was already built. Returns the (possibly reloaded) record."""
+    if not eng.get('engine') or eng.get('chosen'): return rec
+    plan = rec.get('plan')
+    if not isinstance(plan, dict): return rec
+    for s in plan_slides(rec):
+        if s.get('id') != sid: continue
+        v = s.get('visual')
+        if not (isinstance(v, dict) and v.get('main') == '3d' and not v.get('engine')): return rec
+        v['engine'] = eng['engine']
+        return write_plan(rec, plan)
+    return rec
 
 
 def bl_after_build(deck_id, sid, run):
@@ -4790,7 +5557,7 @@ def bl_after_change(run, good):
     tokens, cost = run_tokens(run), getattr(run, 'cost', None)
     edited = bl_hash(deck_id, sid) != (run.meta or {}).get('hash')
     changes = [c for c in st.get('changes') or [] if isinstance(c, dict)] + [
-        {'text': text[:400], 'at': now_iso(), 'tokens': tokens, 'costUsd': cost, 'edited': edited, 'ok': bool(good)}]
+        {'text': text[:400], 'at': now_iso(), 'tokensRun': tokens, 'costUsdRun': cost, 'edited': edited, 'ok': bool(good)}]
     if good: bl_stats_add(tokens, cost)
     back = 'preview' if st.get('previews') else 'failed'
     if good and edited:
@@ -4989,20 +5756,63 @@ def bl_embed_async(deck_id, sid):
     threading.Thread(target=bl_embed_pack, args=(deck_id, [sid]), daemon=True).start()
 
 
+BL_HOLDER_TAG = re.compile(r'<div\b[^>]*\bclass\s*=\s*["\'][^"\']*\bbb-blender\b[^"\']*["\'][^>]*>', re.I)
+
+
+def bl_holders(rec):
+    """{<slide id>: filled} for every `.bb-blender` holder in the deck's editable file, {} when it cannot be read. The packer
+    sets data-filled on a holder it put a render into, so a holder without it is still waiting for one.
+
+    COMMENTS DO NOT COUNT. Every deck carries the template's own documentation in a head comment, and that text contains a
+    literal `<div class="bb-blender" data-blender="<id>" ...>`. Today it is harmless only by luck - the `>` inside
+    `"<id>"` ends the tag match early, so no id parses and the entry is skipped - but a comment that happened to name a
+    real slide id would invent an unfilled holder, and finalize would refuse for ever with nothing a person could fix."""
+    try:
+        src = deck_file(rec)
+        html = src.read_text(encoding='utf-8', errors='replace') if src and src.is_file() else ''
+        html = re.sub(r'<!--.*?-->', '', html, flags=re.S)
+    except OSError:
+        return {}
+    out = {}
+    for tag in BL_HOLDER_TAG.findall(html):
+        m = re.search(r'data-blender\s*=\s*["\']([^"\']+)["\']', tag)
+        if not m: continue
+        sid = m.group(1)
+        out[sid] = bool(re.search(r'\bdata-filled\b', tag)) or out.get(sid, False)
+    return out
+
+
 def bl_finalize_gate(rec, accept_stale=False):
     """Contract section 10: finalize embeds, it never renders. Refuse while a Blender slide has no final render (409
-    blender-pending), and ask (409 blender-stale) when a final is older than the scene. Returns (status, body) or None."""
+    blender-pending), and ask (409 blender-stale) when a final is older than the scene. Returns (status, body) or None.
+
+    The slides it looks at are not only the ones whose ENGINE is blender: a slide that was built with a `.bb-blender` holder
+    no render will ever fill (the build and the plan disagreed) is pending too. That orphan holder used to slip through here
+    and kill finalize.js at the very end of a long run with a raw error (`slide 14 still shows no render`)."""
     eng = plan_engines(rec)
-    pend, stale = [], []
+    holders = bl_holders(rec)
+    pend, stale, orphan = [], [], []
     for i, s in enumerate(plan_slides(rec), 1):
-        if eng.get(s['id'], {}).get('engine') != 'blender': continue
-        fin = bl_state(rec, s['id']).get('final')
+        sid = s['id']
+        if eng.get(sid, {}).get('engine') != 'blender':
+            if sid in holders and not holders[sid]:
+                # a studio-render holder with nothing to fill it. "Blender is gone" (a chosen engine that fell back, or a slide
+                # that still holds Blender state) is the ordinary pending case; anything else is a holder on a live 3D slide.
+                (pend if eng.get(sid, {}).get('note') == 'blender-missing' or bl_state(rec, sid) else orphan).append(i)
+            continue
+        fin = bl_state(rec, sid).get('final')
         if not (isinstance(fin, dict) and fin.get('file') and (ROOT / fin['file']).is_file()): pend.append(i)
         elif fin.get('stale') and not accept_stale: stale.append(i)
     nums = lambda l: ('slide ' if len(l) == 1 else 'slides ') + ', '.join(map(str, l))
-    if pend:
-        return 409, {'ok': False, 'error': 'blender-pending', 'slides': pend,
-                     'reason': f'{nums(pend).capitalize()} {"is a studio render that is" if len(pend) == 1 else "are studio renders that are"} not finished: approve the preview and render {"it" if len(pend) == 1 else "them"} first.'}
+    if pend or orphan:
+        why = []
+        if pend: why.append(f'{nums(pend).capitalize()} {"is a studio render that is" if len(pend) == 1 else "are studio renders that are"} '
+                            f'not finished: approve the preview and render {"it" if len(pend) == 1 else "them"} first.')
+        if orphan: why.append(f'{nums(orphan).capitalize()} {"has" if len(orphan) == 1 else "have"} a studio render holder that Lumi will '
+                              f'never fill, because {"that slide is" if len(orphan) == 1 else "those slides are"} live 3D (three.js). Open '
+                              f'{"it" if len(orphan) == 1 else "them"} and ask for the figure to be drawn live, or for a studio render.')
+        return 409, {'ok': False, 'error': 'blender-pending', 'slides': sorted(set(pend + orphan)), 'pending': pend,
+                     'orphans': orphan, 'reason': ' '.join(why)}
     if stale:
         return 409, {'ok': False, 'error': 'blender-stale', 'slides': stale,
                      'reason': f'{nums(stale).capitalize()} changed after the last full render. Render again, or finalize with the older render.'}
@@ -5053,6 +5863,15 @@ def _num(x, nd=3):
     return None if v != v or v in (float('inf'), float('-inf')) else round(v, nd)
 
 
+def _est_error(est, actual):
+    """Problem 12: how wrong the prediction was, as a signed fraction of what really happened (+0.5 = half as long again as
+    it should have been, -0.3 = it finished in 70 % of the predicted time). None when either number is missing, so a deck
+    rendered by 0.5.4 - which recorded no estimate at all - reports nothing instead of a made-up zero."""
+    e, a = _num(est), _num(actual)
+    if not e or not a or a <= 0: return None
+    return round((e - a) / a, 3)
+
+
 def _per_frame(times):
     vals = [float(x) for x in (times or []) if isinstance(x, (int, float)) and not isinstance(x, bool)]
     if not vals: return None
@@ -5100,7 +5919,11 @@ def timing_render_section(rec, copy_scenes=True):
             prevs.append({'n': p.get('n'), 'at': p.get('at'), 'res': p.get('res'), 'height': p.get('height'),
                           'samples': p.get('samples'), 'renderS': _num(p.get('render_s')), 'wallS': _num(p.get('wall_s')),
                           'device': p.get('device'), 'frames': p.get('frames'), 'fps': p.get('fps'),
-                          'tokens': p.get('tokens'), 'costUsd': p.get('costUsd'),
+                          # problem 6: the names say the scope. `tokens` of a pre-0.5.5 deck was already per-run, so it is
+                          # carried over; its `costUsd` was the session total and is reported as such, never as a run cost.
+                          'tokensRun': _run_tok(p), 'costUsdRun': p.get('costUsdRun'), 'costUsdSessionLegacy': p.get('costUsd'),
+                          'estS': _num(p.get('est_s')), 'estBasis': p.get('est_basis'),      # problem 12
+                          'estError': _est_error(p.get('est_s'), p.get('render_s')),
                           'frameTimes': ft, 'perFrameS': _per_frame(ft)})
         f = st.get('final') if isinstance(st.get('final'), dict) else None
         fin = None
@@ -5113,6 +5936,8 @@ def timing_render_section(rec, copy_scenes=True):
                    'fallback': bool(f.get('fallback')), 'stale': bool(f.get('stale')), 'file': path,
                    'bytes': f.get('bytes') if isinstance(f.get('bytes'), int) else file_bytes(ROOT / path) if path else None,
                    'posterBytes': file_bytes(ROOT / f['poster']) if f.get('poster') else None,
+                   'estS': _num(f.get('est_s')), 'estBasis': f.get('est_basis'),            # problem 12
+                   'estError': _est_error(f.get('est_s'), f.get('render_s')),
                    'frameTimes': ft, 'perFrameS': _per_frame(ft)}
         out[sid] = {
             'slide': n, 'title': s.get('title'), 'engine': (eng.get(sid) or {}).get('engine') or st.get('engine'),
@@ -5155,7 +5980,28 @@ def build_timing_record(rec, old=None, finalize=None, copy_scenes=True):
                    'finalizeS': (last or {}).get('totalS'),
                    'loopBytes': sum(x for x in [(l.get('bytes') or 0) for l in ((last or {}).get('loops') or [])]) or None,
                    'htmlBytes': fin.get('htmlBytes') if fin else None, 'pdfBytes': fin.get('pdfBytes') if fin else None},
+        # problem 12: one line that answers "were the progress bars honest?" over every job in this deck. The post-mortem
+        # could not answer it at all, because the estimates were computed and then thrown away.
+        'estimateAccuracy': _estimate_accuracy(render),
     }
+
+
+def _estimate_accuracy(render):
+    """Scored predictions across a deck: how many jobs had one, the median and worst signed error, and how many landed
+    inside the band Lumi actually showed the person (0.7x to 1.6x, from bl_estimates' low/high). None when no job in this
+    deck recorded an estimate - every deck rendered by 0.5.4 or earlier."""
+    errs = []
+    for e in (render or {}).values():
+        for j in list(e.get('previews') or []) + ([e.get('final')] if e.get('final') else []):
+            if isinstance(j, dict) and j.get('estError') is not None: errs.append(float(j['estError']))
+    if not errs: return None
+    s = sorted(errs)
+    m = len(s) // 2
+    return {'scored': len(s), 'medianError': round(s[m] if len(s) % 2 else (s[m - 1] + s[m]) / 2, 3),
+            'worstError': round(max(s, key=abs), 3),
+            # the range Lumi really showed: bl_estimates puts low at 0.7x and high at 1.6x of its own number, so a render
+            # landed inside the bar the person watched when est/actual is in [1/1.6, 1/0.7] - error in [-0.375, +0.429]
+            'withinShownBand': sum(1 for x in s if -0.375 <= x <= 0.429)}
 
 
 def read_timing_record(deck_id):
@@ -5274,6 +6120,14 @@ class Finalizer:
         ff = ffmpeg_exe()
         if not ff:
             return 503, {'ok': False, 'error': 'ffmpeg-missing', 'reason': 'the video tool is missing. repair it from the loading screen.'}
+        # Finalize records every loop in a real browser (`deckpage.launch()`: Edge, then Chrome). With neither installed the
+        # run copied the deck, set itself running, started node, and only THEN said "Microsoft Edge could not be started" -
+        # the same shape as the slide-14 orphan: a condition knowable in milliseconds, discovered at the end of the work.
+        # Checked here, beside the other missing-tool gates, so nothing is copied and no run is started.
+        if not find_chromium():
+            return 503, {'ok': False, 'error': 'browser-missing',
+                         'reason': 'lumi records your deck in microsoft edge, and neither edge nor chrome is installed on '
+                                   'this computer. install one of them and press finalize again.'}
         with self.lock:
             if self.state.get('running'): return 409, {'ok': False, 'error': 'finalizing', 'deckId': self.state.get('deckId')}
             self.state = {'running': True, 'deckId': deck_id, 'title': rec.get('title'), 'phase': 'start', 'slide': 0,
@@ -5355,7 +6209,8 @@ class Finalizer:
             if self.cancelled: msg = 'cancelled'
             elif p.returncode != 0 or not tmp_html.is_file() or not tmp_pdf.is_file():
                 time.sleep(0.1)
-                msg = (list(err_tail)[-1] if err_tail else '') or f'finalize stopped (code {p.returncode})'
+                msg = friendly_tool_error('\n'.join(err_tail), f'finalize stopped (code {p.returncode})') if err_tail \
+                    else f'finalize stopped (code {p.returncode})'
             else: ok = True
         except OSError as e:
             msg = f'finalize could not start ({e.__class__.__name__})'
@@ -5368,8 +6223,8 @@ class Finalizer:
                 html_out, pdf_out = SLIDES / f'{name}.html', SLIDES / f'{name}.pdf'
                 SLIDES.mkdir(parents=True, exist_ok=True)
                 old = rec.get('final') if isinstance(rec.get('final'), dict) else {}
-                os.replace(tmp_html, html_out)
-                os.replace(tmp_pdf, pdf_out)
+                keep_replace(tmp_html, html_out)     # the previous deck may be open in a browser tab: retry, then say so
+                keep_replace(tmp_pdf, pdf_out)
                 for k, new in (('html', html_out), ('pdf', pdf_out)):   # a renamed deck: the old final -> Older versions
                     prev = old.get(k)
                     if prev and prev != rel_root(new) and (ROOT / prev).is_file() and inside(ROOT / prev, SLIDES):
@@ -5388,7 +6243,8 @@ class Finalizer:
                 update_deck(deck_id, final=fin, changedSinceFinalize=False)
                 self._set(final=fin)
             except OSError as e:
-                ok, msg = False, f'the final files could not be saved ({e.__class__.__name__})'
+                ok, msg = False, (locked_msg(Path(getattr(e, 'filename', '') or 'the deck file').name) if file_locked(e)
+                                  else f'the final files could not be saved ({e.__class__.__name__})')
         for tmp in (tmp_html, tmp_pdf):
             try: tmp.unlink()
             except OSError: pass
@@ -5481,8 +6337,8 @@ class PptxExporter:
                 if out.is_file():                          # the previous copy goes to Older versions, never silently overwritten
                     older = SLIDES / 'Older versions'
                     older.mkdir(parents=True, exist_ok=True)
-                    os.replace(out, older / f'{datetime.datetime.now().strftime("%Y-%m-%d %H%M")} {out.name}')
-                os.replace(tmp, out)
+                    keep_replace(out, older / f'{datetime.datetime.now().strftime("%Y-%m-%d %H%M")} {out.name}')
+                keep_replace(tmp, out)
                 info = {'file': rel_root(out), 'bytes': out.stat().st_size, 'at': now_iso()}
                 update_deck(deck_id, pptx=info)
                 self._set(pptx=info)
@@ -5490,7 +6346,8 @@ class PptxExporter:
         except subprocess.TimeoutExpired:
             msg = 'making the PowerPoint took too long and was stopped.'
         except OSError as e:
-            msg = f'the PowerPoint file could not be saved ({e.__class__.__name__})'
+            msg = (locked_msg(Path(getattr(e, 'filename', '') or 'the PowerPoint copy').name) if file_locked(e)
+                   else f'the PowerPoint file could not be saved ({e.__class__.__name__})')
         try: tmp.unlink()
         except OSError: pass
         self._set(running=False, ok=ok, message='' if ok else msg, endedAt=int(time.time()))
@@ -5777,7 +6634,11 @@ class H(BaseHTTPRequestHandler):
                 mine = conv_of(rec, conv)
                 # L-17 per slide: a slide conversation past SLIDE_CTX_RESET goes on in a fresh one (never in the middle of a question)
                 handoff = bool(mine.get('sessionId')) and int(mine.get('ctxTokens') or 0) >= SLIDE_CTX_RESET and not RUNNER.waiting
-            elif scope == 'deck': slide = None
+            else:
+                # problem 5: a whole-deck (or unscoped) chat message runs in the DECK conversation, which until 0.5.4 was the
+                # one conversation nothing ever reset. Same rule, same self-contained hand-off message.
+                handoff = deck_handoff(rec)
+                if scope == 'deck': slide = None
             message = f'[slide {slide}] {text}' if slide else (f'[whole deck] {text}' if scope == 'deck' else text)
             return self.send(*RUNNER.launch(message, resume=True, user_text=text, deck_id=deck_id, slide=slide, conv=conv, handoff=handoff,
                                             meta={'said': text, 'scope': 'slide' if conv else 'deck'}))
@@ -5798,10 +6659,13 @@ class H(BaseHTTPRequestHandler):
         m = DECK_ROUTE.match(path)
         if m and m.group(2) == 'text':
             return self.send(*edit_text(m.group(1), body.get('editId'), body.get('text')))
-        if m and m.group(2) in ('plan', 'plan/answer', 'plan/suggest', 'build', 'finalize', 'pptx', 'interview', 'interview/answer'):
+        if m and m.group(2) in ('plan', 'plan/answer', 'plan/picture', 'plan/suggest', 'plan/slide/add', 'plan/slide/save',
+                                'plan/slide/remove', 'build', 'finalize', 'pptx', 'interview', 'interview/answer'):
             if not load_deck(m.group(1)): return self.send(404, {'ok': False, 'error': 'no-deck'})
             fn = {'interview': interview_start, 'interview/answer': interview_answer,
-                  'plan': save_plan, 'plan/answer': answer_doubt, 'plan/suggest': suggest_slide, 'build': build_action,
+                  'plan': save_plan, 'plan/answer': answer_doubt, 'plan/picture': change_picture,
+                  'plan/suggest': suggest_slide, 'build': build_action,
+                  'plan/slide/add': plan_slide_add, 'plan/slide/save': plan_slide_save, 'plan/slide/remove': plan_slide_remove,
                   'finalize': lambda d, b: FINALIZER.start(d, light=bool(b.get('light')), accept_stale=bool(b.get('acceptStale'))), 'pptx': lambda d, b: PPTX.start(d)}[m.group(2)]
             return self.send(*fn(m.group(1), body))
         m = re.fullmatch(r'/api/fix/([a-z]+)', path)
@@ -5874,9 +6738,25 @@ class H(BaseHTTPRequestHandler):
                 # The theme is its own step after the interview now (the wizard that used to ask it is gone), so the
                 # page needs to know the person has BEEN there - "Claude chooses" is both the default and a real answer.
                 fields['lookUser'] = True
-            if 'quality' in body:
-                if body['quality'] not in QUALITIES: return self.send(400, {'ok': False, 'error': 'bad quality'})
-                fields['quality'] = body['quality']
+            # `quality` keeps taking a plain tier name, exactly as 0.5.3/0.5.4 sent it. It now ALSO takes "<model>/<effort>",
+            # and `model` / `effort` may be sent on their own (the advanced control changes one axis at a time). All three
+            # spellings land on the ONE stored `quality` value, canonicalised by pair_quality(), so the plain tiers and the
+            # advanced pair can never disagree.
+            if 'quality' in body or 'model' in body or 'effort' in body:
+                base = body.get('quality') if isinstance(body.get('quality'), str) else (load_deck(m.group(1)) or {}).get('quality')
+                if 'quality' in body and not (isinstance(body['quality'], str) and
+                                              (body['quality'] in QUALITIES or pair_quality(*str(body['quality']).partition('/')[::2]))):
+                    return self.send(400, {'ok': False, 'error': 'bad quality'})
+                mm, ee = quality_pair(base)
+                if 'model' in body:
+                    if body['model'] not in QUALITY_MODELS: return self.send(400, {'ok': False, 'error': 'bad model'})
+                    mm = body['model']
+                if 'effort' in body:
+                    if body['effort'] not in QUALITY_EFFORTS: return self.send(400, {'ok': False, 'error': 'bad effort'})
+                    ee = body['effort']
+                q = pair_quality(mm, ee)
+                if not q: return self.send(400, {'ok': False, 'error': 'bad quality'})
+                fields['quality'] = q
             if 'archived' in body:
                 if not isinstance(body['archived'], bool): return self.send(400, {'ok': False, 'error': 'bad archived'})
                 fields['archived'] = body['archived']

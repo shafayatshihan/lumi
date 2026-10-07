@@ -1,7 +1,7 @@
-"""lumi_bpy - the Bold Blue studio for Blender 5.x / Cycles, headless.
+"""lumi_bpy - the photoreal studio for Blender 5.x / Cycles, headless.
 
 Usage (scene.py): copy the template in BLENDER.md section 2. It finds this folder by itself (LUMI_BPY, which Lumi
-sets, else by walking up from the scene file to .aura/engine/deck/looks/bold-blue/blender), then
+sets, else by walking up from the scene file to .aura/engine/deck/blender), then
     a = L.args(); L.reset(a); L.gpu(a); L.cycles(a.samples)
     ... build meshes, give them L.mat('steel') etc ...
     L.cutaway(parts, normal=(0, -1, 0))          # optional
@@ -110,6 +110,8 @@ def args(argv=None):
       --frame <n>                 the frame a still or preview shows (default: the poster frame, else frame 1)
       --fps <n>                   frames per second (default 20)
       --frames <n>                legacy: render the first n frames
+      --resume                    an animation only: skip frames already written in the --out folder and carry on from
+                                  the first missing one (Lumi uses it after a long render yielded the GPU to a still)
       --cpu                       force the CPU
     Unknown arguments are reported and ignored (a scene never dies on a flag it does not know)."""
     if argv is None:
@@ -126,6 +128,7 @@ def args(argv=None):
     p.add_argument('--frame', type=int, default=None)
     p.add_argument('--fps', type=int, default=FPS)
     p.add_argument('--frames', type=int, default=None)
+    p.add_argument('--resume', action='store_true')
     p.add_argument('--cpu', action='store_true', help='force CPU')
     a, unknown = p.parse_known_args(argv)
     if unknown: print('[lumi] ignored arguments: ' + ' '.join(unknown), flush=True)
@@ -168,6 +171,7 @@ def reset(a=None, res=None, fps=None):
         s['lumi_inspect'] = bool(getattr(a, 'inspect', False))
         s['lumi_cavity'] = bool(getattr(a, 'cavity', False))
         s['lumi_anim'] = bool(a.anim)
+        s['lumi_resume'] = bool(getattr(a, 'resume', False))
         if a.frame: s['lumi_poster'] = int(a.frame)
         if a.frames: s['lumi_first_n'] = int(a.frames)
     return s
@@ -1202,12 +1206,23 @@ def render(path=None, frames=None):
         todo = list(range(s.frame_start, s.frame_start + total))
     else:
         todo = [poster]
-    n = len(todo)
+    whole = list(todo)                       # every frame of the loop: what the progress counter and the labels mean
+    n = len(whole)
     is_dir = not path.lower().endswith('.png')
     if is_dir:
         os.makedirs(path, exist_ok=True)
     else:
         os.makedirs(os.path.dirname(path), exist_ok=True)
+    frame_path = lambda f: ((os.path.join(path, 'render.png') if is_dir else path) if n == 1
+                            else (os.path.join(path, f'frame_{f:04d}.png') if is_dir else path[:-4] + f'_{f:04d}.png'))
+    # --resume: a long animation that yielded the GPU to a still carries on from the first missing frame. Every finished
+    # frame is already a complete PNG on disk, so nothing is re-rendered and nothing is lost but the frame in flight.
+    done_already = 0
+    if s.get('lumi_resume') and n > 1:
+        todo = [f for f in whole if not os.path.exists(frame_path(f))]
+        done_already = n - len(todo)
+        if done_already:
+            print(f'[lumi] resume: {done_already} frame(s) already rendered, {len(todo)} to go', flush=True)
     rx = s.render.resolution_x * s.render.resolution_percentage // 100
     ry = s.render.resolution_y * s.render.resolution_percentage // 100
     print(f'[lumi] scene frames={total} fps={s.render.fps} poster={poster} size={rx}x{ry} samples={s.cycles.samples} '
@@ -1216,10 +1231,7 @@ def render(path=None, frames=None):
     t0 = time.time()
     for i, f in enumerate(todo, 1):
         s.frame_set(f)
-        if n == 1:
-            fp = os.path.join(path, 'render.png') if is_dir else path
-        else:
-            fp = os.path.join(path, f'frame_{f:04d}.png') if is_dir else path[:-4] + f'_{f:04d}.png'
+        fp = frame_path(f)
         s.render.filepath = fp
         t1 = time.time()
         bpy.ops.render.render(write_still=True)
@@ -1227,9 +1239,9 @@ def render(path=None, frames=None):
             _composite(fp, s.get('lumi_bg', C['canvas']))
         dt = time.time() - t1
         print(f'[lumi] wrote {fp}  ({dt:.1f} s)', flush=True)
-        print(f'[lumi] frame {i}/{n} {dt:.2f}', flush=True)
+        print(f'[lumi] frame {done_already + i}/{n} {dt:.2f}', flush=True)
         out.append(fp)
-    _write_labels(path, is_dir, todo, rx, ry, s.render.fps)
-    print(f'[lumi] done: {n} frame(s) {rx}x{ry}, {s.cycles.samples} spp, device {s.get("lumi_device", s.cycles.device)}, '
+    _write_labels(path, is_dir, whole, rx, ry, s.render.fps)   # anchors are projected, not rendered: always the whole loop
+    print(f'[lumi] done: {len(todo)} frame(s) {rx}x{ry}, {s.cycles.samples} spp, device {s.get("lumi_device", s.cycles.device)}, '
           f'total {time.time() - t0:.1f} s', flush=True)
     return out

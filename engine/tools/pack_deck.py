@@ -8,7 +8,7 @@ as it is. An older deck with the same name (and its PDF / PowerPoint /
 notes backups) is moved to "4 - Your slides/Older versions" with its date first. Fails if anything needs the internet.
 --replace (small edits from the app's editor): overwrite the deck in place and leave its backups where they are; nothing
 moves to Older versions. Every attribute is kept as written, including the data-edit text ids the editor relies on."""
-import base64, datetime, html as htmllib, io, json, mimetypes, os, re, shutil, sys
+import base64, datetime, html as htmllib, io, json, mimetypes, os, re, shutil, sys, time
 from pathlib import Path
 
 ENGINE = Path(__file__).resolve().parents[1]
@@ -193,9 +193,8 @@ class Packer:
     def pack(self):
         html = self.html_path.read_text(encoding='utf-8')
         html = self.blender_fill(html)
-        # 3D is used only when real code asks for it: the template's commented-out examples must not pull in three.js
-        live = re.sub(r'<!--.*?-->|/\*.*?\*/', '', html, flags=re.S)
-        uses_three = bool(re.search(r'Aura\.scene\s*\(|import\s*\(\s*[\'"]three[\'"]|from\s+[\'"]three[\'"]', live))
+        html = self.strip_dead_examples(html)
+        uses_three = self.needs_three(html)
         # import maps are rebuilt below
         html = re.sub(r'<script\b[^>]*type\s*=\s*["\']importmap["\'][^>]*>.*?</script>\s*', '', html, flags=re.S | re.I)
 
@@ -272,6 +271,35 @@ class Packer:
             p = self.local(url, self.base)
             return q + self.data_uri(url, self.base, 'a script') + q if p else m.group(0)
         return re.sub(r'([\'"])((?:\./)?assets/[^\'"\n]+?\.(?:png|jpe?g|webp|svg|gif|mp4|webm|glb|json))\1', s, js, flags=re.I)
+
+    # The template ships a worked 3D example commented out so a person editing the deck by hand has one to copy. It is dead
+    # text in a finished deck, it is the second `Aura.scene(` the post-mortem found in deck b45622, and it is the reason the
+    # three.js decision has to strip comments at all. Removing it removes both the weight and the trap.
+    DEAD_EXAMPLE = re.compile(r'[ \t]*/\*\s*3D example\b.*?\*/\s*', re.S)
+
+    def strip_dead_examples(self, html):
+        html, n = self.DEAD_EXAMPLE.subn('', html)
+        if n: self.stats['deadExamples'] = self.stats.get('deadExamples', 0) + n
+        # a <script> that held nothing but the example is now empty: drop it rather than ship an empty tag
+        return re.sub(r'<script>\s*</script>\s*', '', html)
+
+    # Post-mortem problem 11 said three.js "ships in every deck". It does NOT - this gate already existed and already
+    # worked - but the gate was a bare expression in the middle of pack(), and it was only correct because of WHERE it sat:
+    # `engine/deck/runtime.js` contains a real `import('three')` (its lazy loader), and the runtime is pulled in by
+    # `<script src>` a few lines further down. Compute the same expression after that inlining and every deck in the world
+    # starts carrying a megabyte it does not use, with no test to notice. So the signal is a named method that removes
+    # engine `<script src>` tags itself, and the rule no longer depends on the order of the lines around it.
+    def needs_three(self, html):
+        """True when the DECK'S OWN code asks for three.js: a live `Aura.scene(...)` registration, or an import of the bare
+        module. Comments do not count, and neither does anything Lumi's own runtime does to load it lazily."""
+        live = re.sub(r'<script\b[^>]*\bsrc\s*=[^>]*>\s*</script>', '', html, flags=re.I)   # not yet inlined, and never the deck's own code
+        # ...and Lumi's own runtime, wherever it is: `engine/deck/runtime.js` holds the real `import('three')` that loads
+        # the module lazily FOR a scene. It is the loader, not a user of it, so it must never be the thing that decides.
+        # `threePromise` is that loader's own variable and appears nowhere a deck author writes.
+        live = '\n'.join(ln for ln in live.split('\n') if 'threePromise' not in ln)
+        live = re.sub(r'<!--.*?-->|/\*.*?\*/', '', live, flags=re.S)
+        live = re.sub(r'(?m)^\s*//.*$', '', live)                                           # a line-commented example counts no more than a block one
+        return bool(re.search(r'Aura\.scene\s*\(|import\s*\(\s*[\'"]three[\'"]|from\s+[\'"]three[\'"]', live))
 
     def add_three(self, html):
         mod, core = THREE_DIR / 'three.module.js', THREE_DIR / 'three.core.js'
@@ -354,6 +382,52 @@ def retire_old(out_dir: Path, stem: str):
     return moved
 
 
+# ---- Windows file locks (post-mortem problem 7) -------------------------------------------------------------------
+# os.replace onto a path another process holds open fails on Windows with WinError 5 / 32, where POSIX simply succeeds.
+# The deck open in a browser tab, a preview window, PowerPoint or an antivirus scan is the usual holder, and it almost
+# always lets go within a moment - so retry before saying anything, and when it really is stuck say what a person can do
+# about it. A traceback must never reach the user (HANDOFF rule 12).
+LOCK_ERRNOS = (5, 32, 33)
+LOCKED_MSG = ('Could not pack the deck: "{name}" is open in another program. Close the deck in your browser (or in '
+              'PowerPoint, or a preview window) and press pack again.')
+
+
+def is_locked(e):
+    return isinstance(e, PermissionError) or getattr(e, 'winerror', None) in LOCK_ERRNOS
+
+
+def replace_retry(tmp: Path, target: Path, tries=8, wait=0.15):
+    """os.replace, retried for ~1.2 s: a Windows file lock on the packed deck is nearly always transient."""
+    for i in range(tries):
+        try:
+            os.replace(tmp, target)
+            return
+        except OSError as e:
+            if i == tries - 1 or not is_locked(e):
+                raise
+            time.sleep(wait)
+
+
+def drop(p: Path):
+    """Remove a leftover .part file. Never raises: a tidy-up must not become the error the user sees."""
+    try:
+        if p and Path(p).exists():
+            Path(p).unlink()
+    except OSError:
+        pass
+
+
+def os_reason(e):
+    """One plain sentence for an OSError, never its repr or a path the user did not type."""
+    if is_locked(e):
+        return 'a file Lumi had to write is open in another program. Close the deck everywhere and try again.'
+    if getattr(e, 'errno', None) == 28 or getattr(e, 'winerror', None) == 112:
+        return 'the disk is full. Free some space and try again.'
+    if isinstance(e, FileNotFoundError):
+        return 'a file the deck needs is missing. Rebuild the slide and try again.'
+    return 'Lumi could not write the deck file (' + e.__class__.__name__ + '). Try again; if it keeps happening, restart Lumi.'
+
+
 def main():
     args = sys.argv[1:]
     def opt(name):
@@ -378,6 +452,7 @@ def main():
         return 2
     root = find_aura_root(src)
     out_dir = Path(out).resolve() if out else ((root / '4 - Your slides') if root else src.parent)
+    tmp = target = None
     try:
         p = Packer(src)
         html = p.pack()
@@ -396,12 +471,21 @@ def main():
         target = out_dir / (stem + '.html')
         tmp = target.with_name(target.name + '.part')
         tmp.write_text(html, encoding='utf-8', newline='\n')
-        os.replace(tmp, target)
+        replace_retry(tmp, target)
         prov = src.parent / 'provenance.json'          # B-05: the record of where every number came from travels with the deck
         if prov.is_file():
-            shutil.copyfile(prov, out_dir / ('provenance.json' if out_dir.name != '4 - Your slides' else stem + '.provenance.json'))
+            try:
+                shutil.copyfile(prov, out_dir / ('provenance.json' if out_dir.name != '4 - Your slides' else stem + '.provenance.json'))
+            except OSError:
+                print('  note: the provenance file could not be copied next to the deck.')
     except PackError as e:
+        drop(tmp)
         print('Could not pack the deck: ' + str(e))
+        return 1
+    except OSError as e:                               # a Windows file lock is the common one; never a traceback (rule 12)
+        drop(tmp)
+        print(LOCKED_MSG.format(name=(target.name if target else 'the deck')) if is_locked(e)
+              else 'Could not pack the deck: ' + os_reason(e))
         return 1
     visible = re.sub(r'<script\b.*?</script>|<!--.*?-->', '', html, flags=re.S | re.I)
     slides = len(re.findall(r'<section\b[^>]*class\s*=\s*["\'][^"\']*\bslide\b', visible, re.I))
@@ -430,4 +514,19 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    # Last line of defence (post-mortem problem 7 / HANDOFF rule 12): whatever goes wrong in here, the user and the chat
+    # see one plain sentence, never a Python traceback. The server reads the LAST line of this output as its message.
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except KeyboardInterrupt:
+        print('Could not pack the deck: it was stopped before it finished.')
+        sys.exit(1)
+    except OSError as e:
+        print('Could not pack the deck: ' + os_reason(e))
+        sys.exit(1)
+    except BaseException as e:
+        print('Could not pack the deck: something went wrong inside Lumi (' + e.__class__.__name__
+              + '). Try the step again; if it keeps happening, restart Lumi.')
+        sys.exit(1)

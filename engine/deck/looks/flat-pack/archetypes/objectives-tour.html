@@ -1,0 +1,57 @@
+<!-- archetype: objectives-tour | the goals drawn as a staircase that CLIMBS (S4); the checklist lights up in step | main visual: 3D | companions: checklist <=4 rows -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="Objectives">
+  <div class="safe">
+    <div class="fp-main">
+      <div class="fp-l w5">
+        <p class="kicker" data-edit="s{{N}}-1">08 · Objectives</p>
+        <h2 class="headline" data-edit="s{{N}}-2">Four steps, <span class="em">three climbed</span></h2>
+        <ul class="fp-goals">
+          <li class="fp-goal on"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-3">Measure it</strong><span class="d" data-edit="s{{N}}-4">done, 120 runs</span></div></li>
+          <li class="fp-goal on"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-5">Explain it</strong><span class="d" data-edit="s{{N}}-6">done, one model</span></div></li>
+          <li class="fp-goal wip"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v6l4 2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-7">Build it</strong><span class="d" data-edit="s{{N}}-8">in progress</span></div></li>
+          <li class="fp-goal"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+            <div><strong data-edit="s{{N}}-9">Prove it</strong><span class="d" data-edit="s{{N}}-10">next</span></div></li>
+        </ul>
+      </div>
+      <div class="fp-r w7">
+        <div class="fp-stage">
+          <div class="aura-3d fp-3d" data-scene="s{{N}}-scene" data-period="20" aria-hidden="true">
+            <span class="fp-pill" data-follow="goal" data-align="center" data-dy="-120" data-edit="s{{N}}-11">The goal</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="fp-foot"><span class="fp-mark" data-edit="s{{N}}-12">Deck mark</span><span class="fp-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Climb it out loud.</strong> The treads rise because the objectives build on each other - say what each
+    one made possible for the next, not just what it was.</p>
+    <p><strong>Be honest about where you are.</strong> Point at the tread that is lit and say what is left. A
+    half-finished objective said plainly is stronger than four ticks.</p>
+    <p><strong>Prepare the question</strong> "what if the last one fails?" - have the fallback ready in one sentence.</p>
+  </aside>
+</section>
+<script>
+/* S4 (LOOK-BASE 4.0): a sequence is a path that CLIMBS - a staircase with the goal on the top tread. Never a row of
+   equal panels, never a level line of stepping stones. The light walks the treads in step with the checklist. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx, P = ctx.period, N = 4;
+  const S = FP3D.sheet(ctx, { target: [0, 1.1, 0], size: 2.6, turn: -30, tilt: 26 });
+  const stair = FP3D.climb(THREE, N, { tread: 1.1, rise: 0.52, depth: 0.9 });
+  S.add(stair.group);
+  const walker = S.add(FP3D.disc(THREE, 0.24, 0.22, { fill: 'yellow' }));
+  let at = 0;
+  FP3D.pins(S, ctx.el, { goal: stair.tops[N - 1].toArray() });
+  const rows = ctx.el.closest('.fp-main').querySelectorAll('.fp-goal');
+  return S.api({ update(t) {
+    S.turn(t, { sway: 3 });
+    const s = FP3D.steps(t, P, N);
+    const a = stair.tops[s.i], b = stair.tops[s.next];
+    walker.position.lerpVectors(a, b, s.k); walker.position.y += 0.22;
+    if (s.i !== at) { at = s.i; rows.forEach((r, k) => r.classList.toggle('is-here', k === s.i)); }
+  } });
+}, { period: 20 });
+</script>

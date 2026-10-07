@@ -215,6 +215,83 @@ def run(T=None, browser=True):
         finally:
             fs.VENV_PY, fs.blender_available, fs.RUNNER = old_py, old_av, old_runner
 
+    # ---------------------------------------------------------------- the engine mismatch of 0.5.3 / 0.5.4 (FIXLOG: finalize engine-mismatch)
+    # The owner's deck: a Flat-Pack (NOT Bold Blue) deck whose 3D slides carry no explicit engine. slide_engine resolved them to
+    # three.js, so the server made no Blender job, but the build wrote a .bb-blender holder on one of them anyway. finalize.js
+    # only found that at the very end of a long run ("slide 14 still shows no render"); the gate had never looked at the slide,
+    # because its engine was not blender.
+    print('\n[finalize engine mismatch: a 3D slide with no engine on a look that is not Bold Blue]')
+    with C.unit_root(fs, 'bl2-mismatch') as root:
+        old_av = fs.blender_available
+        fs.blender_available = lambda: True
+        try:
+            check('engine: a 3D STILL slide with no engine on a look that is not Bold Blue is live 3D',
+                  fs.slide_engine({'look': 'Flat-Pack'}, {'visual': {'main': '3d', 'motion': 'still'}}, True)['engine'] == 'threejs')
+            check('engine: a 3D ANIMATION with no engine is live 3D on every look (auto never picks a 10-60 min render)',
+                  fs.slide_engine({'look': 'Bold Blue'}, {'visual': {'main': '3d', 'motion': 'timed'}}, True)['engine'] == 'threejs')
+            dk = 'dkmismatch'
+            plan = {'version': 1, 'title': 'T', 'slides': [
+                {'id': 's1', 'title': 'Live still', 'visual': {'main': '3d', 'motion': 'still'}},       # 3D, no engine, NO holder
+                {'id': 's16', 'title': 'Fin sheets', 'visual': {'main': '3d', 'motion': 'timed'}},      # 3D, no engine, WITH a holder
+                {'id': 's3', 'title': 'Words', 'visual': {'main': 'text'}}]}
+            C.deck_json(fs, root, dk, look='Flat-Pack', plan=plan, flow='plan')
+            eng = fs.plan_engines(fs.load_deck(dk))
+            check('the deck that broke: both 3D slides resolve to three.js, so Lumi makes no Blender job for either',
+                  eng['s1']['engine'] == 'threejs' and eng['s16']['engine'] == 'threejs', eng)
+            wd = fs.work_dir(dk); wd.mkdir(parents=True, exist_ok=True)
+            html = ('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Unit</title></head><body><main class="deck">'
+                    '<section class="slide"><div class="aura-3d" data-scene="s1"></div></section>'
+                    '<section class="slide"><div class="bb-blender bb-3d" data-blender="s16" data-kind="animation"></div></section>'
+                    '<section class="slide"><h1>Words</h1></section></main></body></html>')
+            (wd / 'deck.html').write_text(html, encoding='utf-8')
+            rec = fs.update_deck(dk, file=fs.rel_root(wd / 'deck.html'))
+            check('holders: the built deck is read back, and the unfilled holder on slide 2 is seen',
+                  fs.bl_holders(rec) == {'s16': False}, fs.bl_holders(rec))
+            g = fs.bl_finalize_gate(rec)
+            check('gate: a Blender holder no render will ever fill -> 409 blender-pending naming slide 2, whatever its engine says',
+                  g and g[0] == 409 and g[1]['error'] == 'blender-pending' and g[1]['slides'] == [2] and g[1]['orphans'] == [2]
+                  and not g[1]['pending'] and 'live 3D' in g[1]['reason'], g)
+            check('gate: slide 1 is 3D with no engine and no holder, so it is NOT asked about (it finalizes as live 3D)',
+                  1 not in (g[1]['slides'] if g else []), g)
+            old_runner, old_pptx = fs.RUNNER, fs.PPTX
+            fs.RUNNER = type('R', (), {'busy': False, 'deck_id': None, 'assign_job': None})()
+            fs.PPTX = type('X', (), {'status': lambda self: {}})()
+            try:
+                st, body = fs.FINALIZER.start(dk)
+                check('Finalizer.start refuses the orphan holder BEFORE any finalize work starts (409, nothing running)',
+                      st == 409 and body['error'] == 'blender-pending' and body['slides'] == [2] and not fs.FINALIZER.status().get('running'), (st, body))
+                # the same deck once the holder is gone: a live 3D slide with no render finalizes, as it should
+                (wd / 'deck.html').write_text(html.replace('<div class="bb-blender bb-3d" data-blender="s16" data-kind="animation"></div>',
+                                                           '<div class="aura-3d" data-scene="s16"></div>'), encoding='utf-8')
+                check('gate: with the holder replaced by a live scene the gate lets the deck through',
+                      fs.bl_finalize_gate(fs.load_deck(dk)) is None, fs.bl_finalize_gate(fs.load_deck(dk)))
+            finally:
+                fs.RUNNER, fs.PPTX = old_runner, old_pptx
+            # the engine is pinned into the plan at build time, so the deck and the server can never drift apart again
+            rec = fs.load_deck(dk)
+            rec = fs.pin_engine(rec, 's16', fs.slide_engine(rec, plan['slides'][1]))
+            v = [s for s in fs.plan_slides(rec) if s['id'] == 's16'][0]['visual']
+            check('pin: building a 3D slide writes the engine Lumi chose into the plan (never auto twice)', v.get('engine') == 'threejs', v)
+            pj = json.loads((fs.work_dir(dk) / 'plan.json').read_text(encoding='utf-8'))
+            check('pin: Claude\'s own plan.json carries it too', pj['slides'][1]['visual'].get('engine') == 'threejs', pj['slides'][1]['visual'])
+            rec2 = fs.pin_engine(fs.load_deck(dk), 's16', {'engine': 'blender', 'kind': 'animation', 'chosen': False})
+            v2 = [s for s in fs.plan_slides(rec2) if s['id'] == 's16'][0]['visual']
+            check('pin: an engine that is already written is never overwritten', v2.get('engine') == 'threejs', v2)
+            # the build step now TELLS Claude which engine the slide uses, and forbids the wrong holder
+            msg = fs.build_message(fs.load_deck(dk), plan['slides'][1], 2, 3)
+            check('build message: a live 3D slide is told so, and told not to write a .bb-blender holder',
+                  'LIVE 3D SLIDE' in msg and 'bb-blender' in msg and 'data-blender' in msg, msg[-400:])
+            check('build message: it still never says that to a text slide', 'LIVE 3D SLIDE' not in fs.build_message(fs.load_deck(dk), plan['slides'][2], 3, 3))
+            # the list the build check is given: only the slides the server really renders
+            check('check args: a deck with no Blender slide passes an empty --blender-slides list (the checker then knows)',
+                  fs.blender_args(dk) == ['--blender-slides', ''], fs.blender_args(dk))
+            fs.set_bl(dk, 's1', engine='blender', kind='still', status='writing')
+            check('check args: a slide that holds Blender state is listed even if its engine moved on',
+                  fs.blender_args(dk) == ['--blender-slides', 's1'], fs.blender_args(dk))
+            check('check args: no deck at all -> no flag, so a hand-run check behaves as before', fs.blender_args('nosuchdeck') == [])
+        finally:
+            fs.blender_available = old_av
+
     # ---------------------------------------------------------------- the live server, with the fake blender
     print('\n[Blender batch 2: embedding through the live server (fake blender)]')
     import test_blender as TB
@@ -328,6 +405,14 @@ def run(T=None, browser=True):
     code3, out3 = node([ENGINE / 'tools' / 'deck_check.js', plain, '--no-shots'], sandbox, env)
     ls = [l for l in out3.splitlines() if 'studio render' in l]
     check('while Claude builds (no render yet) the check only warns, so the Stop hook never blocks on it', len(ls) == 2 and all(l.strip().startswith('warn') for l in ls) and 'ERROR' not in ' '.join(ls), ls)
+    # FIXLOG "finalize engine-mismatch": the server names the slides it really renders, so a holder on any OTHER slide is an
+    # orphan - no render is ever made for it - and that is an ERROR at once, on that slide, not a finalize that dies at the end.
+    code4, out4 = node([ENGINE / 'tools' / 'deck_check.js', plain, '--no-shots', '--blender-slides', 'g1'], sandbox, env)
+    l4 = [l for l in out4.splitlines() if 'studio render' in l]
+    check('build check: a .bb-blender holder on a slide the server does not render is an ERROR right after the build step',
+          any(l.strip().startswith('ERROR slide 2') and 'NOT a studio render slide' in l for l in l4) and code4 == 1, l4)
+    check('build check: the real Blender slide in the same deck still only warns that its render is not there yet',
+          any(l.strip().startswith('warn') and ' slide 1 ' in l and 'is not in the deck yet' in l for l in l4), l4)
 
     print('\n[Blender batch 2: presenter mode, PDF still, finalize skipping the render]')
     good = scaffold(sandbox, 'bl2-run', deck_html([('g1', 'still', '', ''), ('g2', 'animation',

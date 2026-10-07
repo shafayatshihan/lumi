@@ -42,8 +42,12 @@ export function fullLine(est, kind, res) {
 }
 export function iterLine(est) {
   const it = (est && est.iteration) || {}, pv = (est && est.preview) || {};
-  const secs = it.seconds || ((pv.seconds || 20) + 90), cost = fmtCost(it.costUsd);
-  return `one more preview ≈ ${fmtDur(secs)} · ≈ ${fmtTokens(it.tokens || 60000)}${cost ? ` (≈ ${cost})` : ''}`;
+  // post-mortem problem 6: both halves of this line are now per-RUN (the `...Run` names). The old `costUsd` beside `tokens`
+  // was the session running total, so the line could say "one more preview ≈ 679 K tokens (≈ $1.82)" where $1.82 was what
+  // the whole slide had cost. An older server sends only the old names: its per-run `tokens` is still right, and its
+  // cumulative cost is deliberately dropped rather than shown as a per-run price.
+  const secs = it.seconds || ((pv.seconds || 20) + 90), cost = fmtCost(it.costUsdRun);
+  return `one more preview ≈ ${fmtDur(secs)} · ≈ ${fmtTokens(it.tokensRun || it.tokens || 60000)}${cost ? ` (≈ ${cost})` : ''}`;
 }
 // the plan page's two named options (contract section 2); est = plan payload blender.estimates[sid]
 export function engineNotes(kind, est) {

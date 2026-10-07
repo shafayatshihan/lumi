@@ -19,7 +19,8 @@ Reference files beside this one (read them when the step says so):
 - `planning.md` (the plan page: `plan.json`, doubts), `building.md` (one slide at a time), `editing.md` (a change request from the editor).
 - `deck-toolkit.md`: how to write a deck for the Aura runtime, the tool commands, `data-edit` ids, how to read the check.
 - `story-arcs.md`: the story shape for each kind of talk, slide counts, presenter vs document mode.
-- `aura-blend.md` and `brands/`: the Aura look rules and the five themes; `looks/bold-blue/LOOK.md`: the Bold Blue authority.
+- `aura-blend.md` and `brands/`: the Aura look rules and the five themes. `looks/_shared/LOOK-BASE.md`: the structural
+  rules every look obeys; `looks/<look>/LOOK.md`: that look's brand (Bold Blue, Flat-Pack).
 - `.claude/skills/power-design/principles/design-principles.md`: the 20 slide rules (all apply).
 
 **Which instruction wins.** The app's message for the step you are on (`[plan-mode]`, `[build-slide …]`, `[deck-folder …]`) is
@@ -194,13 +195,15 @@ Reply in this shape, filled with their details:
 ## 5. Choose the look
 - `look.theme` names one of the five Aura themes → use it. "Claude chooses" (or empty) → pick the theme that suits the
   topic and audience (see the guide in `deck-toolkit.md`) and tell the user which one you picked and why, in one line.
-- **Bold Blue → read `looks/bold-blue/LOOK.md` first, whole, every time.** It is the look's authority: tokens,
-  the archetype menu (its section 2; Read the snippet files in `.aura/engine/deck/looks/bold-blue/archetypes/` directly), the 3D and chart recipes, the writing
-  voice, the speaker-notes rules and the clash matrix. It overrides the form's visual choices, `aura-blend.md` and
-  `deck-toolkit.md` wherever they differ; Bold Blue has no brand file.
-- Any other look: read `aura-blend.md`, the theme's brand file (`brands/<name>/brand-style.md`) and the theme
-  stylesheet `.aura/engine/deck/themes/<theme>.css`. (Other looks may later get their own `looks/<look>/LOOK.md`; when
-  one exists, it is the authority for that look in the same way.)
+- **A look with its own spec (Bold Blue, Flat-Pack) → read `looks/_shared/LOOK-BASE.md` first, whole, then
+  `looks/<look>/LOOK.md`, whole, every time.** The base holds the structural rules every look obeys (composition, the
+  clash matrix, subject-first staging, fidelity, data honesty, voice, notes, the checklist); the look file holds only
+  its palette, type, motion feel and figure idiom, including its archetype snippets
+  (`.aura/engine/deck/looks/<look>/archetypes/`) and its own 3D and chart recipes. Together they override the form's
+  visual choices, `aura-blend.md` and `deck-toolkit.md` wherever they differ, and neither look has a brand file of the
+  `brands/` kind (Flat-Pack's DNA is recorded in `brands/ikea/brand-style.md`, but its LOOK.md is the authority).
+- Any other look: read `looks/_shared/LOOK-BASE.md`, `aura-blend.md`, the theme's brand file
+  (`brands/<name>/brand-style.md`) and the theme stylesheet `.aura/engine/deck/themes/<theme>.css`.
 - Their logo or university template (in `Logo and university template/`) may add their logo inside the look's rules.
 
 ## 6. Build the deck
@@ -232,7 +235,7 @@ Reply in this shape, filled with their details:
   3D only where depth helps understanding (a device, a structure, a field), never as decoration.
   For every 3D slide first decide what the subject really is and show IT in its own setting (LOOK.md 4.0: a vehicle in
   flight, a cell, a building...), never a default lab bench with a wooden base, gauge or vial unless the subject is
-  that; vary props and camera between slides and decks. Bold Blue's closing slide is designed per deck (LOOK.md section 2).
+  that; vary props and camera between slides and decks. The closing slide is designed per deck (LOOK-BASE section 2).
 - Include what `content.include` asks for (references in `content.citations` style, thank-you / questions slide…).
 - Respect `extra.avoid` and `extra.notes`. Keep to the facts: never invent data, names or citations. Every number on a slide is in the
   user's files or declared in `provenance.json` (`building.md` rule 8) and in the speaker notes; a number read off a figure is kind

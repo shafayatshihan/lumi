@@ -41,7 +41,7 @@ def run(T):
         e1 = est.get(s1) or {}
         check('plan payload: blender.estimates for every 3D slide (still, 720, 1080 seconds + basis + iteration tokens), none for a chart',
               s1 in est and s2 in est and s3 not in est and e1.get('still', 0) > 0 and 0 < e1.get('720', 0) < e1.get('1080', 0)
-              and e1.get('basis') in ('default', 'benchmark', 'slide') and (e1.get('iteration') or {}).get('tokens', 0) > 0, est)
+              and e1.get('basis') in ('default', 'benchmark', 'slide') and (e1.get('iteration') or {}).get('tokensRun', 0) > 0, est)
         eng = pj.get('engines') or {}
         check('engine chips default: Bold Blue still 3D -> blender (not chosen), turning 3D -> three.js', eng[s1]['engine'] == 'blender' and not eng[s1]['chosen']
               and eng[s2]['engine'] == 'threejs', eng)
@@ -72,7 +72,7 @@ def run(T):
         T.wait_plan_idle(P)
         v = TB.wait_status(T, P, s1, ('preview', 'failed'))
         check('build: slide 1 previewed; view has estimates the card shows (preview s, iteration tokens, full still)', v.get('status') == 'preview'
-              and v['estimates']['preview']['seconds'] > 0 and v['estimates']['iteration']['tokens'] > 0 and v['estimates']['full']['still']['seconds'] > 0, v.get('status'))
+              and v['estimates']['preview']['seconds'] > 0 and v['estimates']['iteration']['tokensRun'] > 0 and v['estimates']['full']['still']['seconds'] > 0, v.get('status'))
         s, j = jpost(f'/api/decks/{P}/blender/{s1}/defer', {'on': True})
         check('defer ("skip for now, keep the preview"): stored on the slide', s == 200 and (j.get('view') or {}).get('deferred', {}).get('at'), (s, j))
         s, j = jpost(f'/api/decks/{P}/blender/{s3}/defer', {'on': True})

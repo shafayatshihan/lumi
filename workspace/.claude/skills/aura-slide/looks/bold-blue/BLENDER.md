@@ -3,7 +3,7 @@
 Use this when a slide's 3D figure is a Blender (Cycles) **studio render** instead of live three.js: a photoreal 1080p
 still, or a seamless 20 fps animation loop. **The design rules are in `LOOK.md` section 4**, and this file does not
 repeat them. It explains how to follow them in Blender without first rediscovering how Blender works. The helper
-module is `.aura/engine/deck/looks/bold-blue/blender/lumi_bpy.py`, and its docstrings hold the full pitfall list. The
+module is `.aura/engine/deck/blender/lumi_bpy.py`, and its docstrings hold the full pitfall list. The
 build message of a Blender slide says where the scene goes and what the slide holder looks like.
 
 **Who renders what.** You write `scene.py`. **Lumi renders the preview the user sees, asks them "Do you like the
@@ -50,7 +50,8 @@ def _lumi():                       # finds lumi_bpy: LUMI_BPY (Lumi sets it), el
     if d and os.path.isfile(os.path.join(d, 'lumi_bpy.py')): return d
     d = os.path.dirname(os.path.abspath(__file__))
     for _ in range(12):
-        for sub in ('engine/deck/looks/bold-blue/blender', '.aura/engine/deck/looks/bold-blue/blender'):
+        for sub in ('engine/deck/blender', '.aura/engine/deck/blender',
+                    'engine/deck/looks/bold-blue/blender', '.aura/engine/deck/looks/bold-blue/blender'):   # last two: decks made before 0.5.5
             if os.path.isfile(os.path.join(d, sub, 'lumi_bpy.py')): return os.path.join(d, sub)
         d = os.path.dirname(d)
     raise RuntimeError('lumi_bpy not found: keep scene.py inside the Lumi folder')

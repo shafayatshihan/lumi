@@ -157,3 +157,30 @@ def describe(problem):
     what = WHAT.get(problem.get('marker'), 'one of its buttons')
     reason = 'is missing its ' + why[8:] if why.startswith('missing-') else REASON_TEXT.get(why, 'could not be read')
     return f'claude wrote {what} that {reason}, so lumi could not use it.'
+
+
+# Post-mortem problem 3: all three dropped hints in deck b45622aef312 were `[[aura:hint text="..."]]` with no `slide=`,
+# and the only feedback was describe() - written for the person, and read after the run had already ended. The event now
+# also carries the shape Claude should have written, so the next turn can put the line back.
+EXAMPLE = {'slide': '3', 'text': 'Make the icons loop gently', 'question': 'Which camera angle?', 'id': 'q1',
+           'options': 'wide|close', 'path': '.aura/decks/<id>/<deck>.html', 'stage': 'building', 'name': 'building'}
+
+
+def correct_form(name):
+    """The literal line a marker should be, from markers.json - e.g. `[[aura:hint slide="3" text="..."]]`."""
+    spec = MARKERS.get(name)
+    if spec is None: return ''
+    attrs = ' '.join(f'{a}="{EXAMPLE.get(a, "...")}"' for a in (spec.get('required') or []))
+    return f'[[aura:{name}{" " + attrs if attrs else ""}]]'
+
+
+def repair(problem):
+    """One line of feedback FOR CLAUDE: what was wrong with the marker line, and the exact shape to write instead."""
+    name = problem.get('marker') or ''
+    form = correct_form(name)
+    if not form: return ''
+    why = problem['reason']
+    miss = f'it is missing `{why[8:]}`' if why.startswith('missing-') else (REASON_TEXT.get(why) or 'it could not be read')
+    req = ', '.join(MARKERS.get(name, {}).get('required') or []) or 'no attributes'
+    return (f'Your `[[aura:{name} ...]]` line was dropped: {miss}. Its required attributes are {req}. '
+            f'Write it exactly as `{form}`, on a line of its own.')

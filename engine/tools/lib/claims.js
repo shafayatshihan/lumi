@@ -181,4 +181,4 @@ function titleFields(brief, text) {
   return missing;
 }
 
-module.exports = { numerals, loadCorpus, loadProvenance, judge, titleFields, identityList, clean, inCorpus };
+module.exports = { DECLARES, numerals, loadCorpus, loadProvenance, judge, titleFields, identityList, clean, inCorpus };

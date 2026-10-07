@@ -2,7 +2,7 @@
 The server runs it when AURA_BLENDER points here (a .py is started with the server's own Python):
   python fake_blender.py --version
   python fake_blender.py -b [--factory-startup ...] -P <script.py> -- --out <png | folder> [--preview] [--anim] [--res N]
-                         [--height 720|1080] [--samples N] [--fps N] [--frame N] [--cpu]
+                         [--height 720|1080] [--samples N] [--fps N] [--frame N] [--resume] [--cpu]
 probe_gpu.py prints a probe line. Any other script is read for these directives, then rendered the way lumi_bpy.render()
 would (same [lumi] lines, same "Fra: f | ... | Sample s/S" log lines, PNGs of the right size in the slide colour #F9F4F2):
   FAKE_FAIL          a Python traceback ("Error: Python: ... boom in the scene"), exit 1
@@ -102,9 +102,18 @@ def png(path, w, h, rgb=(0xF9, 0xF4, 0xF2)):
         f.write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + chunk(b'IDAT', data) + chunk(b'IEND', b''))
 
 
-todo = list(range(1, loop_n + 1)) if anim and not preview else [opt('--frame', 1, int)]
-n = len(todo)
+whole = list(range(1, loop_n + 1)) if anim and not preview else [opt('--frame', 1, int)]
+todo = list(whole)
+n = len(whole)
 is_dir = not out.lower().endswith('.png')
+fpath = lambda f: ((os.path.join(out, 'render.png') if is_dir else out) if n == 1
+                   else (os.path.join(out, f'frame_{f:04d}.png') if is_dir else out[:-4] + f'_{f:04d}.png'))
+done_already = 0
+if '--resume' in post and n > 1:        # like lumi_bpy: carry on from the first frame that is not on disk yet
+    todo = [f for f in whole if not os.path.exists(fpath(f))]
+    done_already = n - len(todo)
+    if done_already:
+        say(f'[lumi] resume: {done_already} frame(s) already rendered, {len(todo)} to go')
 say(f'[lumi] scene frames={loop_n} fps={fps} poster=1 size={w}x{h} samples={samples} render={n} '
     f'mode={"preview" if preview else "anim" if n > 1 else "still"}')
 t0 = time.time()
@@ -113,15 +122,15 @@ for i, f in enumerate(todo, 1):
     for s in (0, samples // 2, samples):
         say(f'00:0{i % 10}.000  render           | Fra: {f} | Mem: 1M | Sample {s}/{samples}')
         time.sleep(slow / 3)
-    fp = (os.path.join(out, 'render.png' if n == 1 else f'frame_{f:04d}.png')) if is_dir else (out if n == 1 else out[:-4] + f'_{f:04d}.png')
+    fp = fpath(f)
     png(fp, max(2, w), max(2, h))
     dt = time.time() - t1
     say(f'[lumi] wrote {fp}  ({dt:.1f} s)')
-    say(f'[lumi] frame {i}/{n} {dt:.2f}')
+    say(f'[lumi] frame {done_already + i}/{n} {dt:.2f}')
 names = re.findall(r"L\.anchor\('(\w+)'", text)       # like lumi_bpy: label anchors as percent of the frame, per rendered frame
 if names:
     lab = os.path.join(out, 'labels.json') if is_dir else out[:-4] + '.labels.json'
     with open(lab, 'w', encoding='utf-8') as f:
         json.dump({'w': w, 'h': h, 'fps': fps, 'frames': n, 'anchors': {k: [[60.0 + 2 * i + 5 * j, 40.0 + i] for i in range(n)] for j, k in enumerate(names)}}, f)
     say(f'[lumi] labels: {", ".join(names)} -> {lab}')
-say(f'[lumi] done: {n} frame(s) {w}x{h}, {samples} spp, device {"CPU" if cpu else GPU}, total {time.time() - t0:.1f} s')
+say(f'[lumi] done: {len(todo)} frame(s) {w}x{h}, {samples} spp, device {"CPU" if cpu else GPU}, total {time.time() - t0:.1f} s')

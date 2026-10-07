@@ -178,9 +178,26 @@ def run(T):
           keep(after) == keep(before) and [d.get('id') for d in after['plan']['doubts']] == [d.get('id') for d in before['plan']['doubts']]
           and not [d for d in after['plan']['doubts'] if d.get('id') == 'qz' and d.get('answer')] and after.get('file') == before.get('file')
           and after.get('planState') == 'building' and T.plan_of(M).get('built') == 2, (keep(after), after.get('planState')))
+    # Post-mortem problem 5. This legacy deck conversation holds 380,000 tokens, well past CTX_RESET: until 0.5.5 the
+    # threshold was read on exactly ONE code path (the interview launcher), so the deck conversation was the one
+    # conversation nothing ever reset - it grew until the model refused it, mid-turn. A whole-deck message now hands off
+    # to a fresh conversation that is given the plan and the built slides instead.
     s, j, ev = step(T, M, '/api/claude/reply', {'deckId': M, 'scope': 'deck', 'text': 'whole deck on the old one'})
-    check('...a whole-deck message on the old deck resumes the old (deck) conversation', T.flag(T.fake_argv(ev), '--resume') == before['sessionId'],
-          T.flag(T.fake_argv(ev), '--resume'))
+    ctx = ' '.join(say_lines(ev, '[fake-context]'))
+    check('...a whole-deck message past CTX_RESET hands the DECK conversation off instead of resuming for ever (P5)',
+          '--resume' not in (T.fake_argv(ev) or ['--resume']) and any(e.get('code') == 'handoff' for e in ev),
+          (T.fake_argv(ev), [e.get('code') for e in ev]))
+    check('...and it says so once, naming the deck rather than a slide',
+          sum(e.get('code') == 'handoff' for e in ev) == 1
+          and any('for this deck' in str(e.get('text') or '') for e in ev if e.get('code') == 'handoff'),
+          [(e.get('code'), str(e.get('text'))[:80]) for e in ev if e.get('kind') == 'status'])
+    # below the threshold it resumes exactly as it always did
+    small = raw(T, M)
+    small['ctxTokens'] = 1000
+    write_raw(T, M, small)
+    s, j, ev = step(T, M, '/api/claude/reply', {'deckId': M, 'scope': 'deck', 'text': 'another whole-deck note'})
+    check('...a whole-deck message under the threshold still resumes the deck conversation',
+          T.flag(T.fake_argv(ev), '--resume') == raw(T, M)['sessionId'], T.flag(T.fake_argv(ev), '--resume'))
     s, j, ev = step(T, M, '/api/claude/reply', {'deckId': M, 'slide': 2, 'text': 'second edit'})
     check('...and the second edit of slide 2 resumes slide 2\'s new conversation', T.flag(T.fake_argv(ev), '--resume') == raw(T, M)['slideConvs']['s2']['sessionId'])
     s, j, ev = step(T, M, f'/api/decks/{M}/build', {'mode': 'next'})

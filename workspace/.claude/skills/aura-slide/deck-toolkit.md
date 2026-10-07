@@ -22,7 +22,7 @@ Temporary files live in `.aura/temp/` only: `text/` (extracted text), `build/<sl
 | Theme | file | Good for |
 |---|---|---|
 | Pink Punch | `pink-punch` | creative work, student projects, startups, energetic class talks |
-| Bold Blue | `bold-blue` | recommended default: any technical or science talk; photoreal studio 3D + clear charts. **Follow `looks/bold-blue/LOOK.md`** (its own template, archetype snippets, numbers and 3D toolkit override this file) |
+| Bold Blue | `bold-blue` | recommended default: any technical or science talk; photoreal studio 3D + clear charts. **Follow `looks/_shared/LOOK-BASE.md` then `looks/bold-blue/LOOK.md`** (its own template, archetype snippets, numbers and 3D toolkit override this file) |
 | Flat-Pack | `flat-pack` | processes, methods, builds, step-by-step how-it-works stories |
 | Happy Headspace | `happy-headspace` | health, education, psychology, environment, friendly public talks |
 | Yellow Frame | `yellow-frame` | science, field work, nature, geography, thesis defences that want gravitas |
@@ -67,7 +67,10 @@ The app's editor lets the user click a text on a slide and retype it, without as
   <aside class="notes" data-aura-notes>...</aside>      <!-- notes never get ids -->
 </section>
 ```
-- Format `s<slide>-<n>`: the slide number when the element was **first** made, then 1, 2, 3… in reading order.
+- Format `s<slide>-<n>`: the slide's **position in the deck** when the element was first made, then 1, 2, 3… in reading
+  order. It is the position, **never the plan id** — the two differ as soon as the plan ids have gaps (a deck running
+  s1…s12, s14, s16 has no slide 13 or 15, so its 13th slide is `s13-…`, not `s14-…`). Two slides may never mint ids
+  under the same `s<k>-` prefix; `deck_check.js` fails the deck when they do.
 - Put it on the element that holds one piece of text: titles, kickers, headlines, subtitles, body paragraphs, list
   items, labels (HTML or SVG `<text>`), captions, big numbers, quotes, table cells, source lines. Inline emphasis
   (`.em`, `<strong>`, `<br>`) stays inside its parent and does not get its own id; never nest one `data-edit` inside

@@ -22,7 +22,8 @@ SKILL = REPO / 'workspace' / '.claude' / 'skills' / 'aura-slide'
 CLAUDE_MD = REPO / 'workspace' / '.claude' / 'CLAUDE.md'
 DOCS = [CLAUDE_MD] + [SKILL / n for n in ('SKILL.md', 'planning.md', 'interviewing.md', 'building.md', 'editing.md',
                                           'deck-toolkit.md', 'aura-blend.md', 'story-arcs.md',
-                                          'enforcement.md')] + [SKILL / 'looks' / 'bold-blue' / 'LOOK.md']
+                                          'enforcement.md')] + [SKILL / 'looks' / '_shared' / 'LOOK-BASE.md',
+                                          SKILL / 'looks' / 'bold-blue' / 'LOOK.md', SKILL / 'looks' / 'flat-pack' / 'LOOK.md']
 
 
 def read(p):
@@ -216,6 +217,26 @@ def run(check):
     for need in ('closing slide is designed', 'built from the brief’s `identity` list'.replace('’', "'"),
                  'never a role the interview did not establish', 'BUILD ONLY THIS SLIDE', 'wooden base'):
         check(f'the step card repeats a rule both real runs skipped: {need}', need in msg)
+    # Post-mortem problem 3: the step card is "the newest and most specific instruction and WINS for that step", so a
+    # marker it tells Claude to emit has to be shown in full. building.md:29 said only "END with 1-3 hints for this
+    # slide" and never showed `slide=N`; all three of slide 12's hints in deck b45622aef312 were dropped as
+    # missing-slide. This check fails on that line.
+    card = re.search(r'<!-- step-card -->\s*(.*?)\s*<!-- /step-card -->', bm, re.S).group(1)
+    miss = []
+    for nm in ('hint', 'built', 'ask'):
+        shown = re.findall(r'\[\[aura:' + nm + r'\b([^\]]*)\]\]', card)
+        if not shown: miss.append(f'{nm}: the step card never shows the marker'); continue
+        for at in (am.MARKERS.get(nm) or {}).get('required') or []:
+            if not any(at + '=' in s for s in shown): miss.append(f'{nm} is shown without {at}=')
+    check('C-05: every marker the step card tells Claude to emit is shown with every required attribute', not miss, miss)
+    check('the step card spells the hint out, slide= and all', '[[aura:hint slide=' in card and 'REQUIRED' in card)
+    badh = am.scan('[[aura:hint text="Make the icons loop gently instead of playing once"]]')['problems'][0]
+    check('a hint with no slide= is reported, and the feedback names the exact line to write instead',
+          badh['reason'] == 'missing-slide' and '[[aura:hint slide=' in am.repair(badh), am.repair(badh))
+    check('the step card names the shell shapes the permission gate refuses, with the way round each',
+          all(x in card for x in ('python -c', 'node -e', '.aura/temp', 'UTF8Encoding')))
+    check('the step card says a data-edit id uses the slide POSITION, never the plan id',
+          'POSITION' in card and 'never the plan id' in card)
 
     print('\n[instructions: one statement of each fact]')
     gen, bb = rules['generic'], rules['looks']['bold-blue']
@@ -227,9 +248,48 @@ def run(check):
     check('CLAUDE.md numbers table: type scales', ' · '.join(map(str, gen['typeScale'][:6])) in cm and ' · '.join(map(str, bb['typeScale'])) in cm)
     check('CLAUDE.md numbers table: floors and typeface limits',
           f"| {rules['minFontPx']} px |" in cm and f"| {bb['minFontPx']} px, and only" in cm and f"| {gen['maxTypefaces']} | {bb['maxTypefaces']} (Poppins" in cm)
+    # Owner preference S3 (docs/owner-preferences-proposal.md, conflict C1). The remedy for text that does not fit is one
+    # fact with two homes: the machine copy the checker quotes back to Claude, and the sentence a person reads in CLAUDE.md.
+    # They must change in the SAME edit, or the two documents tell Claude opposite things about splitting a slide.
+    _fit = rules['rules'][0]['whenTextDoesNotFit']
+    _norm = lambda s: re.sub(r'\s+', ' ', s.replace('—', '-').replace('–', '-')).strip()
+    check("CLAUDE.md carries hard-rules.json's whenTextDoesNotFit sentence word for word (S3 / C1)",
+          _norm(_fit) in _norm(cm), _norm(_fit))
+    check('whenTextDoesNotFit prefers merging or dropping whole items over splitting (S3)',
+          'merge or drop whole items' in _fit and 'only when nothing can be dropped' in _fit
+          and 'shorten the words' not in _fit, _fit)
+    # B1: the look spec is a SHARED BASE plus a per-look brand file. Every look obeys the same structural rules; only
+    # brand differs. The base must carry the structure and name no colour, typeface or px size; each look file must
+    # point at the base and carry its own numbers, equal to hard-rules.json.
+    base = (SKILL / 'looks' / '_shared' / 'LOOK-BASE.md').read_text(encoding='utf-8')
+    check('the shared look base exists and holds the structural rules',
+          all(x in base for x in ('clash matrix', 'one main visual', 'archetype', 'Speaker notes', 'capture contract')))
+    check('the base carries S4 (a sequence climbs) and S5 (a comparison shows both whole), both PROVISIONAL',
+          'a path that climbs' in base and 'whole and side by side' in base
+          and base.count('PROVISIONAL') >= 2 and 'b45622aef312' in base)
+    check('the base is brand-free: no palette, typeface or px size in it',
+          not re.search(r'#[0-9A-Fa-f]{6}|\d+\s?px|Poppins|Noto Sans|DM Mono', base),
+          re.findall(r'#[0-9A-Fa-f]{6}|\d+\s?px|Poppins|Noto Sans|DM Mono', base)[:6])
+    for slug in sorted(rules['looks']):
+        lk = rules['looks'][slug]
+        ls = (SKILL / 'looks' / slug / 'LOOK.md').read_text(encoding='utf-8')
+        check(f'{slug}: LOOK.md points at the shared base', '_shared/LOOK-BASE.md' in ls)
+        check(f'{slug}: LOOK.md lists every word budget',
+              all(f'{k} {v}' in ls for k, v in lk['wordBudget'].items() if k != 'document') and f"{lk['wordBudget']['document']}" in ls)
+        check(f'{slug}: LOOK.md type scale equals hard-rules.json', ' / '.join(map(str, lk['typeScale'])) in ls.replace('**', ''))
+        check(f'{slug}: LOOK.md states the look 3D engine policy explicitly',
+              'LOOK_3D' in ls and ('Blender' in ls or 'blender' in ls))
+        check(f'{slug}: the look ships a theme, a template and ten archetypes',
+              (ENGINE / 'deck' / 'themes' / f'{slug}.css').is_file()
+              and (ENGINE / 'deck' / 'looks' / slug / 'template.html').is_file()
+              and len(list((ENGINE / 'deck' / 'looks' / slug / 'archetypes').glob('*.html'))) == 10)
+        check(f'{slug}: the word cap the server applies is the checker number',
+              fs.word_cap(lk['name']) == lk['wordBudget']['content'])
+        check(f'{slug}: the 3D engine policy is in code, so a 3D slide always resolves to an engine',
+              fs.look_3d_engine(lk['name']) in ('blender', 'threejs'))
+    check('every look offered in the form either has a spec or falls back to the generic rules',
+          set(fs.LOOK_SPECS) <= set(fs.SHELL_THEMES) and set(fs.LOOK_3D) <= set(fs.SHELL_THEMES))
     ls = (SKILL / 'looks' / 'bold-blue' / 'LOOK.md').read_text(encoding='utf-8')
-    check('LOOK.md lists every Bold Blue word budget', all(f'{k} {v}' in ls for k, v in bb['wordBudget'].items() if k != 'document') and f"{bb['wordBudget']['document']}" in ls)
-    check('LOOK.md type scale equals hard-rules.json', ' / '.join(map(str, bb['typeScale'])) in ls.replace('**', ''))
     dc = read(ENGINE / 'tools' / 'deck_check.js')
     check('deck_check.js reads its generic numbers from hard-rules.json', 'RULES.generic' in dc and '266' not in dc)
     check('the server word cap is the checker\'s number (Bold Blue and generic)', fs.word_cap('Bold Blue') == bb['wordBudget']['content'] and fs.word_cap('Pink Punch') == gen['wordBudget']['content'])
@@ -260,7 +320,8 @@ def run(check):
         toks[m.group(1)] = [t.strip() for t in m.group(2).split('|')]
     for fn, ts in toks.items():
         src = read(ENGINE / ('tools' if fn == 'deck_check.js' else 'rules') / fn)
-        if fn == 'deck_check.js': src += read(ENGINE / 'tools' / 'lib' / 'claims.js') + read(ENGINE / 'tools' / 'lib' / 'blender_check.js')
+        if fn == 'deck_check.js': src += (read(ENGINE / 'tools' / 'lib' / 'claims.js') + read(ENGINE / 'tools' / 'lib' / 'blender_check.js')
+                                          + read(ENGINE / 'tools' / 'lib' / 'edit_ids.js'))
         missing = [t for t in ts if t not in src]
         check(f'every message named in enforcement.md exists in {fn}', not missing, missing)
     rows = re.findall(r'^\| .*\(`([^`]+)`\)', enf, re.M)

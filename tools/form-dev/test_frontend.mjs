@@ -68,6 +68,58 @@ const jsFiles = fs.readdirSync(jsDir).filter(f => f.endsWith('.js'));
   check('plan: five main pictures', eq(P.MAINS.map(m => m.id), ['3d', 'chart', 'diagram', 'photo', 'text']));
 }
 
+// ---------------------------------------------------------------- plan-store.js: ONE plan, and changes said as changes
+// The release blocker: the build page saved the WHOLE plan from a copy it was holding, and that copy stops being true the
+// moment a build step finishes (the step writes visual.builtAs into the slide it built). Removing an UNBUILT slide from
+// such a copy was then refused as an edit to a BUILT one. These pin both halves of the fix: nobody sends a plan, and
+// every reader is handed the same newest one.
+{
+  const S = await load('plan-store.js');
+  const realFetch = globalThis.fetch;
+  const sent = [];
+  const reply = { ok: true, count: 2, built: 1, plan: { slides: [{ id: 's1', built: true }, { id: 's2' }] } };
+  globalThis.fetch = async (url, o) => { sent.push({ url, body: o && o.body ? JSON.parse(o.body) : null }); return { ok: true, json: async () => reply }; };
+  S._reset();
+  const st = S.openPlan('d1');
+  const seen = [];
+  const off = st.subscribe(p => seen.push(p.count));
+  await st.refresh();
+  check('plan-store: one GET fills every subscriber at once', eq(seen, [2]) && st.count() === 2 && st.built() === 1, JSON.stringify(seen));
+  const st2 = S.openPlan('d1');
+  check('plan-store: a second reader of the same deck gets the same store, already filled', st2 === st && st2.get().count === 2);
+  sent.length = 0;
+  await st.removeSlide('s2');
+  check('plan-store: remove names the slide and sends NO plan (this is the 409 "built" fix)',
+    sent.length === 1 && /\/plan\/slide\/remove$/.test(sent[0].url) && sent[0].body.slide === 's2' && !('plan' in sent[0].body) && !('discard' in sent[0].body),
+    JSON.stringify(sent));
+  sent.length = 0;
+  await st.removeSlide('s1', { discard: true });
+  check('plan-store: removing a BUILT slide says its work is being discarded', sent[0].body.discard === true, JSON.stringify(sent[0].body));
+  sent.length = 0;
+  await st.addSlide({ title: 'new one' });
+  check('plan-store: add sends the slide, no id (the server mints it) and no plan',
+    /\/plan\/slide\/add$/.test(sent[0].url) && sent[0].body.slide.title === 'new one' && !('after' in sent[0].body) && !('plan' in sent[0].body), JSON.stringify(sent[0].body));
+  sent.length = 0;
+  await st.saveSlide({ id: 's2', title: 'x' });
+  check('plan-store: saving one slide sends that slide, not the deck\'s plan', /\/plan\/slide\/save$/.test(sent[0].url) && !('plan' in sent[0].body));
+  // a slow GET that lands after a change must never put the old plan back - the counters would disagree again
+  let hold;
+  globalThis.fetch = async () => new Promise(res => { hold = () => res({ ok: true, json: async () => ({ ok: true, count: 99, plan: { slides: [] } }) }); });
+  const slow = st.refresh();
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: true, count: 7, plan: { slides: [] } }) });
+  await st.addSlide({});
+  hold(); await slow;
+  check('plan-store: an older answer landing late is dropped; the newest stays', st.count() === 7, st.count());
+  globalThis.fetch = async () => { throw new TypeError('down'); };
+  await st.refresh();
+  check('plan-store: an unreachable server never wipes the plan the page is showing', st.count() === 7 && st.get().ok === true);
+  off(); st.release(); st2.release();
+  check('plan-store: let go of when nobody is reading it any more', S.openPlan('d1') !== st);
+  globalThis.fetch = realFetch;
+  check('X-07: the build page keeps no plan of its own - it reads plan-store and sends changes, never a plan',
+    /openPlan/.test(read('editor.js')) && !/api\.plan\.save/.test(read('editor.js')) && !/JSON\.parse\(JSON\.stringify\(pay\.plan\)\)/.test(read('editor.js')));
+}
+
 // ---------------------------------------------------------------- Blender batch 3: engine chips, estimates wording, the next-slide gate
 {
   const B = await load('blender.js'), P = await load('plan.js');
@@ -82,9 +134,14 @@ const jsFiles = fs.readdirSync(jsDir).filter(f => f.endsWith('.js'));
   const n0 = B.engineNotes('still'), n1 = B.engineNotes('still', { still: 95, 720: 1500, 1080: 3300 }), n2 = B.engineNotes('animation', { still: 95, 720: 1500, 1080: 3300 });
   check('blender: notes use the server\'s calibrated estimates when there are some (fixed text otherwise)', /1–2 min, animation 10–60 min/.test(n0.blender) && /still ≈ 2 min/.test(n1.blender) && /720p ≈ 25 min, 1080p ≈ 55 min/.test(n2.blender), JSON.stringify([n0, n1, n2]));
   check('blender: durations read plainly', B.fmtDur(20) === 'under a minute' && B.fmtDur(95) === '2 min' && B.fmtDur(3300) === '55 min' && B.fmtDur(4500) === '1 h 15 min');
-  const est = { preview: { seconds: 14 }, iteration: { tokens: 55000, costUsd: 0.45, seconds: 104 }, full: { 720: { seconds: 1500 }, 1080: { seconds: 3300 } }, queue: { waitS: 0 } };
+  const est = { preview: { seconds: 14 }, iteration: { tokensRun: 55000, costUsdRun: 0.45, seconds: 104 }, full: { 720: { seconds: 1500 }, 1080: { seconds: 3300 } }, queue: { waitS: 0 } };
   check('blender: one more preview = time + tokens + cost', B.iterLine(est) === 'one more preview ≈ 2 min · ≈ 55k tokens (≈ $0.45)', B.iterLine(est));
-  check('blender: no cost known -> no $ part', !/\$/.test(B.iterLine({ iteration: { tokens: 60000, costUsd: null, seconds: 110 } })));
+  check('blender: no cost known -> no $ part', !/\$/.test(B.iterLine({ iteration: { tokensRun: 60000, costUsdRun: null, seconds: 110 } })));
+  // post-mortem P6: an older server sends the per-run `tokens` under its old name and a CUMULATIVE `costUsd`. The tokens
+  // are still right and are shown; the cumulative cost is dropped rather than printed as the price of one more preview.
+  check('blender: a pre-0.5.5 server keeps its tokens and loses only its cumulative cost',
+    B.iterLine({ iteration: { tokens: 55000, costUsd: 1.8168, seconds: 104 } }) === 'one more preview ≈ 2 min · ≈ 55k tokens',
+    B.iterLine({ iteration: { tokens: 55000, costUsd: 1.8168, seconds: 104 } }));
   check('blender: full render line per resolution, 0 tokens', /≈ 25 min · 0 tokens/.test(B.fullLine(est, 'animation', 720)) && /≈ 55 min/.test(B.fullLine(est, 'animation', 1080)) && /≈ 2 min/.test(B.fullLine({ full: { still: { seconds: 95 } } }, 'still')));
   check('blender: a render ahead in the queue adds its wait', B.fullSeconds({ full: { still: { seconds: 95 } }, queue: { waitS: 600 } }, 'still') === 695);
   const V = (n, status, extra = {}) => ({ id: 's' + n, n, engine: 'blender', status, previews: [{ n: 1 }], ...extra });
@@ -177,7 +234,7 @@ const src = Object.fromEntries(jsFiles.map(f => [f, read(f)]));
 }
 // the font floor (F-01, decided): nothing under 12 px; 12 px only for micro-labels (a short, named allow-list); everything you read is 14+
 {
-  const allowed12 = /(\.up-chip|\.lk-sugg|\.ch-tag|\.pl-chip-q|\.hm-look|\.ph-n|\.dots|\.ws-stage|\.up-|\.us-asof|\.aura-cursor|\.pg-label|\.ch-stepof|-sub|-tag|-n\b)/;
+  const allowed12 = /(\.up-chip|\.lk-sugg|\.ql-rec|\.ql-lab|\.ed-picopt-now|\.ch-tag|\.pl-chip-q|\.hm-look|\.ph-n|\.dots|\.ws-stage|\.up-|\.us-asof|\.aura-cursor|\.pg-label|\.ch-stepof|-sub|-tag|-n\b)/;
   const small = [];
   for (const f of fs.readdirSync(cssDir).filter(f => f.endsWith('.css'))) {
     const css = fs.readFileSync(path.join(cssDir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');

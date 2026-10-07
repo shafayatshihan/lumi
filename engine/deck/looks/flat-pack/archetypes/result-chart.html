@@ -1,0 +1,43 @@
+<!-- archetype: result-chart | one drawn line chart (FPChart) + up to three finding chips | main visual: chart | companions: <=3 chips. Real data needs a source line; with no data draw an "illustrative" shape (no y numbers). Never invent values. -->
+<section class="slide" data-kind="content" data-minutes="2" data-title="What we found">
+  <div class="safe">
+    <div class="fp-main">
+      <div class="fp-l w4">
+        <p class="kicker" data-edit="s{{N}}-1">07 · What we found</p>
+        <h2 class="headline" data-edit="s{{N}}-2">It holds, <span class="em">then it does not</span></h2>
+        <ul class="fp-chips">
+          <li class="fp-chip key" data-edit="s{{N}}-3">Flat until minute 40</li>
+          <li class="fp-chip" data-edit="s{{N}}-4">Then 2x in ten minutes</li>
+          <li class="fp-chip" data-edit="s{{N}}-5">Same point in every run</li>
+        </ul>
+      </div>
+      <div class="fp-r w8">
+        <div class="fp-chart" id="s{{N}}-chart"></div>
+      </div>
+    </div>
+    <footer class="fp-foot"><span class="fp-mark" data-edit="s{{N}}-6">Deck mark</span><span class="fp-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Read the axes first.</strong> Say what is along the bottom and what is up the side before you say a
+    single number. Then read the chips in order - they are the order the eye should travel.</p>
+    <p><strong>Name the moment.</strong> The badge marks the one thing this slide is about. Say what changed there,
+    and say how you know it was not an artefact.</p>
+    <p><strong>Source every number aloud</strong> and say plainly if the curve is illustrative. If asked for a value
+    between two points, say the data does not resolve it rather than reading off the line.</p>
+  </aside>
+</section>
+<script>
+/* Replace with the user's own data. Series colours in this look: ink first, blue second, orange third; never more
+   than three. Real data carries a source line; with no data set illustrative: true and say so in the notes. */
+FPChart.line('#s{{N}}-chart', {
+  x: { min: 0, max: 60, ticks: [0, 10, 20, 30, 40, 50, 60], title: 'time elapsed, min' },
+  y: { min: 0, max: 100, ticks: [0, 25, 50, 75, 100], title: 'load held, kg' },
+  series: [
+    { name: 'before', color: '#111111', points: [[0, 82], [10, 81], [20, 80], [30, 78], [40, 74], [50, 42], [60, 18]] },
+    { name: 'after', color: '#0058A3', points: [[0, 84], [10, 84], [20, 83], [30, 83], [40, 82], [50, 80], [60, 79]] },
+  ],
+  band: { from: 40, to: 60 },
+  event: { x: 40, y: 74, label: 'where it lets go' },
+  illustrative: true,          // replace with real points + source: 'Source: ...'
+});
+</script>

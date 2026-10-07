@@ -39,6 +39,10 @@ cancel the job and fall back to the CPU.
      with `engineNote: "blender-missing"`.
   2. Auto: if the look is Bold Blue, `main == "3d"`, `motion == "still"` and Blender is available, use `"blender"`.
      Otherwise use `"threejs"`. A moving 3D slide is never switched to Blender automatically: the user chooses that.
+  3. **Pinned when the slide is built** (`pin_engine`, the engine-mismatch fix). `build_next` writes the engine it just resolved into
+     `visual.engine` of a 3D slide that had none, once, before the step starts. The slide is then finalized with the engine
+     it was BUILT with, whatever happens later to the look or to whether Blender is installed, and `plan.json` tells Claude
+     the same thing the server believes. An engine that is already written is never overwritten.
 - **Render kind** (derived): `motion == "still"` gives `"still"`. Any other motion gives `"animation"`.
 - `GET /api/decks/<id>/plan` carries `engines: {<slide id>: {engine, kind, note}}` and `blender: {available, status, estimates}`,
   so the plan page can show the chips and notes without a second request. `blender.estimates[<sid>]` (batch 3,
@@ -182,6 +186,7 @@ Server command (Claude never sees this):
 | preview (still or animation) | `--preview` (= `--res 30 --samples 16`, simplified, one poster frame) | `previews/preview-<n>.png` |
 | full still | `--height 1080 --samples 128` | `final.png` |
 | full animation | `--anim --height 720` (or `1080`) `--fps 20 --samples 64` | `frames/frame_####.png`, then `final.mp4` via ffmpeg |
+| resumed animation | the same plus `--resume` | only the `frame_####.png` that are missing; the rest are kept as they are |
 | calibration | `bench_scene.py`, at 25 % / 16 spp, 50 % / 16 spp and 50 % / 64 spp | `.aura/temp/blender-bench/` |
 
 - **Progress** comes from the Blender log `Fra: <f> | ... | Sample <s>/<S>` and the lumi_bpy lines
@@ -192,9 +197,19 @@ Server command (Claude never sees this):
 - **Timeouts**: preview 15 min. Full still `max(30 min, 4 x estimate)`. Animation `max(60 min, 3 x estimate)`, capped at
   24 h. A job is also stopped after 20 min with no output (`stalled`). The kill takes the whole tree
   (`taskkill /T /F`), and Blender is in a kill-on-close job object, so it never outlives the server.
-- **Lanes**: one `full` lane and one `preview` lane, each a FIFO queue. A preview never waits behind a long animation:
-  while the full lane is busy, the preview runs on the CPU (`--cpu`), which is about 2x slower but costs seconds. The
-  calibration runs in the preview lane.
+- **Lanes**: one `full` lane and one `preview` lane. A preview never waits behind a long animation: while the full lane
+  is busy, the preview runs on the CPU (`--cpu`), which is about 2x slower but costs seconds. The calibration runs in the
+  preview lane. Exactly one job uses the GPU at a time (2 GB VRAM; two thrash) - that never changes.
+- **Order in the `full` lane** (post-mortem problem 9: an approved 78 s still once waited 44.6 min behind an 80-frame
+  animation). The lane is not FIFO. The next job is the one with the lowest rank: a still before an animation, then the
+  shortest estimate, then arrival; a job that has waited more than 20 minutes goes first whatever its size, so nothing is
+  starved. `queue_info()` reports `ahead` and `waitS` in that same order, and `render-queued` says them in words.
+- **Yielding** (the same problem, for a job that is already running). Cycles writes each frame as a finished PNG, so an
+  animation can stop between frames. A newly queued **still** marks the running animation `yielding`; it is stopped at the
+  next frame boundary, its frames are kept, and the same job is re-queued with `--resume`, which renders only the frames
+  that are not on disk and counts progress against the whole loop. `labels.json` is still projected for every frame.
+  The event is `render-paused`. Never when no frame has finished yet, never on the last frame, never for a job whose own
+  estimate is longer, and at most 3 times per job. The cost is the one frame that was in flight.
 - **Failure codes** (`error.code`, each with a plain `reason`): `no-blender`, `no-scene`, `script-error` (the last
   Python error line is in `reason`), `gpu-failed` (only when the CPU retry failed too), `out-of-memory`, `timeout`,
   `stalled`, `no-output`, `ffmpeg-missing`, `encode-failed`, `interrupted`. `cancelled` is not a failure: the status
@@ -232,7 +247,8 @@ All routes are JSON unless noted, and refuse with `{ok:false, error, reason}`.
 | `preview-cancelled`, `render-cancelled` | `job` |
 | `change-requested`, `change-queued`, `change-no-edit` | `change` (the user's text) |
 | `approved` | `preview` |
-| `render-started` (`render-queued` while the full lane is busy) | `job`, `estimate` (s), `res`, `renderKind` |
+| `render-started` (`render-queued` while the full lane is busy) | `job`, `estimate` (s), `res`, `renderKind`, `ahead`, `waitS` |
+| `render-paused` (an animation yielded the GPU to a shorter job; it resumes by itself) | `job` (the resumed job), `frame`, `frames`, `estimate` |
 | `render-done` | `job`, `file` (url), `render_s`, `fallback` |
 | `bench-done` | `c`, `a`, `k` |
 
@@ -286,6 +302,12 @@ All routes are JSON unless noted, and refuse with `{ok:false, error, reason}`.
 - The slide's holder: `<div class="bb-blender" data-blender="<sid>" data-kind="still|animation"></div>`, placed where the
   3D figure goes, with the same box as a 3D holder. Batch 2 fills it and the checker checks it.
 
+A 3D slide whose engine is `threejs` gets the opposite block (`bl_live_block`, the engine-mismatch fix): it is named as a LIVE 3D slide, and
+writing a `.bb-blender` holder, a `data-blender` attribute or a `scene.py` for it is forbidden in words. Until then a build
+step said nothing at all about the engine unless it was Blender, and on a look that does not auto-pick Blender a 3D slide
+could be built with a holder the server had made no job for. **A slide must never end up with a Blender holder and no Blender
+job**: the engine block above, the post-build check and the finalize gate each close one side of that.
+
 When the step ends (`after_run`, good and not waiting for answers), the server checks for `scene.py`. If it is there,
 the server queues the preview (status `previewing`), and `preview-done` makes the build page ask the question. With
 "build the rest", the next slide's build starts as usual. The preview loop and the full render go on in parallel, and
@@ -306,6 +328,10 @@ scene hash: if it changed, it queues a new preview, else it sends `change-no-edi
   render itself (the loop's poster). It stops with a plain message (exit 1) when a holder is empty or still a draft.
 - Finalize refuses (409 `blender-pending`, `slides: [n...]`) while any slide with the effective engine blender has no `final` (or
   its file is gone). When `final.stale` is set it answers 409 `blender-stale` until the request carries `{acceptStale: true}`.
+- The gate reads the built deck as well (`bl_holders`), so a slide carrying an unfilled `.bb-blender` holder is refused with the
+  same 409 `blender-pending` **whatever its nominal engine is** (the body also carries `pending` and `orphans` separately). Before
+  the engine-mismatch fix only slides whose engine was blender were looked at, so an orphan holder slipped through the gate and killed `finalize.js`
+  at the very end of a long run with a raw message. A live 3D slide with no holder and no render still finalizes normally.
 - It NEVER starts Blender.
 
 **Checker (`deck_check.js` + `tools/lib/blender_check.js`, numbers in `hard-rules.json -> blender`).** Per `.bb-blender` holder:
@@ -313,6 +339,9 @@ the render is in the deck and readable; a still is 1920x1080, a loop 1280x720 or
 edge equal the slide's own colour (3 levels); not black, not blank (pixel statistics); a loop's last -> first step is a normal step
 (seamless); file budgets (still 6 MB, 720p loop 14 MB, 1080p loop 30 MB); a label with no anchor warns. A missing render or a draft
 preview is a WARNING while building and an ERROR with `--finalize`, so the Stop hook never blocks a build step on it.
+When the server runs the check after a build step it passes `--blender-slides <sid,...>` (`blender_args`): the slides it really
+renders. A holder whose id is not in that list is an orphan and an ERROR at once, on that slide, while the person is still there.
+Without the flag (a hand-run check) nothing changes.
 `lumi_bpy._composite` fades the soft floor shadow to the exact background over the outer 12 % of the frame, which is what makes the
 edge rule true.
 

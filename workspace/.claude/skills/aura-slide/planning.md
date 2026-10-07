@@ -99,7 +99,8 @@ so get it right first time.
   real equations drive the motion. The person changes these on the page.
 - `engine` (only for `3d`, optional): `"blender"` = a photoreal studio render (a still takes 1-2 min, an animation
   10-60 min, no live interaction) or `"threejs"` = live 3D (instant, animated, editable). Leave it out to let Lumi
-  choose: in Bold Blue a still 3D figure becomes a Blender render when Blender is installed. Set it only when the brief
+  choose: the LOOK decides (`form_server.LOOK_3D`). In Bold Blue a still 3D figure becomes a Blender render when
+  Blender is installed; Flat-Pack never uses Blender - its drawings are orthographic three.js. Set it only when the brief
   clearly asks for one; the person picks it on the page.
 - `photo`: only suggest it when the user has photos, or when a real photo is clearly the right picture; the build
   asks which photo each time.

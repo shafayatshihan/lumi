@@ -122,13 +122,14 @@ def real_blender(T):
 def parta_suite(T):
     """Batch 6 Part A: cavity dirt + edge wear, L.inspect(), real part counts in the docs, lumi_mech."""
     check = T.check
-    bl_dir = T.REPO / 'engine' / 'deck' / 'looks' / 'bold-blue' / 'blender'
+    bl_dir = T.REPO / 'engine' / 'deck' / 'blender'
     bpy_src = (bl_dir / 'lumi_bpy.py').read_text(encoding='utf-8')
     mech = bl_dir / 'lumi_mech.py'
     mech_src = mech.read_text(encoding='utf-8') if mech.is_file() else ''
     skill = T.REPO / 'workspace' / '.claude' / 'skills' / 'aura-slide' / 'looks' / 'bold-blue'
     blender_md = (skill / 'BLENDER.md').read_text(encoding='utf-8')
-    look_md = (skill / 'LOOK.md').read_text(encoding='utf-8')
+    look_md = ((skill.parent / '_shared' / 'LOOK-BASE.md').read_text(encoding='utf-8')
+               + (skill / 'LOOK.md').read_text(encoding='utf-8'))   # the base + the brand file are one authority
 
     # ---- item 1: the two geometry-driven node helpers
     check('item 1: _cavity_to uses an only-local AO node', '_cavity_to' in bpy_src
@@ -275,7 +276,8 @@ def run(T):
         check('preview 1 rendered by the server after the build step', v.get('status') == 'preview' and pv.get('n') == 1 and
               (T.SANDBOX / pv.get('png', 'x')).is_file(), v.get('status'))
         check('preview record: res 30, 16 spp, render_s, device, sceneHash, build tokens', pv.get('res') == 30 and pv.get('samples') == 16
-              and pv.get('render_s', 0) > 0 and str(pv.get('device', '')).startswith('OPTIX') and pv.get('sceneHash') and pv.get('tokens', 0) > 0, pv)
+              and pv.get('render_s', 0) > 0 and str(pv.get('device', '')).startswith('OPTIX') and pv.get('sceneHash')
+              and pv.get('tokensRun', 0) > 0 and pv.get('est_s', 0) > 0 and pv.get('est_basis'), pv)
         calls = [json.loads(x) for x in blog.read_text(encoding='utf-8').splitlines()] if blog.is_file() else []
         pc = next((c for c in calls if '--preview' in c), [])
         check('server command: -b --factory-startup --python-exit-code 1 --log render -P scene.py -- --out ... --preview',
@@ -294,7 +296,7 @@ def run(T):
         check('estimates: preview + full still (seconds, low/high, basis slide) + iteration tokens',
               est.get('preview', {}).get('seconds', 0) > 0 and est.get('full', {}).get('still', {}).get('basis') == 'slide'
               and est['full']['still']['low'] <= est['full']['still']['seconds'] <= est['full']['still']['high']
-              and est.get('iteration', {}).get('tokens', 0) > 0 and est.get('queue', {}).get('ahead') is not None, est)
+              and est.get('iteration', {}).get('tokensRun', 0) > 0 and est.get('queue', {}).get('ahead') is not None, est)
         argv_build = T.fake_argv(ev)
         sess = (json.loads((T.AURA / 'decks' / f'{P}.json').read_text(encoding='utf-8')).get('slideConvs') or {}).get(s1, {}).get('sessionId')
 
@@ -313,9 +315,9 @@ def run(T):
         check('...with the [blender-change] message and the user\'s text, told not to render', '[blender-change slide=' + s1 in heard and 'make the casing darker' in heard, heard[:200])
         pv = (v.get('previews') or [{}])[-1]
         check('a new preview (n=2) follows the edit, carrying the change text and its tokens', len(v.get('previews') or []) == 2 and pv.get('change') == 'make the casing darker'
-              and pv.get('tokens', 0) > 0, pv)
+              and pv.get('tokensRun', 0) > 0, pv)
         ch = (v.get('changes') or [{}])[-1]
-        check('change history: tokens recorded, edited=True; iteration estimate now basis slide', ch.get('tokens', 0) > 0 and ch.get('edited') is True
+        check('change history: tokens recorded, edited=True; iteration estimate now basis slide', ch.get('tokensRun', 0) > 0 and ch.get('edited') is True
               and v['estimates']['iteration']['basis'] == 'slide', (ch, v['estimates']['iteration']))
         check('change events: change-requested then preview-done', [e.get('code') for e in bl_events(T, n0, P, s1) if e.get('code') in ('change-requested', 'preview-done')]
               == ['change-requested', 'preview-done'], [e.get('code') for e in bl_events(T, n0, P, s1)])

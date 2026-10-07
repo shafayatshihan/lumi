@@ -16,3 +16,6 @@ HANDOFF.md
 
 # dev scratch (GPU probe cache etc.) - never ship
 temp/
+
+# dev sandboxes - never part of the product
+aura-dev-*/

@@ -1,0 +1,51 @@
+<!-- archetype: what-it-is | three facts + the object drawn exploded with numbered callouts | main visual: 3D | companions: <=3 facts, 2-4 callouts -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="What it is">
+  <div class="fp-grid-bg" aria-hidden="true"></div>
+  <div class="safe">
+    <div class="fp-main">
+      <div class="fp-l w5">
+        <p class="kicker" data-edit="s{{N}}-1">02 · What it is</p>
+        <h2 class="headline" data-edit="s{{N}}-2">Four parts, <span class="em">one job</span></h2>
+        <ol class="fp-steps">
+          <li><span class="fp-n">1</span><div><strong data-edit="s{{N}}-3">The frame</strong><p data-edit="s{{N}}-4">carries the load <span class="fp-count">2x</span></p></div></li>
+          <li><span class="fp-n">2</span><div><strong data-edit="s{{N}}-5">The core</strong><p data-edit="s{{N}}-6">does the work the talk is about</p></div></li>
+          <li><span class="fp-n">3</span><div><strong data-edit="s{{N}}-7">The cover</strong><p data-edit="s{{N}}-8">keeps the rest out <span class="fp-count">1x</span></p></div></li>
+        </ol>
+      </div>
+      <div class="fp-r w7">
+        <div class="fp-stage">
+          <div class="aura-3d fp-3d" data-scene="s{{N}}-scene" data-period="16" aria-hidden="true">
+            <span class="fp-pin" data-follow="frame">1</span>
+            <span class="fp-pin" data-follow="core">2</span>
+            <span class="fp-pin" data-follow="cover">3</span>
+            <div class="fp-tag blue" data-follow="core" data-dx="72"><b data-edit="s{{N}}-9">The core</b><span data-edit="s{{N}}-10">what this talk is about</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="fp-foot"><span class="fp-mark" data-edit="s{{N}}-11">Deck mark</span><span class="fp-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Walk the numbers, not the words.</strong> Say "one", point at the disc marked 1 on the drawing, then
+    read its line. Do the same for two and three. The numbered discs are there so the room never has to search.</p>
+    <p><strong>Let the explosion do the explaining.</strong> When the parts lift apart, say what sits against what.
+    That is the fact people remember, and it is the one a photograph could not show.</p>
+    <p><strong>Say what is real.</strong> Give the real part count and the real proportions, and say which of the two
+    are schematic here. If asked for a dimension you were not given, say it varies and move on.</p>
+  </aside>
+</section>
+<script>
+/* Replace the three placeholder parts with the subject's own (LOOK-BASE 4.0 and 4.1: real count, real proportions,
+   each moving part its own object at its real pivot). The blue one is the hero; the rest are paper and grey. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const S = FP3D.sheet(ctx, { target: [0, 1.2, 0], size: 3.6, turn: -35, tilt: 30 });
+  const frame = S.add(FP3D.panel(THREE, 3.4, 0.24, 2.4, { fill: 'paper' })); frame.position.y = 0.12;
+  const core  = S.add(FP3D.disc(THREE, 0.9, 0.6, { fill: 'blue' }));         core.position.y = 1.0;
+  const cover = S.add(FP3D.panel(THREE, 3.0, 0.2, 2.0, { fill: 'grey' }));   cover.position.y = 1.9;
+  S.add(FP3D.line(THREE, [[0, 0.3, 0], [0, 2.6, 0]], { dashed: true }));     // the assembly axis
+  S.exploded([core, cover], [0, 0.9, 0]);
+  FP3D.pins(S, ctx.el, { frame: frame, core: core, cover: cover });
+  return S.api({ update(t) { S.turn(t); } });
+}, { period: 16 });
+</script>

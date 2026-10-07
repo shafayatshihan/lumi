@@ -64,6 +64,9 @@ export function fixVisual(v) {
   const out = { main, companions: (v.companions || []).filter(c => ok.includes(c)), phrase: v.phrase || '',
     detail: main === '3d' ? (v.detail || 'detailed') : null, motion: main === '3d' ? (v.motion || 'timed') : null };
   if (main === '3d' && (v.engine === 'blender' || v.engine === 'threejs')) out.engine = v.engine;
+  // post-mortem problem 2: `builtAs` is lumi's own record of what the finished slide really holds. it is a fact, not an
+  // intent, so the page carries it through untouched - dropping it here would silently erase the record on the next edit.
+  if (v.builtAs) out.builtAs = v.builtAs;
   return out;
 }
 
@@ -362,7 +365,8 @@ const hoursWords = s => {
 };
 const SHARE = [[0.04, 'almost none'], [0.16, 'about a tenth'], [0.3, 'about a quarter'], [0.42, 'about a third'],
   [0.58, 'about half'], [0.72, 'about two thirds'], [0.88, 'about three quarters'], [2, 'nearly all']];
-const shareWords = f => (SHARE.find(x => f < x[0]) || SHARE[SHARE.length - 1])[1];
+// exported so the look step says a saving in exactly the words this page says an allowance in - never money, never machine units
+export const shareWords = f => (SHARE.find(x => f < x[0]) || SHARE[SHARE.length - 1])[1];
 const clockOf = sec => { const d = new Date(sec * 1000); return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase().replace(/\s+/g, ' '); };
 // -> [{ text, warn }] lines, or [] when there is nothing honest to say
 export function costLines(cost) {
@@ -482,22 +486,23 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
   // ---------------------------------------------------------------- the look: its own step, after the interview
   // The interview is forbidden to ask about appearance (it asks only what costs time or changes meaning), and the form
   // that used to ask is gone, so the look is asked here - once, on its own, right before planning.
-  let thScene = null, thLoading = false, thLook = null;
+  let thScene = null, thLoading = false, thLook = null, thQual = null, thQuality = null;
   function showTheme(p) {
     if (view === 'theme') return;
     view = 'theme';
     setMode && setMode('home');
     main.hidden = true; buildB.hidden = true; head.hidden = true; intro.hidden = true; ivHost.hidden = true; thHost.hidden = false;
     thLook = p.look || null;
+    thQuality = (p.qualityView && p.qualityView.quality) || p.quality || (p.qualityOptions && p.qualityOptions.default) || null;
+    const qualEl = h('div', { class: 'th-qual' });
     const listEl = h('div', { class: 'th-list' });
     const illus = h('div', { class: 'th-illus' }, h('div', { class: 'illus-slot' }));
     const goB = h('button', { type: 'button', class: 'pl-big pl-ink pl-big-s1', 'data-nosfx': '', 'data-cursor-label': 'plan' },
-      h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'use this look, plan my slides'),
-        h('span', { class: 'pl-big-s' }, 'claude reads everything once more and suggests the slides. you check them before anything is built.')));
+      h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'plan my slides')));
     thHost.replaceChildren(h('div', { class: 'th' },
       h('div', { class: 'th-left' }, h('span', { class: 'badge' }, 'the look'), h('h1', { class: 'th-h' }, 'pick a look'),
-        h('p', { class: 'th-lead' }, 'hover one to see it move, or let claude choose what suits your talk. this is the one thing claude never decides behind your back.'),
-        h('div', { class: 'pl-bigs' }, goB)),
+        h('p', { class: 'th-lead' }, 'hover a look to see it move.'),
+        qualEl, h('div', { class: 'pl-bigs' }, goB)),
       illus, listEl));
     if (!thLoading) {
       thLoading = true;
@@ -507,10 +512,16 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
           getState: () => ({ look: { theme: thLook } }),
           setKey: (k, v) => { if (k === 'look.theme') thLook = v; } });
       }, e => { console.warn('[aura] looks.js is not available', e); }).finally(() => { thLoading = false; });
+      // the quality choice lives beside the look because this is the last screen before claude starts spending the allowance
+      import('./quality.js').then(m => {
+        if (!alive || view !== 'theme' || !m || !m.mountQuality || !p.qualityOptions) return;
+        thQual = m.mountQuality(qualEl, { value: thQuality, options: p.qualityOptions, sfx, onChange: v => { thQuality = v; } });
+      }, e => { console.warn('[aura] quality.js is not available', e); });
     }
     goB.addEventListener('click', async () => {
       goB.disabled = true; sfx('launch');
-      const r = await api.decks.patch(deckId, { look: thLook || 'Claude chooses' });
+      const r = await api.decks.patch(deckId, thQuality ? { look: thLook || 'Claude chooses', quality: thQuality }
+        : { look: thLook || 'Claude chooses' });
       if (!alive) return;
       if (!r || r.ok === false) {
         goB.disabled = false; sfx('error');
@@ -531,6 +542,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
   }
   function dropTheme() {
     if (thScene) { try { thScene.destroy(); } catch (e) { /* fine */ } thScene = null; }
+    if (thQual) { try { thQual.destroy(); } catch (e) { /* fine */ } thQual = null; }
     thHost.replaceChildren();
   }
 

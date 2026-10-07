@@ -59,6 +59,18 @@ const r3 = x => (typeof x === 'number' && isFinite(x) ? Math.round(x * 1000) / 1
 const bytesOf = p => { try { return fs.statSync(p).size; } catch (e) { return null; } };
 const T0 = hr();
 
+// Post-mortem problem 7 / HANDOFF rule 12: a stack trace must never reach the user. Anything that escapes the try below
+// (a browser that will not launch, a rejected promise) becomes one plain sentence; the server reads the last line.
+const sayFail = e => {
+  const msg = String((e && e.message) || e || '').split('\n')[0].trim();
+  const locked = /EBUSY|EPERM|EACCES|operation not permitted|access is denied/i.test(msg);
+  console.error('Could not finalize: ' + (locked
+    ? 'a file Lumi had to write is open in another program. Close the deck everywhere and finalize again.'
+    : (msg || 'something went wrong inside Lumi. Try again; if it keeps happening, restart Lumi.')));
+};
+process.on('uncaughtException', e => { sayFail(e); process.exit(1); });
+process.on('unhandledRejection', e => { sayFail(e); process.exit(1); });
+
 (async () => {
   const deck = path.resolve(process.argv[2] || '');
   // 20 fps is the global default (docs/blender-contract.md; a Blender loop is authored at 20 fps, so capturing at
@@ -200,7 +212,7 @@ const T0 = hr();
           htmlBytes: bytesOf(outHtml), pdfBytes: bytesOf(outPdf) });
     say({ t: 'done', loops: clips.length, slides: slideCount, notes: notes.filter(x => x.notes).length });
   } catch (e) {
-    console.error('Could not finalize: ' + String(e && e.message || e).split('\n')[0]);
+    sayFail(e);
     process.exitCode = 1;
   } finally {
     await browser.close().catch(() => {});

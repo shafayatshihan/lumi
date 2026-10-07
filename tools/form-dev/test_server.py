@@ -10,7 +10,7 @@ fixes (simulated failures, fake fix commands).
 v0.5: quality picker flags, the clash matrix (strict page saves, lenient repairs of Claude plans), planning (one session,
 sonnet/high), quick re-plans (queued, neighbours flagged, doubts), slide-by-slide build (locks, questions, build the rest,
 stop), finalize (MP4 loops embedded, PDF stills + notes, cancel, changed since finalizing, older decks)."""
-import http.client, json, os, socket, subprocess, sys, time, traceback
+import http.client, json, os, re, socket, subprocess, sys, time, traceback
 try: sys.stdout.reconfigure(encoding='utf-8', errors='replace'); sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 except Exception: pass
 from pathlib import Path
@@ -33,9 +33,11 @@ def check(name, cond, info=''):
     print(('  PASS ' if cond else '  FAIL ') + name + ('' if cond else f'   -> {info}'), flush=True)
 
 
-def req(method, path, body=None, headers=None, host=HOST):
+def req(method, path, body=None, headers=None, host=None):
+    # the Host header follows PORT at CALL time: it used to be a default argument bound at import, so another tool that
+    # reuses these helpers on its own port (finalize_probe.py) sent the wrong Host and the server answered 403
     c = http.client.HTTPConnection('127.0.0.1', PORT, timeout=30)
-    h = {'Host': host}
+    h = {'Host': host or f'127.0.0.1:{PORT}'}
     h.update(headers or {})
     if isinstance(body, (dict, list)):
         body = json.dumps(body).encode(); h.setdefault('Content-Type', 'application/json')
@@ -177,6 +179,10 @@ def main():
     test_blender_install.run(sys.modules[__name__])
     import test_blender_timing          # batch 6 Part D: the per-deck timing record (Cycles, capture, encode, sizes)
     test_blender_timing.run(sys.modules[__name__])
+    import test_postmortem_a            # post-mortem batch A: pack tracebacks, render queue, orphan holder, edit ids, markers, permits
+    test_postmortem_a.run(sys.modules[__name__])
+    import test_postmortem_b            # post-mortem batch B: the quality pair, the deck hand-off, token/cost scope, three.js, estimates
+    test_postmortem_b.run(sys.modules[__name__])
     print('\n[idle shutdown]')
     run_idle_suite()
     import test_instructions            # the instruction surface (markers, plan.json schema, step card, numbers): no server needed
@@ -754,6 +760,7 @@ def run_v5_suite():
     e['slides'][1]['title'] = 'Problem ask-me'
     e['slides'][2]['title'] = 'Results ask-deep'
     save(P, e)
+    stale_plan = json.loads(json.dumps(plan_of(P)['plan']))      # 0.5.5: what a page holds the moment the build starts
     n0 = jget('/api/claude/status')[1].get('eventCount', 0)
     s, j = jpost(f'/api/decks/{P}/build', {'mode': 'next'})
     check('build next starts slide 1', s == 200 and j.get('n') == 1 and j.get('slide') == e['slides'][0]['id'], (s, j))
@@ -792,6 +799,56 @@ def run_v5_suite():
     e = json.loads(json.dumps(pj['plan'])); e['slides'] = [x for x in e['slides'] if x['id'] != j.get('newId')]
     s2_, j2_ = save(P, e)
     check('...and removed again; the built slide and the rest are untouched', s2_ == 200 and len(j2_['plan']['slides']) == len(pj['plan']['slides']) - 1, (s2_, j2_.get('error')))
+
+    # ---- 0.5.5: one slide at a time (plan/slide/add | save | remove). THE BUG: the page saved the WHOLE plan, and the
+    # copy it held stopped being true the moment a build step finished - that step writes visual.builtAs (and
+    # visual.engine for a 3D slide) into the slide it built, which is exactly what content_of compares. Removing an
+    # UNBUILT slide from such a copy was refused as an edit to a BUILT one (409 "built"), and the build page's dialog
+    # then sat there eating the next click.
+    print('\n[0.5.5 add / remove a slide mid-build]')
+    s, j = save(P, stale_plan)
+    check('root cause: a plan copied before a build step is refused afterwards (409 built)',
+          s == 409 and j.get('error') == 'built', (s, j.get('error')))
+    before = plan_of(P)
+    s, j = jpost(f'/api/decks/{P}/plan/slide/add', {'slide': {'title': 'added mid build', 'visual': {'main': 'text'}}})
+    check('a slide can be added mid-build; the server mints the id and puts it last',
+          s == 200 and j.get('newId') and j['count'] == before['count'] + 1 and j['plan']['slides'][-1]['title'] == 'added mid build'
+          and j['plan']['slides'][-1]['id'] == j['newId'] and not j['plan']['slides'][-1].get('built'), (s, j.get('error')))
+    added = j.get('newId')
+    s, j = jpost(f'/api/decks/{P}/plan/slide/add', {'slide': {'title': 'after s2'}, 'after': 's2'})
+    ids_ = [x['id'] for x in (j.get('plan') or {}).get('slides') or []]
+    check('...or straight after a named slide, as long as that is behind the built ones',
+          s == 200 and j.get('newId') and ids_.index(j['newId']) == ids_.index('s2') + 1, (s, j.get('error'), ids_))
+    mid = j.get('newId')
+    s, j = jpost(f'/api/decks/{P}/plan/slide/save', {'slide': {'id': added, 'title': 'renamed mid build'}})
+    check('an unbuilt slide is renamed mid-build without sending a plan',
+          s == 200 and next(x for x in j['plan']['slides'] if x['id'] == added)['title'] == 'renamed mid build', (s, j.get('error')))
+    s, j = jpost(f'/api/decks/{P}/plan/slide/save', {'slide': {'id': plan_of(P)['plan']['slides'][0]['id'], 'title': 'nope'}})
+    check('a BUILT slide is still not changed here (change it on the slide itself)', s == 409 and j.get('error') == 'built', (s, j.get('error')))
+    n_before = plan_of(P)['count']
+    s, j = jpost(f'/api/decks/{P}/plan/slide/remove', {'slide': mid})
+    check('an unbuilt slide is removed with no warning at all, and the count follows',
+          s == 200 and j.get('ok') and j.get('wasBuilt') is False and j['count'] == n_before - 1
+          and not any(x['id'] == mid for x in j['plan']['slides']), (s, j.get('error')))
+    s, j = jpost(f'/api/decks/{P}/plan/slide/remove', {'slide': added})
+    check('and the one added mid-build goes the same way (the walk\'s removedGone)',
+          s == 200 and not any(x['id'] == added for x in j['plan']['slides']), (s, j.get('error')))
+    s, j = jpost(f'/api/decks/{P}/plan/slide/remove', {'slide': 'nosuchslide'})
+    check('removing a slide that is not there -> 404', s == 404 and j.get('error') == 'no-slide', (s, j))
+    s, j = jpost(f'/api/decks/{P}/plan/slide/add', {'slide': {'title': 'clash'}, 'after': 'nosuchslide'})
+    check('adding after a slide that is not there -> 404', s == 404, (s, j))
+    s, j = jpost(f'/api/decks/{P}/plan/slide/add', {'slide': {'title': 'bad', 'visual': {'main': 'chart', 'companions': ['labels']}}})
+    check('a clash in a new slide is still refused with its plain reason', s == 400 and j.get('error') == 'clash', (s, j.get('error')))
+    check('the plan is back to the length it had before all of that', plan_of(P)['count'] == before['count'], plan_of(P)['count'])
+    # backward compatibility: a deck published by 0.5.3 / 0.5.4 has no plan at all. The new routes answer it plainly, the
+    # old whole-plan save still works on it, and nothing it already does has changed.
+    L = legacy_one_go(jpost('/api/decks')[1].get('id'))
+    s, j = jpost(f'/api/decks/{L}/plan/slide/remove', {'slide': 's1'})
+    check('0.5.3/0.5.4 deck with no plan: remove says so plainly and breaks nothing', s == 404 and j.get('error') == 'no-slide', (s, j))
+    s, j = jpost(f'/api/decks/{L}/plan/slide/add', {'slide': {'title': 'first ever slide'}})
+    check('...a slide can still be added to it, becoming the first in its plan', s == 200 and j['count'] == 1
+          and j['plan']['slides'][0]['title'] == 'first ever slide', (s, j.get('error')))
+    check('...and the old whole-plan save still works on it exactly as before', save(L, j.get('plan') or {'slides': []})[0] == 200)
 
     s, j = jpost(f'/api/decks/{P}/build', {'mode': 'next'})
     pj = wait_plan_idle(P)
@@ -858,6 +915,33 @@ def run_v5_suite():
           not pj.get('buildRest'), (pj.get('planState'), pj.get('built'), pj.get('count')))
     check('build next when all built -> 409', jpost(f'/api/decks/{P}/build', {'mode': 'next'})[1].get('error') == 'all-built')
     check('bad build mode -> 400', jpost(f'/api/decks/{P}/build', {'mode': 'turbo'})[0] == 400)
+
+    # 0.5.5, the owner's ask: a BUILT slide can be removed too. The plan entry is only half of it - the section has to
+    # leave the deck file as well, or the plan and the deck drift apart (post-mortem problem 2).
+    print('\n[0.5.5 removing a slide that is already built]')
+    sections = lambda: len(re.findall(r'<section\b[^>]*class="[^"]*\bslide\b',
+                                      (SANDBOX / jget(f'/api/decks/{P}')[1]['deck']['file']).read_text(encoding='utf-8')))
+    pj = plan_of(P)
+    secs0, n0_ = sections(), pj['count']
+    gone = pj['plan']['slides'][1]
+    s, j = jpost(f'/api/decks/{P}/plan/slide/remove', {'slide': gone['id']})
+    check('removing a built slide without saying so is refused, and says what would be lost',
+          s == 409 and j.get('error') == 'confirm' and j.get('built') is True and 'thrown away' in (j.get('reason') or ''), (s, j))
+    check('...and nothing was removed', plan_of(P)['count'] == n0_ and sections() == secs0, (plan_of(P)['count'], sections()))
+    s, j = jpost(f'/api/decks/{P}/plan/slide/remove', {'slide': gone['id'], 'discard': True})
+    check('with discard it goes: out of the plan AND out of the deck file',
+          s == 200 and j.get('wasBuilt') is True and j['count'] == n0_ - 1 and j['built'] == n0_ - 1
+          and not any(x['id'] == gone['id'] for x in j['plan']['slides']) and sections() == secs0 - 1,
+          (s, j.get('error'), j.get('count'), sections(), secs0))
+    check('every slide is still built, so the deck is still finished', plan_of(P).get('planState') == 'built'
+          and plan_of(P)['built'] == plan_of(P)['count'], (plan_of(P).get('planState'), plan_of(P)['built'], plan_of(P)['count']))
+    html = '<main>\n  <section class="slide" id="a"><div><section class="inner">x</section></div></section>\n  <section class="slide" id="b">b</section>\n</main>'
+    check('cut_slide_section counts nesting and keeps what follows', fs.cut_slide_section(html, 1) ==
+          '<main>\n  <section class="slide" id="b">b</section>\n</main>', fs.cut_slide_section(html, 1))
+    check('cut_slide_section can take the last one without eating the page', '</main>' in (fs.cut_slide_section(html, 2) or '')
+          and 'id="a"' in (fs.cut_slide_section(html, 2) or '') and 'id="b"' not in (fs.cut_slide_section(html, 2) or ''))
+    check('cut_slide_section says no to a section that is not there', fs.cut_slide_section(html, 3) is None and fs.cut_slide_section(html, 0) is None)
+    pj = plan_of(P)                      # the deck is one slide shorter now: what follows finalizes THIS deck
 
     print('\n[v0.5 finalize]')
     s, j = jpost(f'/api/decks/{P}/finalize', {})

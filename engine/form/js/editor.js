@@ -17,6 +17,7 @@ import { markersOf } from './markers.js';
 import { slideEditor, ICON, clearLater } from './plan.js';
 import { mountPlay } from './lumi-play.js';
 import { mountBlenderCard, fmtLeft } from './blender.js';
+import { openPlan } from './plan-store.js';
 
 const PER_PAGE = 6;
 import { h } from './dom.js';
@@ -25,9 +26,17 @@ const SVG = { back: ICONS.back, up: ICONS.up, down: ICONS.down, left: ICONS.left
   tip: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"/></svg>',
 };
 const QUALITY = { best: 'best quality', maximum: 'maximum', balanced: 'balanced', fast: 'fast' };
+// One stored value, two ways to see it: a named tier shows its plain word, a pair no tier covers shows the pair itself
+// (the only way to make one is the advanced control on the look step, so whoever made it knows what "opus · extra high" means).
+export const qualityWord = deck => {
+  const v = (deck && deck.qualityView) || null;
+  if (v && !v.tier && v.model) return `${v.model} · ${v.effort}`;
+  return QUALITY[(v && v.tier) || (deck && deck.quality)] || 'balanced';
+};
 
 export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mountScene, onHome, onFinalize, build = false } = {}) {
   const sfx = n => { try { audio && audio.sfx && audio.sfx(n); } catch (e) { /* optional */ } };
+  const store = openPlan(deckId);          // the ONE plan for this deck (plan-store.js); this page keeps no copy of it
   let alive = true, deck = null, cur = Math.max(1, slide | 0), count = 0, page = 0, thumbs = [], runtime = false, shim = null;
   let loadT = 0, scene = null, chat = null, editing = null, thumbsT = 0, thumbsVer = 0;
   // F-10: no private copy of "claude is running": it is read from the one shared answer (bus.js), which both the events poll
@@ -49,7 +58,9 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   const strip = h('div', { class: 'ed-strip' }, h('div', { class: 'ed-strip-top' }, h('span', { class: 'ed-strip-t' }, 'slides'), stripPg, upB), stripList, h('div', { class: 'ed-strip-bot' }, downB));
 
   const frame = h('iframe', { class: 'ed-frame', title: 'your deck', tabindex: '-1' });
-  const veil = h('div', { class: 'ed-veil' }, h('span', { class: 'ed-spin' }), h('span', {}, 'loading your slides…'));
+  // the text is held by name, not by position: the N3 watchdog appends a button, and `veilTxt` would then be it
+  const veilTxt = h('span', { class: 'ed-veil-t' }, 'loading your slides…');
+  const veil = h('div', { class: 'ed-veil' }, h('span', { class: 'ed-spin' }), veilTxt);
   const work = h('div', { class: 'ed-work', hidden: true }, h('i', { class: 'ed-work-dot' }), h('span', { class: 'ed-work-t' }, 'claude is working on this deck'));
   const pop = h('div', { class: 'ed-pop', hidden: true, role: 'dialog', 'aria-label': 'change this text' });
   const preview = h('div', { class: 'ed-preview' }, frame, veil, work, pop);
@@ -61,7 +72,20 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   const presentB = h('button', { type: 'button', class: 'ed-act ed-ink', 'data-cursor-label': 'present' }, h('span', { html: SVG.play }), 'present');
   const folderB = h('button', { type: 'button', class: 'ed-act', 'aria-label': 'open the slides folder', title: 'open the slides folder', 'data-cursor-label': 'folder', html: SVG.folder });
   const finB = h('button', { type: 'button', class: 'ed-act ed-fin', 'data-cursor-label': 'finalize' }, h('span', { html: ICON.tick }), h('span', {}, 'finalize'));
-  const nav = h('div', { class: 'ed-nav' }, prevB, posTxt, nextB, slideName, h('span', { class: 'ed-gap' }), build ? null : finB, build ? null : presentB, build ? null : folderB);
+  // N4: the ONLY place a slide's main picture could be chosen was the plan page, and the plan page is gone the moment
+  // building starts - so a slide built as 2D could never become 3D again (and the chat cannot do it: it edits the HTML
+  // while plan.json keeps saying 'text', which is exactly the plan-vs-built drift of post-mortem problem 2). This button
+  // changes it in the plan and makes the slide again, on the build page and in the editor alike.
+  const picB = h('button', { type: 'button', class: 'ed-act ed-pic', hidden: true, 'data-cursor-label': 'picture' },
+    h('span', { html: ICON.diagram || '' }), 'change the picture');
+  const picPop = h('div', { class: 'ed-pop ed-picpop', hidden: true, role: 'dialog', 'aria-label': 'change this slide’s picture' });
+  // W-01 (0.5.5): the owner's ask - "allow deleting and adding slides at the build your deck stage". An UNBUILT slide is
+  // added and removed in the "coming up" column; a BUILT one is removed here, on the slide it is about, because that is
+  // where you are looking when you decide it should go. It says plainly that the work is thrown away, in a few words.
+  const remB = h('button', { type: 'button', class: 'ed-act ed-rem', hidden: true, 'data-cursor-label': 'remove' },
+    h('span', { html: ICON.bin }), 'remove slide');
+  const nav = h('div', { class: 'ed-nav' }, prevB, posTxt, nextB, slideName, h('span', { class: 'ed-gap' }), picB, build ? remB : null, build ? null : finB, build ? null : presentB, build ? null : folderB);
+  preview.append(picPop);
 
   const tip = h('div', { class: 'ed-tip' }, h('span', { class: 'ed-tip-i', html: SVG.tip }),
     h('p', {}, h('span', { class: 'ed-tip-h' }, 'click any text'), ' on the slide to change it yourself. bigger changes? ask claude on the right.'));
@@ -93,12 +117,34 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   const say = (t, bad) => { toast.textContent = t; toast.classList.toggle('bad', !!bad); toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('show'), 3800); };
 
   // ---------------------------------------------------------------- slides + preview
-  const deckUrl = (v = '') => `/deck/${encodeURIComponent(deckId)}/?aura=edit${v ? '&v=' + v : ''}#${cur}`;
+  // N3: "loading your slides..." could stay on screen for ever while the slide was perfectly ready. The veil has exactly
+  // two ways down - the runtime posting `aura:'slide'`, or installShim() 650 ms after the iframe's `load` event - and BOTH
+  // hang off that one load event. The url carried the slide number as a fragment (`#7`), so whenever loadFrame() ran with
+  // the same `v` but a different slide (a repack inside the same second: `mtime` has one-second resolution), the browser
+  // treated it as a same-document fragment navigation, fired NO load event, and nothing ever took the veil down again.
+  // Two fixes, because one of them would still leave a person stuck: every reload now carries a token that always
+  // changes, so it is always a real navigation; and the veil has a watchdog, so it can never be the last word.
+  let frameSeq = 0;
+  const deckUrl = (v = '') => `/deck/${encodeURIComponent(deckId)}/?aura=edit${v ? '&v=' + v : ''}&r=${++frameSeq}#${cur}`;
+  const VEIL_WAIT_MS = 12000;
+  let veilT = 0;
   function loadFrame(v) {
     runtime = false; shim = null; buildVeil = false;
     veil.hidden = false;
+    clearTimeout(veilT);
+    veilT = setTimeout(() => {
+      if (!alive || veil.hidden) return;
+      // the preview did not come back. never leave a spinner as the answer: say so plainly and offer the one useful action.
+      veilTxt.textContent = 'the preview is taking longer than it should.';
+      if (!veil.querySelector('.ed-veil-retry')) {
+        const again = h('button', { type: 'button', class: 'ed-veil-retry', 'data-nosfx': '' }, 'show it again');
+        again.addEventListener('click', () => { again.remove(); veilTxt.textContent = 'loading your slides…'; loadFrame(Date.now()); });
+        veil.append(again);
+      }
+    }, VEIL_WAIT_MS);
     frame.src = deckUrl(v);
   }
+  const veilDown = () => { veil.hidden = true; clearTimeout(veilT); const r = veil.querySelector('.ed-veil-retry'); if (r) r.remove(); };
   frame.addEventListener('load', () => {
     if (!alive) return;
     clearTimeout(loadT);
@@ -109,7 +155,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     if (!alive || e.source !== frame.contentWindow || !e.data || typeof e.data !== 'object') return;
     const d = e.data;
     if (d.aura === 'slide') {
-      runtime = true; veil.hidden = true;
+      runtime = true; veilDown();
       if (d.count) count = d.count | 0;
       if (d.index && d.index !== cur) { cur = d.index | 0; changed(); } else paintAll();
     } else if (d.aura === 'edit') openEdit(String(d.id || ''), String(d.text || ''), d.slide | 0);
@@ -119,7 +165,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   function installShim() {
     let doc;
     try { doc = frame.contentDocument; } catch (e) { doc = null; }
-    if (!doc || !doc.body) { veil.hidden = true; return; }
+    if (!doc || !doc.body) { veilDown(); return; }
     const slides = [...doc.querySelectorAll('.slide')].length ? [...doc.querySelectorAll('.slide')] : [...doc.querySelectorAll('body > section')];
     const st = doc.createElement('style');
     st.textContent = 'html,body{margin:0!important;overflow:hidden!important}body{width:1920px;height:1080px;transform-origin:0 0}' +
@@ -139,7 +185,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     count = slides.length;
     cur = Math.min(Math.max(1, cur), count || 1);
     fitShim(); show(cur);
-    veil.hidden = true;
+    veilDown();
     paintAll();
   }
   function go(n, { sound = true } = {}) {
@@ -168,19 +214,29 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     if (shim && shim.slides[n - 1]) { const hh = shim.slides[n - 1].querySelector('h1,h2,h3'); if (hh) return hh.textContent.trim(); }
     return '';
   }
+  // N2: there were two counters on one screen and they disagreed - the nav said "slide 7 of 7" (the sections in the deck
+  // FILE) while the line under it said "slide 7 of 13 is ready" (the slides in the PLAN). The plan is the one source of
+  // truth for how many slides this deck has; the deck file only says how many exist yet. Both are shown, and they can no
+  // longer contradict each other: `total()` is the plan's number everywhere, and `ready()` is what you can actually open.
+  const total = () => ((pay && pay.count) | 0) || count || thumbs.length;
+  const ready = () => count || thumbs.length;
   function paintStrip() {
-    const n = count || thumbs.length;
+    const n = total();
     const pages = Math.max(1, Math.ceil(n / PER_PAGE));
     page = Math.min(Math.max(0, page), pages - 1);
     const items = [];
     for (let i = page * PER_PAGE + 1; i <= Math.min(n, page * PER_PAGE + PER_PAGE); i++) {
+      const made = i <= ready();
       const t = thumbs.find(x => x.n === i);
       const pic = h('span', { class: 'ed-th-pic' + (t ? '' : ' is-loading') });
       if (t) { const img = new Image(); img.alt = ''; img.decoding = 'async'; img.src = t.url; img.onerror = () => { pic.classList.add('is-loading'); img.remove(); }; pic.append(img); }
       else pic.append(h('span', { class: 'hm-shimmer' }));
-      const b = h('button', { type: 'button', class: 'ed-th' + (i === cur ? ' on' : ''), role: 'option', 'aria-selected': i === cur ? 'true' : 'false',
-        'data-n': i, 'data-cursor-label': `slide ${i}`, 'data-nosfx': '' }, pic, h('span', { class: 'ed-th-n' }, String(i)));
-      b.addEventListener('click', () => go(i));
+      // a slide the plan has but the deck has not got to yet is shown in its place, greyed, so the list and the plan agree
+      const b = h('button', { type: 'button', class: 'ed-th' + (i === cur && made ? ' on' : '') + (made ? '' : ' is-todo'),
+        role: 'option', 'aria-selected': i === cur && made ? 'true' : 'false', disabled: made ? null : true,
+        title: made ? null : 'not made yet', 'data-n': i, 'data-cursor-label': made ? `slide ${i}` : 'not made yet', 'data-nosfx': '' },
+        pic, h('span', { class: 'ed-th-n' }, String(i)));
+      if (made) b.addEventListener('click', () => go(i));
       items.push(b);
     }
     if (!n) for (let i = 1; i <= 4; i++) items.push(h('span', { class: 'ed-th ed-th-ghost' }, h('span', { class: 'ed-th-pic is-loading' }, h('span', { class: 'hm-shimmer' }))));
@@ -190,19 +246,130 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     if (hadFocus) { const b = stripList.querySelector(`.ed-th[data-n="${hadFocus}"]`); if (b) b.focus({ preventScroll: true }); }
     upB.disabled = page === 0; downB.disabled = page >= pages - 1;
     upB.hidden = downB.hidden = pages <= 1;
-    stripPg.textContent = n ? `${n}` : '';
+    stripPg.textContent = !n ? '' : ready() && ready() < n ? `${ready()}/${n}` : `${n}`;
   }
   function paintAll() {
     paintStrip();
-    posTxt.textContent = count ? `slide ${cur} of ${count}` : `slide ${cur}`;
+    posTxt.textContent = total() ? `slide ${cur} of ${total()}` : `slide ${cur}`;
     const st = slideTitle(cur);
     slideName.textContent = st;
     slideName.title = st;
     prevB.disabled = cur <= 1; nextB.disabled = !count || cur >= count;
+    paintPic();
     if (scene) scene.update({ editor: { count: count || thumbs.length || 5, selected: cur } });
   }
+
+  // ---------------------------------------------------------------- N4: change this slide's picture, and make it again
+  // 2D to 3D and back. The choice lives in `plan.json` (`visual.main`), so it is changed THERE and the slide is built
+  // again from it - never by editing the HTML, which would leave the plan saying one thing and the deck showing another.
+  // The engine of a 3D picture is deliberately not asked here: `slide_engine()` picks it and `pin_engine()` writes it
+  // down at build time, the same way a first build does, so the plan and what was built cannot drift apart.
+  const PICTURES = [
+    { id: '3d', label: 'a 3D picture', why: 'a real-looking model, lit and shaded. takes the longest to make.' },
+    { id: 'chart', label: 'a chart', why: 'numbers drawn honestly: bars, lines, points with their error bars.' },
+    { id: 'diagram', label: 'a diagram', why: 'a drawing of how something works or fits together.' },
+    { id: 'photo', label: 'a photo', why: 'one of your own pictures, cropped to the slide.' },
+    { id: 'text', label: 'words only', why: 'no picture: the words carry the slide.' },
+  ];
+  // the plan slides come from the one store (plan-store.js), never from a copy this page keeps: the picture control and
+  // the counters would otherwise be reading a plan from before the last build step.
+  const picSlides = () => store.slides();
+  const picSlide = () => picSlides()[cur - 1] || null;
+  function paintPic() {
+    const s = picSlide();
+    picB.hidden = !s;
+    remB.hidden = !(build && s && s.built);
+    if (!s) { picPop.hidden = true; return; }
+    const now = PICTURES.find(p => p.id === ((s.visual || {}).main)) || PICTURES[PICTURES.length - 1];
+    picB.lastChild.textContent = `picture: ${now.label}`;
+    picB.title = 'change this slide’s picture and make the slide again';
+  }
+  function closePic() { picPop.hidden = true; if (modalRel) { modalRel(); modalRel = null; } }
+  function openPic() {
+    const s = picSlide();
+    if (!s) return;
+    const n = cur;
+    const mine = (s.visual || {}).main || 'text';
+    let want = mine;
+    const body = h('div', { class: 'ed-picpop-body' });
+    const note = h('p', { class: 'ed-picpop-note' });
+    const goB = h('button', { type: 'button', class: 'ed-picpop-go', 'data-nosfx': '' }, 'make this slide again');
+    const cancel = h('button', { type: 'button', class: 'ed-picpop-x', 'data-nosfx': '' }, 'never mind');
+    const paint = () => {
+      body.replaceChildren(...PICTURES.map(p => {
+        const on = p.id === want;
+        const b = h('button', { type: 'button', class: 'ed-picopt' + (on ? ' on' : ''), role: 'radio', 'aria-checked': on ? 'true' : 'false', 'data-nosfx': '' },
+          h('span', { class: 'ed-picopt-t' }, p.label, p.id === mine ? h('span', { class: 'ed-picopt-now' }, 'now') : null),
+          h('span', { class: 'ed-picopt-w' }, p.why));
+        b.addEventListener('click', () => { want = p.id; sfx('select'); paint(); });
+        return b;
+      }));
+      note.textContent = want === mine
+        ? 'this is the picture the slide already has. pick a different one to change it.'
+        : `lumi will write slide ${n} again with ${PICTURES.find(p => p.id === want).label}. the words and the plan stay; the picture is redrawn.`
+          + (want === '3d' ? ' a 3D picture can take a while to render.' : '');
+      goB.disabled = want === mine || isBusy();
+    };
+    paint();
+    picPop.replaceChildren(h('p', { class: 'ed-picpop-h' }, `slide ${n}: what should carry it?`),
+      h('div', { class: 'ed-picopts', role: 'radiogroup', 'aria-label': 'the main picture' }, body), note,
+      h('div', { class: 'ed-picpop-row' }, cancel, goB));
+    picPop.hidden = false;
+    modalRel = openDialog(picPop, { onEsc: () => closePic() });
+    cancel.addEventListener('click', () => { sfx('deselect'); closePic(); });
+    goB.addEventListener('click', async () => {
+      if (goB.disabled) return;
+      goB.disabled = true; goB.textContent = 'starting…'; sfx('launch');
+      const r = await store.picture(s.id, want, { rebuild: true });
+      if (!alive) return;
+      if (!r || r.ok === false) {
+        goB.disabled = false; goB.textContent = 'make this slide again'; sfx('error');
+        say(r && r.reason ? r.reason : 'lumi couldn’t change that picture. try again in a moment.', true);
+        return;
+      }
+      closePic();
+      say(r.started === false ? `${r.note} press “build” when you are ready.` : r.note);
+      if (build) loadPlan();
+    });
+  }
+  picB.addEventListener('click', () => { if (picPop.hidden) { sfx('pop'); openPic(); } else closePic(); });
+  // removing the slide you are looking at, when it is already built: the work really is thrown away, so it says so once
+  remB.addEventListener('click', () => {
+    const s = picSlide();
+    if (!s || !s.built) return;
+    if (isBusy()) { say('wait until claude is done, then remove it.', true); sfx('error'); return; }
+    sfx('pop');
+    const n = cur;
+    dialog(`remove slide ${n}?`, 'it is built. its work is thrown away.',
+      [dlgBtn('keep it', closeModal), dlgBtn('remove it', async () => {
+        closeModal();
+        const r = await store.removeSlide(s.id, { discard: true });
+        if (!alive) return;
+        if (r && r.ok) { sfx('success'); say(`slide ${n} is gone.`); cur = Math.max(1, Math.min(cur, (r.count | 0) || 1)); count = 0; thumbs = []; loadFrame(r.mtime || Date.now()); loadThumbs(); loadDeck(); }
+        else { sfx('error'); say(r && r.reason ? r.reason : 'couldn’t remove that slide. try again?', true); }
+      }, true)], 'bd-rmdlg');
+  });
   upB.addEventListener('click', () => { page--; sfx('slide'); paintStrip(); });
   downB.addEventListener('click', () => { page++; sfx('slide'); paintStrip(); });
+  // N1: the list PAGES (six at a time, with the two chevrons) and it never scrolled, so a mouse wheel over it did
+  // nothing at all - on a 13-slide deck that reads as "the list is broken". The wheel now turns the page, which is what
+  // the chevrons do. Trackpads send many small deltas, so they are added up and a page turns once per notch; and when
+  // there is only one page the event is left alone so the surrounding page can still scroll.
+  let wheelAcc = 0, wheelT = 0;
+  strip.addEventListener('wheel', e => {
+    const pages = Math.max(1, Math.ceil(total() / PER_PAGE));
+    if (pages <= 1) return;
+    e.preventDefault();
+    wheelAcc += e.deltaY;
+    clearTimeout(wheelT);
+    wheelT = setTimeout(() => { wheelAcc = 0; }, 240);
+    const step = wheelAcc <= -40 ? -1 : wheelAcc >= 40 ? 1 : 0;
+    if (!step) return;
+    wheelAcc = 0;
+    const next = Math.min(Math.max(0, page + step), pages - 1);
+    if (next === page) return;
+    page = next; sfx('slide'); paintStrip();
+  }, { passive: false });
   prevB.addEventListener('click', () => go(cur - 1));
   nextB.addEventListener('click', () => go(cur + 1));
 
@@ -289,24 +456,24 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     if (!alive) return;
     if (!r || r.ok === false || !r.deck) {
       // F-19: only a real 404 means the deck is gone; an unreachable server says so and keeps trying
-      if (r && r.status === 404) { title.textContent = 'deck not found'; say('this deck isn’t in your library any more.', true); veil.hidden = true; return; }
-      title.textContent = 'can’t reach lumi. trying again…'; veil.hidden = false; veil.lastChild.textContent = 'can’t reach lumi. trying again…';
+      if (r && r.status === 404) { title.textContent = 'deck not found'; say('this deck isn’t in your library any more.', true); veilDown(); return; }
+      title.textContent = 'can’t reach lumi. trying again…'; veil.hidden = false; veilTxt.textContent = 'can’t reach lumi. trying again…';
       deckT = setTimeout(loadDeck, pace(3000, ++deckFails, { max: 10000 }));
       return;
     }
-    if (deckFails) { deckFails = 0; veil.lastChild.textContent = 'loading your slides…'; if (!build) loadFrame(); else veil.hidden = true; }
+    if (deckFails) { deckFails = 0; veilTxt.textContent = 'loading your slides…'; if (!build) loadFrame(); else veilDown(); }
     deck = r.deck;
     title.textContent = deck.title || 'untitled deck';
     title.title = deck.title || '';
     const look = deck.look && deck.look !== 'Claude chooses' ? deck.look.toLowerCase() : 'claude’s look';
-    stats.replaceChildren(...[h('span', { class: 'ed-stat' }, look), h('span', { class: 'ed-stat' }, QUALITY[deck.quality] || 'balanced'),
+    stats.replaceChildren(...[h('span', { class: 'ed-stat' }, look), h('span', { class: 'ed-stat' }, qualityWord(deck)),
       deck.exists ? null : h('span', { class: 'ed-stat bad' }, 'file missing')].filter(Boolean));
     presentB.disabled = !deck.final;
     presentB.title = deck.final ? 'present the finalized deck' : 'finalize the deck first, then present it';
     finB.lastChild.textContent = deck.finalizing ? 'finalizing…' : !deck.finalized ? 'finalize' : deck.changedSinceFinalize ? 'finalize again' : 'finalized';
     finB.classList.toggle('is-due', !deck.finalized || !!deck.changedSinceFinalize);
     finB.disabled = !deck.exists;
-    if (!deck.exists && !build) { veil.hidden = false; veil.lastChild.textContent = 'this deck’s file is missing'; }
+    if (!deck.exists && !build) { veil.hidden = false; veilTxt.textContent = 'this deck’s file is missing'; }
     if (build) paintBuild();
   }
   presentB.addEventListener('click', async () => { if (!deck || !deck.final) return; sfx('launch'); const r = await api.openSlides(deck.final.html); if (alive && r && r.ok === false) say('couldn’t open it. try the folder.', true); });
@@ -366,8 +533,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   // ---------------------------------------------------------------- the plan of the slide a question is about
   // ref: the marker's slide="" (a 1-based number or a plan id); without one, the slide being built right now
   async function slideInfo(ref) {
-    const r = await api.plan.get(deckId);
-    if (r && r.ok) pay = r;
+    await store.refresh();
     if (!pay) return null;
     const slides = planSlides();
     ref = String(ref || '').trim().toLowerCase();
@@ -385,33 +551,40 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   // ---------------------------------------------------------------- build page
   let pay = null, planT = 0, ideasWas = false;
   const UP_PER = 3;
-  const planSlides = () => (pay && pay.plan && pay.plan.slides) || [];          // F-11: one guarded way to read the slides
+  const planSlides = () => store.slides();                                     // F-11: one guarded way to read the slides
+  // EVERY page here re-reads the plan from plan-store.js, and this is the one place that reacts to a new one - a poll, a
+  // slide added or removed, a picture changed. Nothing keeps a second copy, so nothing can disagree with the list, the
+  // counters or the server.
+  function onPlan(r) {
+    if (!alive || !r || !r.ok) return;
+    const raw = JSON.stringify(r);
+    planIdle = raw === planRaw ? planIdle + 1 : 0; planRaw = raw;
+    const before = pay ? pay.built : -1, wasCount = pay ? pay.count : -1;
+    pay = r;
+    if (!build) { paintAll(); return; }
+    setClaude({ running: !!r.running, deckId });
+    if (before < 0 && r.exists) { loadFrame(r.mtime || Date.now()); loadThumbs(); }
+    else if (before >= 0 && r.built !== before && r.exists) {      // a slide was just finished: show it
+      sfx('done');
+      say(r.built >= r.count ? 'every slide is built. have a last look, then finalize.' : `slide ${r.built} is ready. have a look.`);
+      cur = Math.max(1, r.built); count = 0; thumbs = [];
+      loadFrame(r.mtime || Date.now()); paintStrip(); loadThumbs(); loadDeck();
+      if (blc) blc.setSlide(cur);
+    }
+    paintBuild();
+    paintPlay();
+    if (r.count !== wasCount) paintAll();                          // a slide was added or removed: the strip and "slide n of m" follow at once
+    const ok = !!(pay && pay.exists && pay.built >= cur);
+    if (chat && ok !== ideasWas) { ideasWas = ok; chat.setSlide(cur); }
+  }
   async function loadPlan() {
     if (!build) return;
     clearTimeout(planT);
     const ver = ++planVer;                                                     // F-12: only the newest answer is used, an older one that lands late is dropped
-    const r = await api.plan.get(deckId);
+    const r = await store.refresh();
     if (!alive || ver !== planVer) return;
-    if (r && r.ok) {
-      loadFails = 0;
-      const raw = JSON.stringify(r);
-      planIdle = raw === planRaw ? planIdle + 1 : 0; planRaw = raw;
-      setClaude({ running: !!r.running, deckId });
-      const before = pay ? pay.built : -1;
-      pay = r;
-      if (before < 0 && r.exists) { loadFrame(r.mtime || Date.now()); loadThumbs(); }
-      else if (before >= 0 && r.built !== before && r.exists) {      // a slide was just finished: show it
-        sfx('done');
-        say(r.built >= r.count ? 'every slide is built. have a last look, then finalize.' : `slide ${r.built} is ready. have a look.`);
-        cur = Math.max(1, r.built); count = 0; thumbs = [];
-        loadFrame(r.mtime || Date.now()); paintStrip(); loadThumbs(); loadDeck();
-        if (blc) blc.setSlide(cur);
-      }
-      paintBuild();
-      paintPlay();
-      const ok = !!(pay && pay.exists && pay.built >= cur);
-      if (chat && ok !== ideasWas) { ideasWas = ok; chat.setSlide(cur); }
-    } else { loadFails++; if (!pay) paintBuild(); }
+    if (r && r.ok) loadFails = 0;
+    else { loadFails++; if (!pay) paintBuild(); }
     // F-09: while nothing changes the poll slows down (and again in a hidden tab or with the server away); any change resets it
     const hot = isBusy() || (pay && pay.buildRest);
     planT = setTimeout(loadPlan, loadFails ? pace(3000, loadFails, { max: 10000 }) : hot ? pace(1500, planIdle, { max: 4000 }) : pace(5000, planIdle, { max: 15000, hidden: 8000 }));
@@ -448,8 +621,8 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
       : b === 0 ? 'claude builds slide 1 first. it also sets up the look of the whole deck.'
       : `slide ${b} of ${n} is ready. check it, change it if you like, then make the next one.`;
     bdSay.classList.toggle('is-busy', running);
-    if (!pay.exists) { veil.hidden = false; buildVeil = true; veil.lastChild.textContent = running ? 'claude is building slide 1…' : 'press “build deck” to make slide 1'; }
-    else if (buildVeil) { buildVeil = false; veil.lastChild.textContent = 'loading your slides…'; loadFrame(pay.mtime || Date.now()); }     // the file is back (a repack): show it again
+    if (!pay.exists) { veil.hidden = false; buildVeil = true; veilTxt.textContent = running ? 'claude is building slide 1…' : 'press “build deck” to make slide 1'; }
+    else if (buildVeil) { buildVeil = false; veilTxt.textContent = 'loading your slides…'; loadFrame(pay.mtime || Date.now()); }     // the file is back (a repack): show it again
     paintUp();
   }
   // "coming up": the next 3 unbuilt slides, then "+N more" (a calm list of the rest in a dialog)
@@ -466,8 +639,8 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   upCol.querySelector('.bd-up-top').append(addUp);
   addUp.addEventListener('click', () => {
     if (!pay) return;
-    const taken = new Set(planSlides().map(x => x.id)); let k = taken.size + 1; while (taken.has('s' + k)) k++;
-    openCard({ id: 's' + k, title: '', point: '', bullets: [], sources: [], visual: { main: 'text', companions: [], phrase: '' } }, { isNew: true });
+    // no id is invented here: the server mints it against its own plan, so two adds can never collide on one name
+    openCard({ id: '', title: '', point: '', bullets: [], sources: [], visual: { main: 'text', companions: [], phrase: '' } }, { isNew: true });
   });
   function paintUp() {
     const left = planSlides().map((s, i) => ({ s, i })).filter(x => !x.s.built);
@@ -500,32 +673,37 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     if (s.built) return;
     if (!isNew && isBusy() && s.id === pay.buildTarget) { say('claude is building this slide right now. you can change it as soon as it is done.', true); sfx('error'); return; }
     sfx('pop');
-    let next = s, removing = false, saving = false;
+    let next = s, removing = false, saving = false, rmT = 0;
     const engineInfo = sid => pay && pay.blender ? { available: !!pay.blender.available, look: pay.look, est: (pay.blender.estimates || {})[sid] || null } : null;
     const ed = slideEditor(s, { cap: pay.wordCap, sfx, compact: true, onChange: ns => { next = ns; }, engineInfo });
     const pos = isNew ? planSlides().length + 1 : planSlides().findIndex(x => x.id === s.id) + 1;
-    const write = async (mutate, done) => {
+    // The card sends ONE change, never a plan: a plan this card was opened with is already out of date the moment the
+    // step that was running finishes. `shut` decides what happens to the dialog afterwards - a removal always closes
+    // (nothing was typed, and a dialog left open swallows the next click), a failed save stays so the words survive.
+    const write = async (call, done, shut = false) => {
       if (saving) return;
       saving = true;
-      const plan = JSON.parse(JSON.stringify(pay.plan));
-      if (!mutate(plan)) { saving = false; closeModal(); return; }
-      const r = await api.plan.save(deckId, plan);
+      const r = await call();
       saving = false;
       if (!alive) return;
-      if (r && r.ok) { closeModal(); sfx('success'); pay = r; planRaw = ''; paintBuild(); say(done); }
-      else { sfx('error'); say(r && r.error === 'offline' ? 'can’t reach lumi right now. nothing was changed. try again in a moment.' : r && r.reason ? r.reason : 'couldn’t save that. try again?', true); }
+      if (r && r.ok) { closeModal(); sfx('success'); paintBuild(); paintAll(); say(done); return; }
+      if (shut) closeModal();
+      sfx('error');
+      say(r && r.error === 'offline' ? 'can’t reach lumi right now. nothing was changed. try again in a moment.' : r && r.reason ? r.reason : 'couldn’t save that. try again?', true);
     };
-    const saveB = dlgBtn('save', () => write(plan => {
-      const i = plan.slides.findIndex(x => x.id === s.id);
-      if (i < 0 && !isNew) return false;
-      if (isNew) plan.slides.push({ ...next, id: s.id }); else plan.slides[i] = { ...plan.slides[i], ...next };
-      return true;
-    }, isNew ? 'added. claude will build it with the others.' : 'saved. claude will build it like that.'), true);
+    const saveB = dlgBtn('save', () => write(
+      () => (isNew ? store.addSlide(next) : store.saveSlide({ ...next, id: s.id })),
+      isNew ? 'added. claude will build it with the others.' : 'saved. claude will build it like that.'), true);
     const buttons = [dlgBtn('cancel', closeModal), saveB];
     if (!isNew) {
       const rm = dlgBtn('remove this slide', () => {
-        if (!removing) { removing = true; rm.querySelector('.pl-big-h').textContent = 'tap again to remove it'; setTimeout(() => { removing = false; rm.querySelector('.pl-big-h').textContent = 'remove this slide'; }, 3000); return; }
-        write(plan => { const i = plan.slides.findIndex(x => x.id === s.id); if (i < 0) return false; plan.slides.splice(i, 1); return true; }, 'removed. the other slides are untouched.');
+        if (!removing) {
+          removing = true; rm.querySelector('.pl-big-h').textContent = 'tap again to remove it';
+          clearTimeout(rmT); rmT = setTimeout(() => { removing = false; rm.querySelector('.pl-big-h').textContent = 'remove this slide'; }, 3000);
+          return;
+        }
+        clearTimeout(rmT);
+        write(() => store.removeSlide(s.id), 'removed. the other slides are untouched.', true);
       });
       rm.classList.add('is-danger');
       buttons.unshift(rm);
@@ -587,7 +765,12 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   blc.setSlide(cur);
   offs.push(() => { clearTimeout(mediaT); blc.destroy(); });
 
+  offs.push(store.subscribe(onPlan));
+  offs.push(() => store.release());
   loadDeck();
+  // N4: the editor (not the build page) has no plan poll, so it reads the one plan once. A deck with no plan at all -
+  // made by hand, or before planning existed - simply keeps the picture control hidden and counts the deck's own slides.
+  if (!build) store.refresh();
   if (!build) loadFrame();
   paintAll();
   if (!build) loadThumbs();
@@ -625,6 +808,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     destroy() {
       alive = false;
       clearTimeout(loadT); clearTimeout(toastT); clearTimeout(thumbsT); clearTimeout(planT); clearTimeout(deckT);
+      clearTimeout(veilT); clearTimeout(wheelT);
       removeEventListener('message', onMessage); removeEventListener('keydown', onKey);
       ro.disconnect(); offs.forEach(f => f());
       if (chat) chat.destroy();

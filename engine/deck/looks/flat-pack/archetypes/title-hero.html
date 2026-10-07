@@ -1,0 +1,40 @@
+<!-- archetype: title-hero | the title beside the subject drawn exploded, full bleed | main visual: 3D (FP3D.sheet, orthographic) | companions: dot kicker, names -->
+<section class="slide" data-kind="title" data-minutes="0.75" data-title="Title">
+  <div class="aura-3d fp-full" data-scene="s{{N}}-hero" data-period="14" aria-hidden="true"></div>
+  <div class="safe">
+    <div class="fp-hero" style="position:relative; z-index:1; width:900px; flex:1; display:flex; flex-direction:column; justify-content:center">
+      <p class="kicker dot" data-edit="s{{N}}-1">Course or event</p>
+      <h1 class="title" data-edit="s{{N}}-2">The thing, named <span class="em">plainly</span></h1>
+      <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. A deck with no supervisor must have no "With thanks" line - never invent a role the interview did not establish. -->
+      <ul class="fp-meta">
+        <li data-optional="identity" data-edit="s{{N}}-3"><span class="lb">Presented by</span><b>Presenter Name</b></li>
+        <li data-optional="identity" data-edit="s{{N}}-4"><span class="lb">For</span><b>Course or event</b><br>Institution</li>
+      </ul>
+    </div>
+    <footer class="fp-foot"><span class="fp-mark" data-edit="s{{N}}-5">Deck mark</span><span class="fp-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Open on the object.</strong> Name the thing on the page in one plain sentence before you say anything
+    about the theory. The drawing is doing the introducing; let it.</p>
+    <p><strong>Point at the parts.</strong> Say how many there are and which one the talk is really about - that is the
+    blue one. Say that the parts lift apart the way they do in an assembly manual, so nothing is hidden.</p>
+    <p><strong>Frame the talk</strong> in three beats: why it matters, how it works, what we found. If asked whether
+    the drawing is to scale, say which proportions are real and which are schematic - do not guess.</p>
+  </aside>
+</section>
+<script>
+/* The hero, drawn and exploded. Replace the placeholder parts with the REAL ones: real count, real proportions
+   (LOOK-BASE 4.1). No lights exist in this scene and none should: flat fills plus an ink outline is the whole look. */
+Aura.scene('s{{N}}-hero', (ctx) => {
+  const { THREE } = ctx;
+  const S = FP3D.sheet(ctx, { target: [0, 1.1, 0], size: 4.6, turn: -35, tilt: 30 });
+  const base = S.add(FP3D.panel(THREE, 4.4, 0.26, 2.8, { fill: 'paper' }));
+  const mid  = S.add(FP3D.panel(THREE, 3.8, 0.22, 2.4, { fill: 'grey' }));
+  const top  = S.add(FP3D.panel(THREE, 3.2, 0.22, 2.0, { fill: 'blue' }));
+  const peg  = S.add(FP3D.dowel(THREE, 0.1, 1.5, { fill: 'yellow' }));
+  base.position.y = 0.13; mid.position.y = 1.0; top.position.y = 1.8; peg.position.set(1.3, 1.0, 0.8);
+  S.add(FP3D.line(THREE, [[1.3, 0.2, 0.8], [1.3, 2.4, 0.8]], { dashed: true }));
+  S.exploded([mid, top, peg], [0, 1.1, 0]);
+  return S.api({ update(t) { S.turn(t); } });
+}, { period: 14 });
+</script>

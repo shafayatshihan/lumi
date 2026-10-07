@@ -136,7 +136,7 @@ CASES = [
     ('Bash', 'blender -b --python-expr "import os; os.remove(1)"', D),
     ('PowerShell', 'blender -b --python-expr "print(1)"', D),
     ('Bash', 'blender -b -P /c/Users/Public/evil.py', D),
-    ('Bash', 'blender -b -P .aura/engine/deck/looks/bold-blue/blender/bench_scene.py -- --out .aura/temp/b.png', D),
+    ('Bash', 'blender -b -P .aura/engine/deck/blender/bench_scene.py -- --out .aura/temp/b.png', D),
     ('Bash', 'blender -P .aura/decks/abc/blender/s1/scene.py -b', D),
     ('Bash', 'blender -b .aura/decks/abc/x.blend -P .aura/decks/abc/blender/s1/scene.py', D),
     ('Bash', 'blender -b -P .aura/decks/abc/blender/s1/scene.py -- --out /c/Users/Public/out.png', D),
@@ -172,6 +172,26 @@ CASES = [
     ('Bash', 'ls -la .aura/decks/abc/blender | head', A),
     ('Bash', 'cat .aura/decks/abc/blender/s1/scene.py | head -40', A),
     ('Bash', 'blender -b -P .aura/decks/abc/blender/s1/scene.py -- --inspect', A),   # Part A's text check, used in the real run
+    # --- post-mortem problem 10 (deck b45622aef312, permissions.log Oct 6): 10 deferrals in four shapes. `< file` only
+    # READS a file, and tr / tac / rev / fold / base64 are pure text filters that write nothing, so both are allowed
+    # inside the Lumi folder now. The other shapes are arbitrary code and stay refused ON PURPOSE; building.md names
+    # them with the way round each. The exact lines from that log are below, allowed and refused.
+    ('Bash', "cd {M}/.aura/temp/text && tr -s ' \\n' ' ' < w.txt | grep -o -i 'central' | head -8", A),
+    ('Bash', "tr -s ' \\n' ' ' < .aura/temp/text/w.txt", A),
+    ('Bash', 'cat < .aura/temp/text/w.txt | head -20', A),
+    ('Bash', 'tac .aura/temp/text/w.txt | head -5', A),
+    ('Bash', 'rev .aura/temp/text/w.txt', A),
+    ('Bash', 'fold -w 100 .aura/temp/text/w.txt | head', A),
+    ('Bash', 'sha256sum .aura/temp/text/w.txt', A),
+    ('Bash', 'base64 .aura/temp/text/w.txt | head -2', A),
+    ('Bash', 'cat < /etc/passwd', N),                                # outside the install: still no allow
+    ('Bash', 'tr a b < .aura/temp/text/w.txt > .aura/engine/tools/x.js', D),   # what it WRITES still decides it
+    ('Bash', ".aura/venv/Scripts/python.exe - <<'EOF'", N),          # a heredoc is a program, not a file
+    ('Bash', 'cat <(ls)', N),                                        # process substitution is a nested shell
+    ('Bash', 'node .aura/temp/check/s7_chart.js', N),                # a script Claude wrote: only .aura/engine/tools runs
+    ('PowerShell', 'node .aura/temp/check/s7_chart.js', N),
+    ('Bash', '{M}/.aura/venv/Scripts/python.exe -c "import re;print(1)"', N),
+    ('PowerShell', 'New-Object System.Text.UTF8Encoding $false', N),
 ]
 
 

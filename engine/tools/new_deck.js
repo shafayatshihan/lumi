@@ -79,22 +79,44 @@ function assignIds(html) {
   found.sort((a, b) => a.start - b.start);
   const used = new Set(), maxBySlide = {}, edits = [];
   let added = 0, renamed = 0, kept = 0;
+  const byPrefix = {};                       // prefix -> the set of section positions that already use it
   for (const e of found) {
     const mm = e.id && /^s(\d+)-(\d+)$/.exec(e.id);
-    if (mm) maxBySlide[mm[1]] = Math.max(maxBySlide[mm[1]] || 0, +mm[2]);
+    if (!mm) continue;
+    maxBySlide[mm[1]] = Math.max(maxBySlide[mm[1]] || 0, +mm[2]);
+    (byPrefix[mm[1]] = byPrefix[mm[1]] || new Set()).add(e.slideAt);
   }
+  // Which prefix a section mints NEW ids under (post-mortem problem 8). Normally it is the section's own position - the
+  // rule deck-toolkit.md states - but ids are names, so a section that already has ids keeps the prefix they agree on,
+  // even after the deck is reordered. A prefix another section already owns is never handed out twice: two sections
+  // minting under one prefix is how slide 13 and slide 14 of deck b45622aef312 both came to write "s14-...".
+  const ownedBy = {}, taken = new Set();
+  for (const k of Object.keys(byPrefix)) {
+    if (byPrefix[k].size !== 1) continue;    // a prefix two sections already share belongs to neither
+    const sec = [...byPrefix[k]][0];
+    if (ownedBy[sec] === undefined || Math.abs(+k - sec) < Math.abs(ownedBy[sec] - sec)) ownedBy[sec] = +k;
+  }
+  for (const sec of Object.keys(ownedBy)) taken.add(ownedBy[sec]);
+  const prefixOf = sec => {
+    if (ownedBy[sec] !== undefined) return String(ownedBy[sec]);
+    let k = sec;
+    while (taken.has(k) || byPrefix[String(k)]) k++;
+    taken.add(k); ownedBy[sec] = k; return String(k);
+  };
   const nextId = k => { let n = (maxBySlide[k] || 0) + 1, id; while (used.has(id = 's' + k + '-' + n)) n++; maxBySlide[k] = n; return id; };
   for (const e of found) {
     if (e.id && !used.has(e.id)) { used.add(e.id); kept++; continue; }
     if (!e.id && !e.text.replace(/&nbsp;|&#160;/g, ' ').trim()) continue;      // empty boxes filled by a script: leave alone
-    const id = nextId(e.slideAt); used.add(id);
+    const id = nextId(prefixOf(e.slideAt)); used.add(id);
     if (e.id) { edits.push({ at: e.idStart, len: e.idLen, str: '"' + id + '"' }); renamed++; }
     else { edits.push({ at: e.nameEnd, len: 0, str: ' data-edit="' + id + '"' }); added++; }
   }
   edits.sort((a, b) => b.at - a.at);
   let out = html;
   for (const x of edits) out = out.slice(0, x.at) + x.str + out.slice(x.at + x.len);
-  return { html: out, added, renamed, kept, slides: slideNo };
+  let shared = [];
+  try { shared = require('./lib/edit_ids').judgeEditIds(out).errors; } catch (e) { /* the check is advisory here */ }
+  return { html: out, added, renamed, kept, slides: slideNo, shared };
 }
 
 if (flag('ids')) {
@@ -111,10 +133,13 @@ if (flag('ids')) {
   }
   console.log(`Editable text ids: ${r.kept} kept, ${r.added} ${checkOnly ? 'missing' : 'added'}, ` +
     `${r.renamed} duplicate${r.renamed === 1 ? '' : 's'} ${checkOnly ? 'found' : 'renamed'} (${r.slides} slides)`);
-  process.exit(checkOnly && (r.added || r.renamed) ? 3 : 0);
+  for (const x of r.shared || []) console.log('  problem: slide ' + x.slide + ': ' + x.msg);
+  // --ids writes what it can and says what it cannot fix: a shared `s<k>-` prefix needs a slide renumbered by hand, so it
+  // fails the --check gate but never the write (deck_check.js reports it as an error after the build step either way).
+  process.exit(checkOnly && (r.added || r.renamed || (r.shared || []).length) ? 3 : 0);
 }
 
-/* ---------------- archetype snippets (looks that have them: Bold Blue) ---------------- */
+/* ---------------- archetype snippets (looks that have them: Bold Blue, Flat-Pack) ---------------- */
 const snippet = opt('snippet');
 if (snippet) {
   const look = (opt('theme') || 'bold-blue').toLowerCase();
@@ -172,6 +197,8 @@ const LOOK_HEAD = {
                '<script src="{{ENGINE}}/deck/looks/bold-blue/studio3d.js"></script>\n' +
                '<script src="{{ENGINE}}/deck/looks/bold-blue/timeline.js"></script>\n' +
                '<script src="{{ENGINE}}/deck/looks/bold-blue/physics.js"></script>\n',
+  'flat-pack': '<script src="{{ENGINE}}/deck/looks/flat-pack/flat-pack.js"></script>\n' +
+               '<script src="{{ENGINE}}/deck/looks/flat-pack/fp3d.js"></script>\n',
 };
 const lookTemplate = path.join(ENGINE, 'deck', 'looks', theme, 'template.html');
 const html = fs.readFileSync(fs.existsSync(lookTemplate) ? lookTemplate : path.join(ENGINE, 'deck', 'template.html'), 'utf8')
@@ -181,6 +208,9 @@ const html = fs.readFileSync(fs.existsSync(lookTemplate) ? lookTemplate : path.j
 fs.writeFileSync(file, html, 'utf8');
 console.log('New deck: ' + path.relative(root, file).split(path.sep).join('/'));
 console.log('Theme: ' + THEMES[theme] + '  (rules: .aura/engine/deck/themes/' + theme + '.css)');
-if (theme === 'bold-blue') console.log('Bold Blue: follow .claude/skills/aura-slide/looks/bold-blue/LOOK.md (it overrides the form style choices).');
+// a look with its own spec: the shared base first, then the look's own file (both override the form style choices)
+const LOOK_SPEC = { 'bold-blue': 'Bold Blue', 'flat-pack': 'Flat-Pack' };
+if (LOOK_SPEC[theme]) console.log(LOOK_SPEC[theme] + ': follow .claude/skills/aura-slide/looks/_shared/LOOK-BASE.md then ' +
+  '.claude/skills/aura-slide/looks/' + theme + '/LOOK.md (they override the form style choices).');
 console.log('Put pictures for the deck in: ' + relDir + '/assets');
 console.log('After writing the slides run: node .aura/engine/tools/new_deck.js --ids ' + relDir);

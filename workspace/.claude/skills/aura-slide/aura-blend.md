@@ -50,6 +50,13 @@ Make illustrations move:
 - Loops are seamless and calm: 3–6 s cycles, no flashing.
 - The slide must still read correctly as a still frame, for the PDF and PowerPoint backups.
 
+A sequence - objectives, a method, a roadmap, a set of next steps - is drawn as a path that climbs: a staircase, a
+rising road, a route with a goal at the top. Not a row of equal panels, not a level line of stepping stones. Offer two
+climbing shapes and let them pick between those.
+<!-- PROVISIONAL (0.5.5). Evidence is ONE deck (b45622aef312): three sightings - s4 q1, s12 q2, s14 q2 - and the flat
+     default was refused all three times. One deck is one person on one subject. Re-check after the next deck; if a
+     sequence is ever wanted flat, this comes out again. -->
+
 Real numbers still need real axes: label the values, keep the scale honest, and say "Sample data" whenever the
 numbers are illustrative.
 
@@ -58,12 +65,13 @@ numbers are illustrative.
 |---|---|---|---|---|---|
 | 1 | **Pink Punch** | Gumroad | Anton (display, uppercase) + Work Sans (text) | cream canvas · pink block · yellow, orange, teal, red pops | black outlines + hard 8 px black shadow, pill kicker, pink highlighter on one phrase |
 | 2 | **Bold Blue** | the owner's reference deck (measured, not a brand site) | Poppins (everything) + DM Mono (page numbers) | warm off-white `#F9F4F2` · ink `#2D2C2B` · ONE blue `#0061EF` phrase per headline · orange `#FF7E1D` identity dot | photoreal studio 3D (soft shadows, real materials, reflections) beside a stat stack; hand-drawn SVG charts. **Its own authority: `looks/bold-blue/LOOK.md`** |
-| 3 | **Flat-Pack** | IKEA | Noto Sans 800 (display) + Noto Sans 400 (text) | pure white · grey card · IKEA blue · IKEA yellow | flat-pack assembly manual (numbered steps, parts with "6x", the happy figure), yellow price-tag kicker, blue emphasis phrase |
+| 3 | **Flat-Pack** | IKEA | Noto Sans (one typeface: 800 display, 700 labels, 400 text) | white paper · one grey · IKEA blue `#0058A3` · IKEA yellow `#FFDB00` · no shadows, no gradients | the assembly manual: 4 px ink line drawings in orthographic view, exploded parts, numbered step discs, "6x" part counts, dashed guides, yellow price-tag kicker. **Its own authority: `looks/flat-pack/LOOK.md`** |
 | 4 | **Happy Headspace** | Headspace | Quicksand 700 (display) + DM Sans (text) + Reno Mono (label) | pure white · **orange first**, then gold, amber, purple, teal-navy; pink only as a rare small accent | soft round shapes and blobs, **no faces** (decks are often formal), gold pill kicker, orange squiggle underline |
 | 5 | **Yellow Frame** | National Geographic | Source Serif 4 (display) + Open Sans (text, uppercase label) | pure white · the yellow border · **black as the signature ink**: black label tags with white capitals, a heavy black rule above the kicker, black pipes, arrows and data marks; **never a dark background** | a bright daylight documentary illustration inside the thick yellow rectangle; yellow-rectangle mark before the kicker |
 
 Brand files:
-- Bold Blue has no brand file: it follows `looks/bold-blue/LOOK.md`, which overrides this file where they differ.
+- Bold Blue and Flat-Pack follow `looks/_shared/LOOK-BASE.md` plus their own `looks/<look>/LOOK.md`, which override
+  this file where they differ. Bold Blue has no brand file; Flat-Pack's DNA is `brands/ikea`, but its LOOK.md wins.
 - this skill folder: `brands/gumroad`, `brands/headspace`, `brands/ikea`, `brands/national-geographic`.
   IKEA and National Geographic were extracted with Firecrawl.
 

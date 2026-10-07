@@ -9,6 +9,34 @@ import { emit } from './bus.js';
 const mins = s => (s == null ? '' : s < 50 ? 'under a minute left' : `~${Math.max(1, Math.round(s / 60))} min left`);
 const mb = n => (n >= 1048576 ? (n / 1048576).toFixed(n >= 10485760 ? 0 : 1) + ' MB' : Math.max(1, Math.round((n || 0) / 1024)) + ' KB');
 
+// What a 409 from the finalize gate says on screen. Post-mortem problem 1 (residual): the gate separates `pending` - a
+// studio render that still has to be made - from `orphans` - a slide that asks for a studio render NOTHING will ever
+// make, because it is live 3D. "approve the design and let lumi render it" is right for the first and wrong for the
+// second: there is no render to make and no render button on that slide, which is exactly the dead end the owner hit
+// three times at the end of deck b45622aef312. An orphan is told to change the slide's picture instead.
+// Pure, so tools/form-dev/test_frontend.mjs can check the wording without a browser.
+export function blenderNotice(r) {
+  const pending = r.error === 'blender-pending';
+  const nums = (r.slides || []).map(Number).filter(Boolean);
+  const orph = new Set((r.orphans || []).map(Number).filter(Boolean));
+  const orphNums = nums.filter(n => orph.has(n)), pendNums = nums.filter(n => !orph.has(n));
+  const one = nums.length === 1, s1 = l => l.length === 1;
+  const onlyOrph = pending && orphNums.length > 0 && pendNums.length === 0;
+  const someOrph = pending && orphNums.length > 0;
+  const head = !pending ? (one ? 'a studio render is older than its design' : 'some studio renders are older than their design')
+    : onlyOrph ? (s1(orphNums) ? 'one slide needs a different picture' : `${orphNums.length} slides need a different picture`)
+    : someOrph ? `${nums.length} slides aren’t ready yet`
+    : (one ? 'one studio render isn’t finished' : `${nums.length} studio renders aren’t finished`);
+  const orphLine = `${s1(orphNums) ? 'one slide asks' : `${orphNums.length} slides ask`} for a studio render that lumi can never make, `
+    + `because ${s1(orphNums) ? 'that slide is' : 'those slides are'} live 3d. open ${s1(orphNums) ? 'it' : 'them'} and change the `
+    + 'picture: ask for the figure to be drawn live, or for a studio render instead.';
+  const pendLine = 'finalize puts finished renders into the deck; it never makes them. approve each design and let lumi render it, then finalize again.';
+  const line = !pending
+    ? `${one ? 'this slide' : 'these slides'} changed after the last full render, so the deck still shows the older picture. render again, or finalize with the older render.`
+    : onlyOrph ? orphLine : someOrph ? pendLine + ' ' + orphLine : pendLine;
+  return { pending, nums, orph, orphNums, pendNums, head, line };
+}
+
 export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
   const sfx = n => { try { audio && audio.sfx && audio.sfx(n); } catch (e) { /* optional */ } };
   let alive = true, pollT = 0, armed = 0, started = false, final = null, idle = 0, offTries = 0, since = 0;
@@ -21,6 +49,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
   const note = h('p', { class: 'fz-note' }, 'lumi records every moving 3D slide as a smooth video and makes a pdf backup. this runs on your computer and does not use claude.');
   const cancelB = h('button', { type: 'button', class: 'fz-b', 'data-cursor-label': 'cancel' }, 'cancel');
   const acts = h('div', { class: 'fz-acts' }, cancelB);
+  const saveLine = h('p', { class: 'fz-saved', 'aria-live': 'polite' });      // N5: what was saved and where, after the one primary action
   const box = h('div', { class: 'fz' }, badge, head, line, meter, note, acts);
   el.replaceChildren(box);
 
@@ -76,13 +105,31 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
       (fin && fin.htmlBytes > 24 * 1048576 ? 'this file is big for e-mail: “smaller file” makes a lighter copy. ' : '') +
       'present plays this final file. before the day: open it once in microsoft edge or google chrome on the computer you will present from (firefox and old browsers may not show the 3D), and keep the pdf as your backup.';
     pptxLine.textContent = '';
-    const row = [btn('present it', async () => { sfx('launch'); await api.openSlides(final && final.html); }, true, 'right'),
-      btn('open the folder', () => api.openSlides()),
+    // N5. The files ARE saved by finalizing - that is what finalizing is - but the screen offered four peer buttons and
+    // the saving was a side effect nobody was told to look for; "open the folder" sat among the others as if it were an
+    // afterthought. Nothing about WHERE the files are was wrong, it just had no owner. So: ONE primary action that ends
+    // with the person holding their files, named for what they want ("save and export"), which finalizes first when the
+    // deck is not finalized yet, then opens the folder and names both files. Everything that worked is kept - present
+    // it, the powerpoint copy, the smaller file - as peers underneath. Nothing was removed.
+    const names = f => [f && f.html, f && f.pdf].filter(Boolean).map(x => String(x).split('/').pop());
+    const saveExport = async () => {
+      sfx('launch');
+      if (!final || !final.html) { reset(); start({ force: true }); return; }   // not finalized yet: make the files first
+      const r = await api.openSlides();
+      const got = names(final);
+      saveLine.textContent = r && r.ok === false
+        ? 'lumi could not open the folder. your files are in the lumi folder, under “4 - your slides”.'
+        : `saved: ${got.join(' and ')} — in “4 - your slides”, now open in a window. copy them anywhere you like.`;
+    };
+    const row = [btn('save and export', saveExport, true, 'folder'),
+      btn('present it', async () => { sfx('launch'); await api.openSlides(final && final.html); }),
       btn('make a powerpoint copy', makePptx),
       btn('smaller file', () => { reset(); start({ light: true }); }),
       btn(again ? 'finalize again' : 'back to my decks', again ? () => { reset(); start({ force: true }); } : () => { sfx('back'); onHome && onHome(); })];
     if (again) row.push(btn('back to my decks', () => { sfx('back'); onHome && onHome(); }));
     acts.replaceChildren(...row);
+    saveLine.textContent = '';
+    box.appendChild(saveLine);
     box.appendChild(pptxLine);
   }
   // D-01: the explicit PowerPoint action. Each slide becomes one picture (3D scenes become a still image) and the
@@ -106,26 +153,25 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
   // contract section 10: finalize only embeds studio renders, it never makes them. A slide without its full render (409
   // blender-pending) sends the person back to that slide; a render older than its design (409 blender-stale) is their call.
   async function showBlender(r, opts) {
-    const pending = r.error === 'blender-pending', nums = (r.slides || []).map(Number).filter(Boolean);
+    const { pending, nums, orph, head: headText, line: lineText } = blenderNotice(r);
     clearTimeout(pollT); sfx('pop');
     const [pl, bv] = await Promise.all([api.plan.get(deckId), api.blender.deck(deckId)]);
     if (!alive) return;
     const slides = (pl && pl.plan && pl.plan.slides) || [], views = Object.values((bv && bv.slides) || {});
-    const one = nums.length === 1;
     badge.textContent = 'finalize';
-    head.textContent = pending ? (one ? 'one studio render isn’t finished' : `${nums.length} studio renders aren’t finished`) : (one ? 'a studio render is older than its design' : 'some studio renders are older than their design');
-    line.textContent = pending ? 'finalize puts finished renders into the deck; it never makes them. approve each design and let lumi render it, then finalize again.'
-      : `${one ? 'this slide' : 'these slides'} changed after the last full render, so the deck still shows the older picture. render again, or finalize with the older render.`;
+    head.textContent = headText;
+    line.textContent = lineText;
     bar.style.transform = 'scaleX(.02)';
-    const why = v => !v ? '' : v.status === 'rendering' ? `rendering now · ${Math.round(((v.job || {}).progress || 0) * 100)}%`
+    const why = (v, isOrph) => isOrph ? 'change this slide’s picture — there is nothing to render'
+      : !v ? '' : v.status === 'rendering' ? `rendering now · ${Math.round(((v.job || {}).progress || 0) * 100)}%`
       : v.status === 'failed' ? 'the last try didn’t work' : v.status === 'previewing' || v.status === 'changing' ? 'a new preview is on its way'
       : v.status === 'approved' ? 'approved, not rendered yet' : v.deferred ? 'kept as a preview for now' : pending ? 'waiting for you to approve the design' : 'the design changed after the render';
     note.replaceChildren(h('span', { class: 'fz-bl' }, ...nums.map(n => {
-      const s = slides[n - 1] || {}, v = views.find(x => x.n === n);
+      const s = slides[n - 1] || {}, v = orph.has(n) ? null : views.find(x => x.n === n);
       const goB = btn(`go to slide ${n}`, () => { sfx('slide'); onEdit && onEdit(deckId, n); });
       goB.classList.add('fz-bl-go');
       return h('span', { class: 'fz-bl-row' }, h('span', { class: 'fz-bl-n' }, String(n)),
-        h('span', { class: 'fz-bl-t' }, h('b', {}, s.title || `slide ${n}`), h('span', {}, why(v))), goB);
+        h('span', { class: 'fz-bl-t' }, h('b', {}, s.title || `slide ${n}`), h('span', {}, why(v, orph.has(n)))), goB);
     })));
     acts.replaceChildren(...(pending
       ? [btn('check again', () => { reset(); start({ ...opts, retry: true }); }, true), btn('my decks', () => { sfx('back'); onHome && onHome(); })]

@@ -43,7 +43,7 @@
       "id": 1,
       "name": "Minimum text size",
       "rule": "No text on any slide may be smaller than 26 px, measured at the 1920x1080 design size. This covers every label, caption, source line, chart label and footer. Bold Blue decks use the Bold Blue numbers measured from the reference deck that defines the look: 20 px only for the footer, page number, captions and chart step labels, 28 px for everything else.",
-      "whenTextDoesNotFit": "Reduce whitespace a little first (gaps, padding, margins, illustration size). If it still does not fit, shorten the words or split into two slides. Never make text smaller than the minimum."
+      "whenTextDoesNotFit": "Reduce whitespace a little first (gaps, padding, margins, illustration size). If it still does not fit, merge or drop whole items so the survivors stay readable - do not grind every cell down to one word. Split into two slides only when nothing can be dropped. Never make text smaller than the minimum."
     }
   ],
   "looks": {
@@ -112,6 +112,46 @@
       },
       "bodyMinIsError": true,
       "bodyMinExemptNote": "20 px is allowed only for the footer mark, the page number, captions / source lines and the chart's step labels and event pill (BBChart marks them .bb-steplbl / .bb-cap). Everything else is at least 28 px."
+    },
+    "flat-pack": {
+      "name": "Flat-Pack",
+      "source": "Built from the IKEA brand DNA (workspace/.claude/skills/aura-slide/brands/ikea/brand-style.md, Firecrawl 2026-10-01) and the assembly-manual drawing language: body 32 px, kicker 32 px, stat 60/84 px, headline 84 px, title 120 px, closing word 180 px; footer mark, page number, captions, part counts ('6x') and chart step labels 24 px. One typeface (Noto Sans). Type scale 24/32/44/60/84/120/180.",
+      "minFontPx": 24,
+      "svgTolerancePx": 0.3,
+      "bodyMinPx": 32,
+      "bodyMinExempt": ".fp-foot, .fp-mark, .fp-pageno, .cap, .source, figcaption, .fp-count, .fp-cap, .fp-steplbl, .fp-cyc .step, .fp-rail .tr b, .fp-meta .lb",
+      "typeScale": [
+        24,
+        32,
+        44,
+        60,
+        84,
+        120,
+        180
+      ],
+      "wordBudget": {
+        "title": 32,
+        "section": 10,
+        "content": 34,
+        "quote": 24,
+        "closing": 24,
+        "references": 140,
+        "document": 70
+      },
+      "whitespace": {
+        "title": 0.5,
+        "section": 0.7,
+        "quote": 0.7,
+        "closing": 0.65,
+        "content": 0.45,
+        "references": 0.3
+      },
+      "maxTypefaces": 1,
+      "maxSizesPerSlide": 4,
+      "maxSizesPerDeck": 6,
+      "safeZonePx": 96,
+      "bodyMinIsError": true,
+      "bodyMinExemptNote": "24 px is allowed only for the footer mark, the page number, captions / source lines, the \"6x\" part counts and the chart's step labels and event badge. Everything else is at least 32 px."
     }
   },
   "blender": {

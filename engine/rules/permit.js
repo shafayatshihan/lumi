@@ -28,7 +28,10 @@ const W = path.win32;
 const INTERPRETERS = new Set(['node', 'node.exe', 'python', 'python.exe', 'python3', 'python3.exe', 'py', 'py.exe']);
 const READERS_BASH = new Set(['cat', 'head', 'tail', 'ls', 'dir', 'grep', 'egrep', 'fgrep', 'wc', 'sort', 'uniq', 'cut', 'echo',
   'printf', 'pwd', 'true', 'false', ':', 'test', '[', '[[', 'file', 'stat', 'du', 'basename', 'dirname', 'realpath', 'find', 'tree',
-  'which', 'diff', 'cmp', 'nl', 'column', 'sleep']);
+  'which', 'diff', 'cmp', 'nl', 'column', 'sleep',
+  // pure text filters that write nothing (post-mortem problem 10: `tr -s ' \n' ' ' < file | grep ...` was refused twice)
+  'tr', 'tac', 'rev', 'fold', 'expand', 'unexpand', 'paste', 'comm', 'join', 'seq', 'base64', 'od', 'xxd', 'strings',
+  'md5sum', 'sha1sum', 'sha256sum', 'cksum', 'date']);
 const READERS_PS = new Set(['get-content', 'gc', 'type', 'select-object', 'select', 'get-childitem', 'gci', 'test-path',
   'get-location', 'gl', 'select-string', 'sls', 'format-table', 'ft', 'format-list', 'fl', 'format-wide', 'out-string', 'out-null',
   'measure-object', 'measure', 'sort-object', 'write-output', 'write', 'write-host', 'get-item', 'gi', 'resolve-path', 'split-path',
@@ -94,7 +97,22 @@ function tokenize(cmd, shell) {
     // redirections: [n|*|&]>[>][&n | target], <, << (heredoc = code)
     if (c === '>' || (c === '<') || (c === '&' && n === '>') ||
         ((/^[0-9*]$/.test(c)) && cur === null && (n === '>' || (n === '<'))) ) {
-      if (c === '<' || n === '<') { if (cmd[i + 1] === '<' || c === '<' && n === '(') return bad('heredoc or input redirection'); return bad('input redirection'); }
+      if (c === '<' || n === '<') {
+        // `cmd < file` only READS the file, so it is as safe as passing the path as an argument - and Claude reaches for
+        // it (`tr -s ' \n' ' ' < "Word file.pdf.txt" | grep ...` was refused twice in deck b45622aef312). A heredoc
+        // (`<<`) is a program written inline and a process substitution (`<(`) is a nested shell: both stay refused.
+        const lt = c === '<' ? i : i + 1;             // the position of the '<' itself (0<file, *<file)
+        if (cmd[lt + 1] === '<') return bad('heredoc');
+        if (cmd[lt + 1] === '(') return bad('process substitution');
+        if (ps) return bad('input redirection');      // PowerShell has no input redirection; anything spelled so is odd
+        let j = lt + 1;
+        while (cmd[j] === ' ') j++;
+        let k = j, t = '';
+        if (cmd[k] === '"' || cmd[k] === "'") { const qch = cmd[k]; k++; while (k < cmd.length && cmd[k] !== qch) t += cmd[k++]; k++; }
+        else while (k < cmd.length && !' \t\n;|&<>'.includes(cmd[k])) t += cmd[k++];
+        if (!t) return bad('redirection without a target');
+        push(); redirs.push({ op: '<', target: t }); i = k; continue;
+      }
       let j = i; if (c !== '>') j++;           // skip fd digit / * / &
       j++; if (cmd[j] === '>') j++;
       if (cmd[j] === '(') return bad('process substitution');
@@ -308,7 +326,8 @@ function segment(ctx, toks, shell) {
 
   if ((!ps && READERS_BASH.has(exe)) || (ps && (READERS_PS.has(exe) || ['cat', 'head', 'tail', 'ls', 'dir', 'echo', 'pwd', 'sort'].includes(exe)))) {
     if (exe === 'find' && args.some(a => /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/.test(a))) return { v: null, why: 'find with actions' };
-    if (['echo', 'printf', 'write-output', 'write', 'write-host', 'test', '[', '[[', ':', 'true', 'false', 'sleep', 'start-sleep',
+    if (['echo', 'printf', 'tr', 'seq', 'fold', 'rev', 'tac', 'expand', 'unexpand', 'date',
+         'write-output', 'write', 'write-host', 'test', '[', '[[', ':', 'true', 'false', 'sleep', 'start-sleep',
          'select-object', 'select', 'format-table', 'ft', 'format-list', 'fl', 'format-wide', 'out-string', 'out-null', 'measure-object',
          'measure', 'sort-object', 'group-object', 'get-unique', 'which', 'grep', 'egrep', 'fgrep', 'select-string', 'sls'].includes(exe)) {
       // text-only helpers: their words are not paths (a grep pattern, a property list); path-like words must still be inside
@@ -374,7 +393,7 @@ function decide(tool, command, opts) {
   if (tk.segs.some(seg => blenderSeg(seg, shell)) && (tk.segs.length > 1 || tk.redirs.length || tk.bgJob))
     return { decision: 'deny', reason: 'Blender must run on its own: no &&, ;, | or redirection around it. ' + BLENDER_FORM };
   for (const r of tk.redirs) {
-    if (r.op === '>&') continue;
+    if (r.op === '>&' || r.op === '<') continue;        // `< file` only reads: reading Lumi's own files is allowed
     if (isNull(r.target)) continue;
     const p = resolveArg(ctx, r.target);
     if (p && inside(ctx, p, ctx.protect)) return { decision: 'deny', reason: PROTECTED_REASON };
@@ -387,6 +406,10 @@ function decide(tool, command, opts) {
   }
   if (verdict === 'allow') for (const r of tk.redirs) {
     if (r.op === '>&' || isNull(r.target)) continue;
+    if (r.op === '<') {                                // reading a file in: anywhere inside the Lumi folder
+      if (!inside(ctx, resolveArg(ctx, r.target), [ctx.R])) { verdict = null; why.push('reads ' + r.target + ', outside the Lumi folder'); }
+      continue;
+    }
     // file redirection: only into the deck work folders (PowerShell refuses these on its own anyway)
     if (!inside(ctx, resolveArg(ctx, r.target), ctx.work)) { verdict = null; why.push('redirect to ' + r.target); }
   }

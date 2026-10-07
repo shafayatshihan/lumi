@@ -96,7 +96,10 @@ const frameDiff = (buf, a, b, size) => { let s = 0; for (let i = 0; i < size; i+
 
 const hex = c => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
 
-// items: collectBlender() results. opts: { rules (hard-rules.json -> blender), deckDir, root, finalize, ffmpeg? }
+// items: collectBlender() results. opts: { rules (hard-rules.json -> blender), deckDir, root, finalize, ffmpeg?, known? }
+// opts.known (a Set of slide ids, or null when the caller does not know): the slides the server really renders in Blender. A
+// holder whose id is not in it is an ORPHAN - the slide's engine is three.js, so no render is ever made for it and the holder
+// stays empty for ever. That is an error at once, while the person is still on that slide, not a finalize that dies at the end.
 // returns { errors: [{slide, msg}], warnings: [{slide, msg}], notes: [string] }
 function judge(items, opts) {
   const R = opts.rules, errors = [], warnings = [], notes = [];
@@ -106,6 +109,10 @@ function judge(items, opts) {
   try {
     for (const it of items) {
       const who = `studio render "${it.sid}"`;
+      if (opts.known && !opts.known.has(it.sid)) {
+        err(it.n, `${who} is a studio render holder on a slide that is NOT a studio render slide: this slide's 3D figure is live 3D (three.js), so Lumi never renders a picture for it and the holder stays empty for ever (the deck cannot be finalized). Remove the <div class="bb-blender" data-blender="${it.sid}"> holder and draw the figure live with Aura.scene(...), or ask for the studio render engine on this slide.`);
+        continue;
+      }
       if (!it.filled) { early(it.n, `${who} is not in the deck yet (Lumi renders a preview after the build step, and the full render after the user approves it)`); continue; }
       if (it.draft) early(it.n, `${who} shows a preview, not the approved render: the user has not approved it yet, so it cannot be finalized`);
       if (it.stale && opts.finalize) warn(it.n, `${who} is older than the scene: the scene changed after the last full render`);

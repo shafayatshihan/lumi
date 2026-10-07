@@ -14,27 +14,30 @@ before you finish (`.aura/engine/rules/check_rules.js`). A failed check blocks y
 move, rename, bypass or disable the checker, its rules file, or the hooks in `.claude/settings.json`.
 
 1. **Never go below the text floor in the table below** (at the 1920×1080 design size) — every label, caption, source
-   line, chart label, axis tick and footer, in HTML and inside SVG. When text does not fit, first reduce whitespace a
-   little (gaps, padding, margins, illustration size); if it still does not fit, shorten the words or split into two
-   slides. Never shrink text below the floor. Speaker notes are exempt only when marked `data-aura-notes`.
+   line, chart label, axis tick and footer, in HTML and inside SVG. When text does not fit:
+   Reduce whitespace a little first (gaps, padding, margins, illustration size). If it still does not fit, merge or drop
+   whole items so the survivors stay readable - do not grind every cell down to one word. Split into two slides only when
+   nothing can be dropped. Never make text smaller than the minimum.
+   Speaker notes are exempt only when marked `data-aura-notes`.
 
 ## The numbers (the one place they are written down)
 Machine copy: `.aura/engine/rules/hard-rules.json` (`generic` and `looks.<look>`), which `deck_check.js` enforces; a test
 keeps this table and that file identical. Every other document points here instead of repeating a number.
 
-| | Every look except Bold Blue | Bold Blue (the default look; authority `looks/bold-blue/LOOK.md`) |
-|---|---|---|
-| Text floor (error below) | 26 px | 20 px, and only for the footer mark, page number, captions / source lines and chart step labels |
-| Everything else | 28 px in practice (the type scale starts there) | at least 28 px (error below) |
-| Type scale | 28 · 36 · 48 · 64 · 84 · 112, bigger numbers 150 · 200 | 20 · 28 · 36 · 48 · 64 · 112 · 176 |
-| Words per slide, presenter mode (error above) | title 45 · section 8 · content 25 · quote 30 · closing 20 · references 140 | title 45 · section 12 · content 55 · quote 30 · closing 40 · references 140 |
-| Words per content slide, document mode | 75 | 90 |
-| Typefaces per deck (error above) | 4 | 2 (Poppins and DM Mono) |
-| Main visuals per slide (error above 1) | 3D, chart, diagram, photo or text only; a 2D canvas loop counts as a diagram | the same |
+| | A look with no entry of its own | Bold Blue (the default look; `looks/bold-blue/LOOK.md`) | Flat-Pack (`looks/flat-pack/LOOK.md`) |
+|---|---|---|---|
+| Text floor (error below) | 26 px | 20 px, and only for the footer mark, page number, captions / source lines and chart step labels | 24 px, and only for the footer mark, page number, captions, part counts and chart step labels |
+| Everything else | 28 px in practice (the type scale starts there) | at least 28 px (error below) | at least 32 px (error below) |
+| Type scale | 28 · 36 · 48 · 64 · 84 · 112, bigger numbers 150 · 200 | 20 · 28 · 36 · 48 · 64 · 112 · 176 | 24 · 32 · 44 · 60 · 84 · 120 · 180 |
+| Words per slide, presenter mode (error above) | title 45 · section 8 · content 25 · quote 30 · closing 20 · references 140 | title 45 · section 12 · content 55 · quote 30 · closing 40 · references 140 | title 32 · section 10 · content 34 · quote 24 · closing 24 · references 140 |
+| Words per content slide, document mode | 75 | 90 | 70 |
+| Typefaces per deck (error above) | 4 | 2 (Poppins and DM Mono) | 1 (Noto Sans) |
+| Main visuals per slide (error above 1) | 3D, chart, diagram, photo or text only; a 2D canvas loop counts as a diagram | the same | the same |
 
 Presenter mode is the default; use document mode only for a deck that is mainly read without a speaker. A word is a
 whitespace-separated piece of text that contains a letter ("34%" and "2025" are not words). For a look with its own
-entry in `hard-rules.json`, that entry replaces the whole left column.
+entry in `hard-rules.json`, that entry replaces the whole left column. Every look obeys the same structural
+rules (`looks/_shared/LOOK-BASE.md`); only its brand differs.
 
 ## Folders and where you write
 | Folder | What it is | Rule |
@@ -112,8 +115,10 @@ Style every deck with `.claude/skills/aura-slide/aura-blend.md`. It covers:
   (this overrides power-design's "max 2 typefaces" rule, except where a look allows fewer).
 - The colour blend and one signature device per theme.
 - The five Aura themes: Pink Punch, Bold Blue, Flat-Pack, Happy Headspace, Yellow Frame. Bold Blue is the recommended
-  default and has its own authority file, `.claude/skills/aura-slide/looks/bold-blue/LOOK.md` (read it whenever Bold
-  Blue is the look). **Bold Blue overrides the form's visual choices, aura-blend.md and deck-toolkit.md wherever they differ.**
+  default. **Every look obeys the same structural rules** - `.claude/skills/aura-slide/looks/_shared/LOOK-BASE.md` -
+  and only its brand differs. Bold Blue and Flat-Pack each have their own brand file
+  (`.claude/skills/aura-slide/looks/<look>/LOOK.md`); read the base and then that file whenever one of them is the look.
+  **They override the form's visual choices, aura-blend.md and deck-toolkit.md wherever they differ.**
 
 Their brand files are in `.claude/skills/aura-slide/brands/` and in power-design's `brands/`. Aura Blend works inside
 the rest of power-design's rules and the HARD RULES, never against them.

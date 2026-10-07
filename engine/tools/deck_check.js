@@ -14,6 +14,7 @@ const fs = require('fs'), path = require('path');
 const { findAuraRoot, resolveDeck, serveRootFor, serve, launch, openDeck, probeRender, rel } = require('./lib/deckpage');
 const claims = require('./lib/claims');
 const blenderCheck = require('./lib/blender_check');
+const editIds = require('./lib/edit_ids');
 
 const RULES = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rules', 'hard-rules.json'), 'utf8')); } catch (e) { return {}; } })();
 const MIN_PX = RULES.minFontPx || 26;
@@ -35,9 +36,13 @@ const wantFinalize = flag('--finalize'), wantNotes = flag('--notes'), noShots = 
 // a build folder path, so the caller names the file: --interview .aura/decks/<id>/interview.json. Without it the old
 // .aura/brief/brief.json is used, exactly as before, which is what keeps a v0.5.3 deck behaving the same.
 const interviewArg = val('--interview');
+// --blender-slides <sid,sid,...>: the slides the SERVER will really render in Blender (form_server.blender_args). With it,
+// a `.bb-blender` holder whose id is not in the list is an orphan - no render will ever fill it - and that is an ERROR right
+// after the build step instead of a raw failure at the end of a finalize. Without it nothing changes (a hand-run check).
+const blenderSlidesArg = val('--blender-slides');
 
 /* ------------------------------------------------------------------ in-page measuring ------------------------------- */
-function collect({ MIN_PX, TOL, BODY_MIN, BODY_EXEMPT }) {
+function collect({ MIN_PX, TOL, BODY_MIN, BODY_EXEMPT, ILLUS }) {
   const SKIP = '[data-aura-notes], .notes, .pnotes, [data-aura-ui], script, style, template, noscript';
   const slides = Array.from(document.querySelectorAll('.deck > .slide, body > .slide'));
   const parseRGBA = s => { const m = (s || '').match(/rgba?\(([^)]+)\)/); if (!m) return null;
@@ -159,7 +164,7 @@ function collect({ MIN_PX, TOL, BODY_MIN, BODY_EXEMPT }) {
     const title = s.dataset.title || ((s.querySelector('h1,h2,h3') || {}).textContent || '').replace(/\s+/g, ' ').trim();
     const stillEl = s.querySelector('[data-still]');
     return { index: si, title: title.slice(0, 70), still: stillEl ? parseFloat(stillEl.dataset.still) : null, claimText, notesText: notesEl ? notesEl.textContent.replace(/\s+/g, ' ').trim() : '', props, emptyCols, headlines, figures,
-      illustrative: /illustrative|schematic|not to scale|conceptual|sketch/i.test(claimText) || !!s.querySelector('[data-illustrative]'),
+      illustrative: new RegExp(ILLUS.source, ILLUS.flags).test(claimText) || !!s.querySelector('[data-illustrative]'),
       kind: s.dataset.kind || 'content', words, sizes: [...sizes].sort((a, b) => a - b),
       fonts: [...fonts], broken, has3dFallback, visuals, companions, hasNotes: !!(notesEl && notesEl.textContent.trim()),
       minutes: parseFloat(s.dataset.minutes) || 0, w: Math.round(sr.width), h: Math.round(sr.height), ...res };
@@ -268,7 +273,7 @@ async function analysePixels({ si, plain, normal, bareOnly }) {
     P.whitespace = Object.assign({}, GENERIC.whitespace, lookKey ? LOOKS[lookKey].whitespace : {});
     if (lookInfo.declared && LOOKS[lookInfo.declared] && lookInfo.declared !== lookInfo.token)
       warnings.push({ slide: 0, msg: `the deck says data-look="${lookInfo.declared}" but that look's theme stylesheet is not loaded, so the generic Lumi rules apply.` });
-    const info = await page.evaluate(collect, { MIN_PX: P.minFontPx, TOL: P.svgTolerancePx || 0, BODY_MIN: P.bodyMinPx || 0, BODY_EXEMPT: P.bodyMinExempt || '' });
+    const info = await page.evaluate(collect, { MIN_PX: P.minFontPx, TOL: P.svgTolerancePx || 0, BODY_MIN: P.bodyMinPx || 0, BODY_EXEMPT: P.bodyMinExempt || '', ILLUS: { source: claims.DECLARES.illustrative.source, flags: claims.DECLARES.illustrative.flags } });
     if (!info.slides.length) { console.error('No slides found. Each slide must be a <section class="slide"> inside <main class="deck">.'); process.exit(1); }
     const mode = modeArg || info.mode;
 
@@ -380,10 +385,18 @@ async function analysePixels({ si, plain, normal, bareOnly }) {
     try {
       const items = await page.evaluate(blenderCheck.collectBlender);
       if (items.length) {
-        const v = blenderCheck.judge(items, { rules: RULES.blender, deckDir: path.dirname(deck), root: auraRoot, finalize: wantFinalize });
+        const v = blenderCheck.judge(items, { rules: RULES.blender, deckDir: path.dirname(deck), root: auraRoot, finalize: wantFinalize,
+          known: blenderSlidesArg === null ? null : new Set(blenderSlidesArg.split(',').map(x => x.trim()).filter(Boolean)) });
         v.errors.forEach(x => err(x.slide, x.msg)); v.warnings.forEach(x => warn(x.slide, x.msg)); blNotes.push(...v.notes);
       }
     } catch (e) { err(0, 'the studio render check could not run: ' + String(e.message || e).split(/\r?\n/)[0].slice(0, 160)); }
+
+    // editable text ids: one `s<position>-` prefix per slide, no id used twice (post-mortem problem 8). Read from the file,
+    // not the page, so it is the same text the editor and the packer will see.
+    try {
+      const v = editIds.judgeEditIds(fs.readFileSync(deck, 'utf8'));
+      v.errors.forEach(x => err(x.slide, x.msg)); v.warnings.forEach(x => warn(x.slide, x.msg));
+    } catch (e) { warn(0, 'the text-id check could not run: ' + String(e.message || e).split(/\r?\n/)[0].slice(0, 160)); }
 
     // capture contract: every 3D slide registers a loop period, and its loop is seamless (seek(0) == seek(period))
     const stillNotes = [];

@@ -112,8 +112,13 @@ def unit_suite(T):
                   and r['s2']['final']['frames'] == 4 and r['s2']['final']['device'] == 'CPU'
                   and r['s2']['final']['fallback'] is True and r['s2']['kind'] == 'animation', r['s2']['final'])
             check('a preview with no frame times records null, not a crash', r['s1']['previews'][1]['frameTimes'] is None
-                  and r['s1']['previews'][1]['perFrameS'] is None and r['s1']['previews'][1]['costUsd'] is None,
+                  and r['s1']['previews'][1]['perFrameS'] is None and r['s1']['previews'][1]['costUsdRun'] is None,
                   r['s1']['previews'][1])
+            # post-mortem P6: a deck written by 0.5.4 kept a per-run `tokens` and a CUMULATIVE `costUsd` side by side. The
+            # record carries the tokens over under the honest name and reports the cumulative figure as what it is.
+            check('an older deck: per-run tokens survive and the cumulative cost is labelled cumulative',
+                  r['s1']['previews'][0]['tokensRun'] == 42000 and r['s1']['previews'][0]['costUsdRun'] is None
+                  and r['s1']['previews'][0]['costUsdSessionLegacy'] == 0.4, r['s1']['previews'][0])
             fin = (disk.get('finalizes') or [{}])[-1]
             lp = (fin.get('loops') or [{}])[0]
             check('capture and encode per loop are stored separately', lp['captureS']['total'] == 28.0

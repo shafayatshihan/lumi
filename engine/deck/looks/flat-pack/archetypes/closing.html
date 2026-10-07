@@ -1,0 +1,37 @@
+<!-- archetype: closing | a skeleton: design the message, drawing and layout per deck (LOOK-BASE section 2) | main visual: a drawing of the subject -->
+<!-- Replace the message with what fits THIS talk (key takeaway / a final question / next steps / contact; "Thank you."
+     is only one of the four), replace the right-hand drawing with THIS subject's own shape or key quantity, and pick a
+     variant: A message left + drawing right (this file), B centred big question (drop .fp-r, centre .fp-l), C next-steps
+     rail (three .fp-steps rows), D contact card. Two decks must never end with the same composition. -->
+<section class="slide" data-kind="closing" data-minutes="0.5" data-title="Thank you">
+  <div class="safe">
+    <div class="fp-main">
+      <div class="fp-l w7">
+        <h1 class="fp-thanks fp-msg" aria-label="Closing message" data-edit="s{{N}}-0">One sentence that fits <span class="em">this talk</span></h1>
+        <p class="fp-q" data-edit="s{{N}}-1">A last line: question, next step or contact</p>
+        <div class="fp-rule"></div>
+        <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. A deck with no supervisor must have no "With thanks" line - never invent a role the interview did not establish. -->
+        <ul class="fp-people">
+          <li data-optional="identity"><span class="lb" data-edit="s{{N}}-2">Presented by</span><strong data-edit="s{{N}}-3">Presenter Name</strong><em data-edit="s{{N}}-4">ID or role</em></li>
+          <li class="gap" data-optional="identity"><span class="lb" data-edit="s{{N}}-5">With thanks</span><strong data-edit="s{{N}}-6">Supervisor Name</strong><em data-edit="s{{N}}-7">Title, institution</em></li>
+        </ul>
+      </div>
+      <div class="fp-r w5">
+        <!-- Replace with a small drawing of THIS subject: its own outline, its own key quantity. One pen, flat fills. -->
+        <svg viewBox="0 0 400 400" aria-hidden="true" style="width:100%; height:100%">
+          <rect class="fp-draw fill-paper" x="80" y="230" width="240" height="90" rx="6"/>
+          <rect class="fp-draw fill-blue" x="120" y="140" width="160" height="80" rx="6"/>
+          <path class="fp-guide" d="M200 110 V130"/>
+        </svg>
+      </div>
+    </div>
+    <footer class="fp-foot"><span class="fp-mark" data-edit="s{{N}}-8">Deck mark</span><span class="fp-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p>Say the closing message in your own words, then thank the people named on the slide and open the floor.</p>
+    <p>Leave this slide up during questions: the names stay on screen. If a question needs a figure, type its slide
+    number and press Enter to jump straight to it, then press End to come back here.</p>
+    <p>Likely question: how sure are the numbers? Answer with the source line on the chart slide, and say plainly
+    which curves are illustrative. Second likely question: what is next - answer in one sentence, not three.</p>
+  </aside>
+</section>

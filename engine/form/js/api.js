@@ -106,6 +106,16 @@ export const plan = {
   save: (id, planObj, replan) => postJSON('/api/decks/' + encodeURIComponent(id) + '/plan', { plan: planObj, ...(replan && replan.length ? { replan } : {}) }),
   answer: (id, doubtId, answer, other) => postJSON('/api/decks/' + encodeURIComponent(id) + '/plan/answer', { id: doubtId, answer, other }),
   suggest: (id, after) => postJSON('/api/decks/' + encodeURIComponent(id) + '/plan/suggest', { after }),
+  // change ONE slide's main picture after it was built, and make that slide again (N4: the plan page is gone by then,
+  // and save_plan refuses any change to a built slide, so this is the only route from 2D back to 3D)
+  picture: (id, slide, main, opts = {}) => postJSON('/api/decks/' + encodeURIComponent(id) + '/plan/picture', { slide, main, ...opts }),
+  // 0.5.5: ONE slide at a time, said as a change and not as a whole new plan. No page can hold a plan that is still true
+  // mid-build (a finished step writes visual.engine / visual.builtAs into it), so a stale copy made removing an UNBUILT
+  // slide look like an edit to a BUILT one (409 "built"). These say what to do; the server does it to its own plan.
+  // plan-store.js is what calls them.
+  slideAdd: (id, slide, after) => postJSON('/api/decks/' + encodeURIComponent(id) + '/plan/slide/add', { slide, ...(after ? { after } : {}) }),
+  slideSave: (id, slide) => postJSON('/api/decks/' + encodeURIComponent(id) + '/plan/slide/save', { slide }),
+  slideRemove: (id, slide, opts = {}) => postJSON('/api/decks/' + encodeURIComponent(id) + '/plan/slide/remove', { slide, ...opts }),
 };
 // the discovery conversation, before the plan: start/continue a round, and send a round's answers
 export const interview = {

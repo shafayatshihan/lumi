@@ -151,6 +151,38 @@
 .ed-th.on .ed-th-pic{outline-color:var(--accent)}
 .ed-th.on::before{content:'';position:absolute;left:-14px;top:50%;width:6px;height:28px;margin-top:-14px;border-radius:4px;background:var(--accent)}
 .ed-th-ghost{pointer-events:none}
+/* N2: a slide the plan has but the deck has not reached yet - shown in its place, plainly not ready */
+.ed-th.is-todo{opacity:.42;cursor:default}
+.ed-th.is-todo:hover .ed-th-pic{transform:none}
+
+/* N3: the preview watchdog. a spinner is never the last word - after a while it says so and offers the one useful action */
+.ed-veil-retry{margin-left:10px;padding:5px 14px;border:0;border-radius:999px;background:var(--btn-primary, #0061EF);color:#fff;font-size:14px;cursor:pointer}
+.ed-veil-retry:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+/* N4: change this slide's picture (2D <-> 3D) and make the slide again */
+.ed-pic{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ed-pic[hidden]{display:none !important}
+/* W-01: remove the slide you are looking at, once it is built (an unbuilt one goes from "coming up") */
+.ed-rem{color:var(--rose)}
+.ed-rem[hidden]{display:none !important}
+.ed-picpop{width:470px;bottom:12px;padding:16px}
+.ed-picpop-h{font-family:var(--head);font-weight:900;font-size:17px;margin-bottom:10px}
+.ed-picopts{display:flex;flex-direction:column;gap:6px;max-height:238px;overflow-y:auto}
+.ed-picpop-body{display:flex;flex-direction:column;gap:6px}
+.ed-picopt{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:7px 12px;border:0;border-radius:14px;background:var(--white);
+  text-align:left;cursor:pointer}
+.ed-picopt.on{background:var(--btn-primary, #0061EF);color:#fff}
+.ed-picopt:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.ed-picopt-t{font-size:15px;font-family:var(--head);font-weight:900}
+.ed-picopt-now{margin-left:8px;font-size:12px;font-family:var(--body);font-weight:400;opacity:.7}
+.ed-picopt-w{font-size:14px;color:var(--mute)}
+.ed-picopt.on .ed-picopt-w{color:rgba(255,255,255,.85)}
+.ed-picpop-note{margin:10px 2px 0;font-size:14px;line-height:1.35;color:var(--mute)}
+.ed-picpop-row{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.ed-picpop-x{padding:7px 14px;border:0;border-radius:999px;background:transparent;color:var(--mute);font-size:14px;cursor:pointer}
+.ed-picpop-go{padding:7px 16px;border:0;border-radius:999px;background:var(--btn-primary, #0061EF);color:#fff;font-size:14px;cursor:pointer}
+.ed-picpop-go:disabled{opacity:.45;cursor:default}
+.ed-picpop-x:focus-visible,.ed-picpop-go:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 
 .ed-preview{position:absolute;left:316px;top:100px;width:810px;height:456px;border-radius:20px;overflow:hidden;background:var(--white);
   outline:3px solid transparent;outline-offset:3px;transition:outline-color .3s}
