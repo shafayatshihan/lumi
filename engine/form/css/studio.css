@@ -137,11 +137,18 @@
 .ed-strip-pg{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:22px;padding:0 8px;border-radius:100px;background:var(--pill);font-size:14px}
 .ed-strip-pg:empty{display:none}
 .ed-strip-top .pg{margin-left:auto}
-.ed-strip-list{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;padding-top:4px}
+/* N1: the list had no overflow rule at all, so a deck with more slides than fit spilled out of the stage and a wheel
+   over it did nothing. It scrolls now: the wheel moves it, overscroll-behavior keeps that wheel off the page (the
+   stage must never scroll), and the two chevrons stay as the page-at-a-time jump the keyboard and the mouse share. */
+.ed-strip-list{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;padding-top:4px;
+  overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:var(--lav-deep) transparent}
+.ed-strip-list::-webkit-scrollbar{width:6px}
+.ed-strip-list::-webkit-scrollbar-thumb{border-radius:6px;background:var(--lav-deep)}
+.ed-strip-list::-webkit-scrollbar-track{background:transparent}
 .ed-strip-bot{flex:none;height:40px;display:flex;justify-content:flex-end;align-items:center}
 .ed-strip .pg{width:32px;height:32px}
 .ed-strip .pg svg{width:18px;height:18px}
-.ed-th{position:relative;flex:none;display:flex;align-items:center;gap:0;width:190px;height:99px;animation:wsIn .4s var(--ease) both}
+.ed-th{position:relative;flex:none;display:flex;align-items:center;gap:0;width:100%;height:99px;animation:wsIn .4s var(--ease) both}
 .ed-th-n{position:absolute;left:0;top:4px;width:14px;font-size:14px;color:var(--mute);text-align:left;font-variant-numeric:tabular-nums}
 .ed-th.on .ed-th-n{color:var(--ink)}
 .ed-th-pic{position:relative;margin-left:auto;width:170px;height:96px;border-radius:12px;overflow:hidden;background:var(--fur1);outline:3px solid transparent;outline-offset:2px;
@@ -149,7 +156,7 @@
 .ed-th-pic img{width:100%;height:100%;object-fit:cover;display:block}
 .ed-th:hover .ed-th-pic{transform:translateX(3px)}
 .ed-th.on .ed-th-pic{outline-color:var(--accent)}
-.ed-th.on::before{content:'';position:absolute;left:-14px;top:50%;width:6px;height:28px;margin-top:-14px;border-radius:4px;background:var(--accent)}
+.ed-th.on::before{content:'';position:absolute;left:1px;top:50%;width:6px;height:28px;margin-top:-14px;border-radius:4px;background:var(--accent)}
 .ed-th-ghost{pointer-events:none}
 /* N2: a slide the plan has but the deck has not reached yet - shown in its place, plainly not ready */
 .ed-th.is-todo{opacity:.42;cursor:default}
@@ -320,6 +327,14 @@
 .ch-card.is-locked .ch-foot{display:none}
 .ch-card.is-locked .ch-opt:not(.on){opacity:.45}
 .ch-card.is-locked{gap:8px}
+
+/* the way out of the fullscreen window (shell.js). It sits in the screen corner, not on the stage, and it only
+   exists while the window really has no title bar - a maximized or normal window keeps its own X. */
+.sh-exit-wrap{position:fixed;right:12px;top:10px;z-index:70}
+.sh-exit-wrap[hidden]{display:none}
+.sh-exit{height:30px;padding:0 14px;border-radius:100px;background:rgba(255,255,255,.55);color:var(--mute);font-size:14px;
+  box-shadow:var(--sh-soft);opacity:.35;transition:opacity .2s,background .2s}
+.sh-exit:hover,.sh-exit:focus-visible{opacity:1;background:#fff;color:var(--ink)}
 
 @media (prefers-reduced-motion:reduce){
   .route *,.usage{animation:none !important;transition-duration:.01ms !important}

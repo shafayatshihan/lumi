@@ -10,6 +10,7 @@ import { announce } from './a11y.js';
 import * as api from './api.js';
 import { mountScene } from './scenes/index.js';
 import { initUsage } from './usage.js';
+import { mountShellExit } from './shell.js';   // the way out of a fullscreen window: it has no title bar to close
 
 const LS = 'aura-studio-v2';
 const W = 1600, H = 900;
@@ -273,6 +274,7 @@ async function boot() {
   stage.dataset.mode = 'full';
   stage.dataset.route = 'loading';
   usagePill = initUsage($('#usage'));
+  try { mountShellExit(); } catch (e) { console.warn('[aura] the fullscreen exit control is not available.', e); }
   requestAnimationFrame(() => requestAnimationFrame(() => stage.classList.remove('instant')));
   stage.classList.add('ready');
   busy = false;

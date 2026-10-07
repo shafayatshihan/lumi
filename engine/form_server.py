@@ -51,6 +51,10 @@ last_hit = time.time()
 
 FOLDERS = ['Report', 'Images and photos', 'Data (csv, excel, graphs)', 'Logo and university template',
            'Previous year reports', 'Journal papers', 'Anything else']
+# Every deck keeps its own files: "3 - Put your files here/<deck name>/<one of FOLDERS>/...". A deck that does not exist
+# yet (the files come before the interview that makes it) fills DRAFT_FOLDER, renamed to the deck's name when it is made.
+DRAFT_FOLDER = 'New deck'
+DRAFT_TEXT = TEMP / 'draft-text'
 MAX_UPLOAD = 2 * 1024 ** 3
 MAX_JSON = 2_000_000
 CHUNK = 1024 * 1024
@@ -282,14 +286,173 @@ def inside(child, base):
 
 
 # ---------------------------------------------------------------- files and brief
-def list_files():
-    out = []
-    if FILES.exists():
-        rank = lambda p: (FOLDERS.index(p.name) if p.name in FOLDERS else len(FOLDERS), p.name.lower())
-        for sub in sorted((p for p in FILES.iterdir() if p.is_dir()), key=rank):
-            items = [str(f.relative_to(FILES)).replace('\\', '/') for f in sorted(sub.rglob('*'))
-                     if f.is_file() and not f.name.startswith(('~$', '.')) and f.name.lower() != 'desktop.ini']
-            out.append({'folder': sub.name, 'files': items})
+# WHERE A DECK'S FILES ARE. One rule, and the deck's own record is the only ground truth:
+#   rec['filesFolder'] = '<name>'  -> "3 - Put your files here/<name>", its own seven type folders, its own extracted
+#                                     text in .aura/decks/<id>/text/ and its own manifest.json.
+#   rec has no filesFolder         -> made before per-deck folders (0.5.3-0.5.5), when every deck shared the type
+#                                     folders at the root and one corpus in .aura/temp/text. Nothing of theirs moves:
+#                                     those decks keep reading exactly what they always read.
+#   no deck at all (rec is None)   -> the draft folder, for files dropped in before the interview makes the deck.
+# A scan NEVER walks a whole root: at the shared root the other decks' folders sit beside the type folders, and
+# walking them is how one deck's report could end up proving a number on another deck's slide.
+def source_files(root):
+    """Every file of one deck: the seven type folders under `root` and nothing else."""
+    for folder in FOLDERS:
+        d = root / folder
+        if not d.is_dir(): continue
+        for f in sorted(d.rglob('*')):
+            if f.is_file() and not f.name.startswith(('~$', '.')) and f.name.lower() != 'desktop.ini':
+                yield f
+
+
+def files_root(rec=None):
+    """The folder holding this deck's files (see the rule above). Never outside "3 - Put your files here"."""
+    name = (rec or {}).get('filesFolder')
+    if isinstance(name, str) and name:
+        p = FILES / name
+        return p if inside(p, FILES) and p.parent.resolve() == FILES.resolve() else FILES
+    return FILES if rec else draft_dir()
+
+
+def text_root(rec=None):
+    """Where this deck's files are extracted to. One corpus per deck: this is what keeps a number from deck A's report
+    out of the provenance check on deck B's slide."""
+    name = (rec or {}).get('filesFolder')
+    if isinstance(name, str) and name: return work_dir(rec['id']) / 'text'
+    return (TEMP / 'text') if rec else DRAFT_TEXT
+
+
+def deck_arg(deck_id):
+    """The deck a file request is about: its record, None for the draft (no deck yet), or False when the id is unknown."""
+    if not deck_id: return None
+    if not isinstance(deck_id, str): return False
+    return load_deck(deck_id) or False
+
+
+def files_rel(rec=None):
+    """files_root as a project-relative path, for the messages Claude reads."""
+    d = files_root(rec)
+    d.mkdir(parents=True, exist_ok=True)
+    return rel_root(d)
+
+
+def text_rel(rec=None):
+    """text_root as a project-relative path, for the messages Claude reads."""
+    d = text_root(rec)
+    d.mkdir(parents=True, exist_ok=True)
+    return rel_root(d)
+
+
+def folder_name(title):
+    """A deck's folder name: its title, safe on Windows and short enough to read."""
+    name = clean_name(' '.join(str(title or '').split()))
+    name = name.rstrip(' .')[:60].rstrip(' .')
+    return name or DRAFT_FOLDER
+
+
+def claimed_folders():
+    """The folder names decks already own, so a new one never takes a name in use."""
+    out = set()
+    for f in (DECKS.glob('*.json') if DECKS.is_dir() else []):
+        try: r = json.loads(f.read_text(encoding='utf-8'))
+        except (OSError, ValueError): continue
+        n = r.get('filesFolder') if isinstance(r, dict) else None
+        if isinstance(n, str) and n: out.add(n.lower())
+    return out
+
+
+def free_folder(base, claimed=None):
+    """`base`, or "base (2)", "base (3)"... when that name is taken by another deck or already on disk."""
+    claimed = claimed_folders() if claimed is None else claimed
+    for k in range(1, 500):
+        name = base if k == 1 else f'{base} ({k})'
+        if name.lower() not in claimed and not (FILES / name).exists(): return name
+    return f'{base} ({uuid.uuid4().hex[:6]})'
+
+
+def draft_dir():
+    """Where files go before the deck exists. The plain "New deck" unless a deck already owns that folder."""
+    claimed = claimed_folders()
+    if DRAFT_FOLDER.lower() not in claimed: return FILES / DRAFT_FOLDER
+    for k in range(2, 500):
+        name = f'{DRAFT_FOLDER} ({k})'
+        if name.lower() not in claimed: return FILES / name
+    return FILES / f'{DRAFT_FOLDER} ({uuid.uuid4().hex[:6]})'
+
+
+def adopt_draft(rec):
+    """Give a brand-new deck the files that were dropped in before it existed: rename the draft folder to the deck's
+    name and move the extracted text into the deck's own folder. Nothing is copied and nothing is left behind."""
+    src = draft_dir()
+    want = free_folder(folder_name(rec.get('title')))
+    dest = FILES / want
+    old = os.path.normcase(str(src.absolute()))
+    moved = False
+    if src.is_dir():
+        with EXTRACT_LOCK:                      # never rename out from under a running extraction
+            for k in range(6):
+                try:
+                    os.rename(src, dest); moved = True; break
+                except OSError:
+                    if k == 5: break
+                    time.sleep(0.2)
+        if not moved:                           # a file is open: adopt the draft folder where it stands
+            want, dest = src.name, src
+            log('draft folder could not be renamed; adopted in place', src.name)
+            moved = True
+    else:
+        dest.mkdir(parents=True, exist_ok=True)
+    if moved:
+        new = os.path.normcase(str(dest.absolute()))
+        if old != new:
+            # the "you may remove what you added" list holds absolute paths: move them with the folder
+            for key in [k for k in SESSION_UPLOADS if k.startswith(old + os.sep)]:
+                SESSION_UPLOADS.discard(key); SESSION_UPLOADS.add(new + key[len(old):])
+            _save_uploads()
+    rec = update_deck(rec['id'], filesFolder=want) or rec
+    try:                                        # the draft's extracted text is this deck's corpus now
+        if DRAFT_TEXT.is_dir():
+            with EXTRACT_LOCK:
+                target = text_root(rec)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists(): shutil.rmtree(target, ignore_errors=True)
+                shutil.move(str(DRAFT_TEXT), str(target))
+    except OSError as e:
+        log('draft text could not move', repr(e))
+    return rec
+
+
+def rename_files_folder(rec):
+    """Keep the folder name reading like the deck's name after a rename. Only ever a rename inside "3 - Put your files
+    here": the files never leave, and a deck from before per-deck folders is left alone."""
+    cur = rec.get('filesFolder')
+    if not isinstance(cur, str) or not cur: return rec
+    want = folder_name(rec.get('title'))
+    if want.lower() == cur.lower(): return rec
+    want = free_folder(want, claimed_folders() - {cur.lower()})
+    src, dest = FILES / cur, FILES / want
+    old = os.path.normcase(str(src.absolute()))
+    if src.is_dir():
+        with EXTRACT_LOCK:
+            try:
+                os.rename(src, dest)
+            except OSError as e:
+                log('deck folder not renamed', cur, repr(e)); return rec
+        new = os.path.normcase(str(dest.absolute()))
+        for key in [k for k in SESSION_UPLOADS if k.startswith(old + os.sep)]:
+            SESSION_UPLOADS.discard(key); SESSION_UPLOADS.add(new + key[len(old):])
+        _save_uploads()
+    return update_deck(rec['id'], filesFolder=want) or rec
+
+
+def list_files(rec=None):
+    out, root = [], files_root(rec)
+    by_folder = {}
+    for f in source_files(root):
+        rel = f.relative_to(root).as_posix()
+        by_folder.setdefault(rel.split('/')[0], []).append(rel)
+    for folder in FOLDERS:
+        if (root / folder).is_dir(): out.append({'folder': folder, 'files': by_folder.get(folder, [])})
     return out
 
 
@@ -673,6 +836,7 @@ DECK_LOCK = threading.RLock()
 # session": with one shared conversation the interview opens the session long before planning, so the planning step must
 # resume on sessionId but still send the FULL briefing until plannedAt exists (otherwise the briefing is silently lost).
 DECK_FIELDS = ('id', 'title', 'file', 'look', 'quality', 'createdAt', 'updatedAt', 'sessionId', 'brief', 'build', 'flow',
+               'filesFolder',
                'interviewState', 'interviewError', 'planState', 'plannedAt', 'buildRest', 'buildTarget', 'archived', 'caps')
 
 # What a deck is PINNED to when it is created (batch 6 spec section 0, item 8). v0.5.2 is public, so other people's
@@ -1370,7 +1534,7 @@ def recovery_message(rec, message, handoff=False):
             '[context-recovery] Your earlier conversation about this deck was lost. ')
     lines = [head + 'Start from what is on disk, do not ask the person to repeat anything. The plan is the truth: read `' +
              plan_rel(rec['id']) + '` first, then follow `.claude/skills/aura-slide/SKILL.md` and `building.md`. The brief is '
-             '`.aura/brief/brief.md`; the user files are already extracted to `.aura/temp/text/` (read only what this step needs).',
+             '`.aura/brief/brief.md`; the files of this deck are already extracted to `' + text_rel(rec) + '/` (read only what this step needs).',
              f'Look: {rec.get("look") or "Claude chooses"}.',
              'Slides already built (leave them alone unless asked): ' + ('; '.join(built) if built else 'none') + '.',
              'Slides still to build: ' + ('; '.join(todo) if todo else 'none') + '.',
@@ -1405,7 +1569,7 @@ def slide_conv_message(rec, sid, message, why='new'):
              'has its own conversation, and the whole deck has one more: leave the other slides alone unless this message asks for '
              'them (and then say which you changed). Start from what is on disk; never ask the person to repeat anything. Follow '
              '`.claude/skills/aura-slide/SKILL.md` and `building.md`. The plan is `' + plan_rel(rec['id']) + '`, the brief is '
-             '`.aura/brief/brief.md`, the user files are already extracted to `.aura/temp/text/` (read only what you need).',
+             '`.aura/brief/brief.md`, the files of this deck are already extracted to `' + text_rel(rec) + '/` (read only what you need).',
              f'Look: {rec.get("look") or "Claude chooses"}. Quality: {rec.get("quality") or "balanced"}.',
              'The plan in short:', plan_digest(rec),
              'How the slides already built were made (match their style):', build_notes(rec, sid)]
@@ -1456,21 +1620,22 @@ BLOCKED_RE = re.compile(r"permission|was blocked|not allowed|requires approval|d
                         r"constrained ?language|file redirection", re.I)
 
 
-def environment_line():
+def environment_line(rec=None):
     """One line at the top of every run: which of the tools the skill relies on exist HERE, so a missing one is read as a fact
-    (L-01 / L-02) and not discovered through eight denied calls."""
+    (L-01 / L-02) and not discovered through eight denied calls. The manifest it names is THIS deck's, never the library's."""
     now = time.time()
     c = ENV_CACHE
     if now - c['at'] > 60:
         edge = shutil.which('msedge') or any(Path(x).is_file() for x in (
             r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe', r'C:\Program Files\Microsoft\Edge\Application\msedge.exe'))
         c.update(at=now, py=VENV_PY.is_file(), node=bool(node_exe()), edge=bool(edge))
-    man = read_manifest().get('files', {})
+    man = read_manifest(rec).get('files', {})
     n_text = sum(1 for v in man.values() if v.get('text'))
+    tdir = text_rel(rec)
     bad = [n for n, ok in (('private python .aura/venv/Scripts/python.exe', c['py']), ('node', c['node']), ('Microsoft Edge (for the checks)', c['edge'])) if not ok]
     line = ('[environment] ' + ('MISSING here: ' + ', '.join(bad) + '. Do not try to work around a missing tool: say so once, use the system '
                                '`python` / `node -e` if you must, and tell the person. ' if bad else 'tools ok (private python, node, Edge). ') +
-            f'The user\'s files are already extracted: {n_text} text file(s) listed in `.aura/temp/text/manifest.json` (text + pictures per file); '
+            f'This deck\'s files are already extracted: {n_text} text file(s) listed in `{tdir}/manifest.json` (text + pictures per file); '
             'read those, do not run extract_text.py or open the originals. A refused or blocked command is policy, not a glitch: never retry '
             'quoting variants and never hand it to a helper agent (it has the same policy); change the mechanism once or say what is blocked.')
     return line
@@ -1480,8 +1645,8 @@ ENV_CACHE = {'at': 0.0, 'py': False, 'node': False, 'edge': False}
 EXTRACT_LOCK = threading.Lock()
 
 
-def read_manifest():
-    try: return json.loads((TEMP / 'text' / 'manifest.json').read_text(encoding='utf-8'))
+def read_manifest(rec=None):
+    try: return json.loads((text_root(rec) / 'manifest.json').read_text(encoding='utf-8'))
     except (OSError, ValueError): return {}
 
 
@@ -1489,13 +1654,17 @@ def tools_python():
     return str(VENV_PY) if VENV_PY.is_file() else (sys.executable or shutil.which('python') or shutil.which('py'))
 
 
-def extract_sources(only=None, timeout=300):
-    """L-01: read the user's files into .aura/temp/text/ (text + pictures + manifest.json) on the server, so Claude never needs a tool
-    the sandbox may block and never re-reads a 500 KB .docx. `only` = paths relative to the files folder. Returns True if it ran."""
+def extract_sources(rec=None, only=None, timeout=300):
+    """L-01: read ONE deck's files into its own text folder (text + pictures + manifest.json) on the server, so Claude never needs
+    a tool the sandbox may block and never re-reads a 500 KB .docx. `only` = paths relative to that deck's files folder."""
     py, script = tools_python(), ENGINE / 'tools' / 'extract_text.py'
-    if not py or not script.is_file() or not FILES.is_dir(): return False
-    cmd = [py, str(script), str(FILES), '--out', str(TEMP / 'text')]
-    for o in only or []: cmd += ['--only', o]
+    root = files_root(rec)
+    if not py or not script.is_file() or not root.is_dir(): return False
+    # always an explicit list: at the shared root from before per-deck folders, a bare walk would read the other decks' files too
+    if not only: only = [f.relative_to(root).as_posix() for f in source_files(root)][:300]
+    if not only: return False
+    cmd = [py, str(script), str(root), '--out', str(text_root(rec))]
+    for o in only: cmd += ['--only', o]
     with EXTRACT_LOCK:
         try:
             r = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, timeout=timeout, stdin=subprocess.DEVNULL,
@@ -1506,14 +1675,13 @@ def extract_sources(only=None, timeout=300):
     return r.returncode == 0
 
 
-def stale_sources():
-    """Files in the user's folder that have no up-to-date entry in the manifest."""
-    man = read_manifest().get('files', {})
-    out = []
-    if not FILES.is_dir(): return out
-    for f in FILES.rglob('*'):
-        if not f.is_file() or f.name.startswith(('~$', '.')) or f.name.lower() == 'desktop.ini': continue
-        rel = f.relative_to(FILES).as_posix()
+def stale_sources(rec=None):
+    """Files in this deck's folder that have no up-to-date entry in its manifest."""
+    man = read_manifest(rec).get('files', {})
+    root, out = files_root(rec), []
+    if not root.is_dir(): return out
+    for f in source_files(root):
+        rel = f.relative_to(root).as_posix()
         try: st = f.stat()
         except OSError: continue
         e = man.get(rel)
@@ -1521,15 +1689,15 @@ def stale_sources():
     return out
 
 
-def ensure_extracted():
+def ensure_extracted(rec=None):
     """Before a run that has to read the files: make sure everything is extracted (normally the upload already did it)."""
-    todo = stale_sources()
-    if todo: extract_sources(todo[:200], timeout=150)
+    todo = stale_sources(rec)
+    if todo: extract_sources(rec, todo[:200], timeout=150)
 
 
-def forget_extracted(rel):
+def forget_extracted(rel, rec=None):
     """A removed upload must not stay readable through its old extraction."""
-    t = TEMP / 'text'
+    t = text_root(rec)
     try:
         (t / (rel + '.txt')).unlink(missing_ok=True)
         shutil.rmtree(t / (rel + '.images'), ignore_errors=True)
@@ -1934,7 +2102,7 @@ class Runner:
         # L-01: before Claude starts, never during. Every interview turn counts, resumed or not: files may arrive
         # between two questions, and an interview held against a stale extraction asks about a file that changed.
         if kind == 'interview' or (not resume and kind in (None, 'start', 'plan', 'replan')):
-            ensure_extracted()
+            ensure_extracted(load_deck(deck_id) if deck_id else None)
         with self.lock:
             if self.run or (self.settling and self.settling[1] != threading.get_ident()):
                 return 409, {'ok': False, 'error': 'busy'}
@@ -1972,7 +2140,7 @@ class Runner:
             quality = quality or (rec.get('quality') if rec else quality_of(read_brief()))
             if rec and uses_work_folder(rec) and '[deck-folder ' not in message:
                 message += f"\n\n[deck-folder {work_rel(rec['id'])}]"
-            if not resume and '[environment' not in message: message += '\n\n' + environment_line()
+            if not resume and '[environment' not in message: message += '\n\n' + environment_line(rec)
             args = cmd + ['-p', '--settings', '.claude/settings.json', '--output-format', 'stream-json', '--verbose',
                           '--permission-mode', 'acceptEdits', '--append-system-prompt', web_prompt(kind)] + quality_flags(quality)
             if resume: args += ['--resume', session]
@@ -3851,11 +4019,11 @@ def interview_state(rec):
     return 'ready' if has_brief or (rec.get('planState') or 'none') != 'none' else 'none'
 
 
-def interview_sources():
+def interview_sources(rec=None):
     """The extracted files as [{path, hash}]. The manifest carries no hash, so the hash is sha1(size:mtime): enough to tell a
     changed file from an unchanged one (a deviation from the plan's schema, which assumed a content hash)."""
     out = []
-    for rel, e in sorted((read_manifest().get('files') or {}).items()):
+    for rel, e in sorted((read_manifest(rec).get('files') or {}).items()):
         e = e if isinstance(e, dict) else {}
         out.append({'path': rel, 'hash': hashlib.sha1(f"{e.get('size')}:{e.get('mtime')}".encode('utf-8')).hexdigest()[:12]})
     return out
@@ -3884,9 +4052,10 @@ def interview_rules():
 
 def interview_message(rec, iv, resume, added, answer=None):
     did = rec['id']
-    text_dir = rel_root(TEMP / 'text')
+    text_dir = text_rel(rec)
     lines = [f'[interview] Interview the person about their talk' + (f': "{iv["topic"]}"' if iv.get('topic') else '') + '. '
              f'Their files are already read: the text is in `{text_dir}/` (index: `{text_dir}/manifest.json`). '
+             f'The files of this deck are in `{files_rel(rec)}/`; no other folder of files belongs to this deck. '
              + ('' if resume else 'Read what you need first. ')
              + f'Keep the interview in `{interview_rel(did)}` (you may edit only "conclusions", "identity" and "done"; Lumi owns '
              'the rest, so never remove "answers"). ' + interview_rules()]
@@ -3903,7 +4072,7 @@ def interview_handoff_message(rec, iv, added, answer=None):
     """A fresh conversation for a long interview (section 3): the artifact, the source manifest and the extracted text, never the
     transcript. interview.json holds everything asked and answered, so nothing is lost."""
     did = rec['id']
-    text_dir = rel_root(TEMP / 'text')
+    text_dir = text_rel(rec)
     lines = [f'[interview] You are taking over an interview that is already in progress, in a fresh conversation. Read `{interview_rel(did)}` '
              f'first: it holds every question asked, every answer given, what is concluded so far and what is still open. '
              f'The files are extracted in `{text_dir}/` (index: `{text_dir}/manifest.json`). Continue from there; never repeat a question '
@@ -3918,7 +4087,7 @@ def interview_handoff_message(rec, iv, added, answer=None):
 def interview_launch(rec, topic=None, user_text=None, answer=None):
     did = rec['id']
     work_dir(did).mkdir(parents=True, exist_ok=True)
-    ensure_extracted()
+    ensure_extracted(rec)
     prev_state = interview_state(rec)
     with DECK_LOCK:
         rec = load_deck(did) or rec
@@ -3926,7 +4095,7 @@ def interview_launch(rec, topic=None, user_text=None, answer=None):
         iv = old if old.get('v') else new_interview(rec, topic)
         if topic: iv['topic'] = topic
         known = {x.get('path'): x.get('hash') for x in iv.get('sources') or [] if isinstance(x, dict)}
-        now = interview_sources()
+        now = interview_sources(rec)
         added = [x['path'] for x in now if x['path'] not in known or known[x['path']] != x['hash']] if known else []
         iv['sources'] = now
         iv['round'] = int(iv.get('round') or 0) + 1
@@ -3977,6 +4146,7 @@ def interview_start_new(body):
     work_dir(rec['id']).mkdir(parents=True, exist_ok=True)
     if topic:
         rec = update_deck(rec['id'], title=' '.join(topic.split())[:120]) or rec
+    rec = adopt_draft(rec)          # the files dropped in before this moment are THIS deck's, and nobody else's
     code, res = interview_launch(rec, topic=topic)
     return code, dict(res, deckId=rec['id'])
 
@@ -4114,12 +4284,16 @@ def deck_handoff(rec):
         return False
 
 
-def source_texts(slide):
-    """The already-extracted text files (.aura/temp/text/<file>.txt) of a slide's sources, as project-relative paths."""
-    out = []
+def source_texts(slide, rec=None):
+    """The already-extracted text files of a slide's sources, as project-relative paths. Only ever THIS deck's corpus: a path
+    that points anywhere else is dropped, so one deck can never read another's documents."""
+    out, base = [], text_root(rec)
+    folder = (rec or {}).get('filesFolder')
     for src in slide.get('sources') or []:
-        t = TEMP / 'text' / (str(src).replace(chr(92), '/') + '.txt')
-        if t.is_file() and inside(t, TEMP): out.append(rel_root(t))
+        rel = str(src).replace(chr(92), '/').lstrip('/')
+        if folder and rel.lower().startswith(folder.lower() + '/'): rel = rel[len(folder) + 1:]
+        t = base / (rel + '.txt')
+        if t.is_file() and inside(t, base): out.append(rel_root(t))
     return out
 
 
@@ -4139,7 +4313,7 @@ def build_message(rec, slide, n, total, shell=None):
     slides = plan_slides(rec)
     built = [f'{i}. {s.get("title") or "untitled"}' + (f' - {s["point"]}' if s.get('point') else '')
              for i, s in enumerate(slides, 1) if s.get('built')]
-    texts = source_texts(slide)
+    texts = source_texts(slide, rec)
     lines = [f'[build-slide id={slide["id"]} n={n} of={total}] Build slide {n} of {total} now: "{slide.get("title") or "untitled"}". '
              'Follow `.claude/skills/aura-slide/building.md`: build ONLY this slide, exactly as planned'
              + (' (this first step also sets up the deck shell)' if n == 1 and not shell else '') + '.',
@@ -6431,7 +6605,10 @@ class H(BaseHTTPRequestHandler):
         if path == '/api/ping':
             return self.send(200, {'ok': True, 'app': 'aura-slide', 'api': API_VERSION, 'version': CFG.get('version'),
                                    'running': RUNNER.running})
-        if path == '/api/files': return self.send(200, list_files())
+        if path == '/api/files':
+            rec = deck_arg((q.get('deck') or [''])[0])
+            if rec is False: return self.send(404, {'ok': False, 'error': 'no-deck'})
+            return self.send(200, list_files(rec))
         if path == '/api/brief':
             f = BRIEF / 'brief.json'
             try:
@@ -6606,7 +6783,7 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, {'ok': True, 'savedAt': body['_savedAt']})
         if path == '/api/brief/archive': return self.send(*archive_brief())
         if path == '/api/decks/restore': return self.send(*restore_deck(body.get('binned')))
-        if path == '/api/remove': return self.remove(body.get('path'))
+        if path == '/api/remove': return self.remove(body.get('path'), body.get('deck'))
         if path == '/api/claude/start': return self.claude_start(body)
         if path == '/api/claude/reply':
             text = body.get('text') if isinstance(body.get('text'), str) else ''
@@ -6683,7 +6860,10 @@ class H(BaseHTTPRequestHandler):
         if path == '/api/claude/logout': return self.send(*RUNNER.logout())
         if path == '/api/open-files':
             folder = body.get('folder')
-            target = FILES / folder if folder in FOLDERS else FILES
+            rec = deck_arg(body.get('deck'))
+            if rec is False: return self.send(404, {'ok': False, 'error': 'no-deck'})
+            root = files_root(rec)
+            target = root / folder if folder in FOLDERS else root
             target.mkdir(parents=True, exist_ok=True)
             launch(target)
             return self.send(200, {'ok': True})
@@ -6772,6 +6952,7 @@ class H(BaseHTTPRequestHandler):
                                        'reason': 'Claude is working on this deck right now; change the quality when it is done.'})
             rec = update_deck(m.group(1), **fields)
             if not rec: return self.send(404, {'ok': False, 'error': 'no-deck'})
+            if 'title' in fields: rec = rename_files_folder(rec) or rec
             return self.send(200, {'ok': True, 'deck': deck_view(rec)})
         except (ConnectionError, TimeoutError):
             self.close_connection = True
@@ -6806,6 +6987,10 @@ class H(BaseHTTPRequestHandler):
         if folder not in FOLDERS:
             self.close_connection = True
             return self.send(400, {'ok': False, 'error': 'unknown folder'})
+        rec = deck_arg((q.get('deck') or [''])[0])       # no deck yet: the draft folder, adopted when the deck is made
+        if rec is False:
+            self.close_connection = True
+            return self.send(404, {'ok': False, 'error': 'no-deck'})
         n = self.headers.get('Content-Length')
         if n is None or not n.strip().isdigit():
             self.close_connection = True
@@ -6814,7 +6999,8 @@ class H(BaseHTTPRequestHandler):
         if n > MAX_UPLOAD:
             self.close_connection = True
             return self.send(413, {'ok': False, 'error': 'too large', 'max': MAX_UPLOAD})
-        target_dir = FILES / folder
+        root = files_root(rec)
+        target_dir = root / folder
         target_dir.mkdir(parents=True, exist_ok=True)
         if shutil.disk_usage(target_dir).free < n + 64 * 1024 * 1024:
             self.close_connection = True
@@ -6846,20 +7032,23 @@ class H(BaseHTTPRequestHandler):
             part.unlink(missing_ok=True)
             raise
         SESSION_UPLOADS.add(os.path.normcase(str(dest.resolve()))); _save_uploads()
-        rel = str(dest.relative_to(FILES)).replace('\\', '/')
-        threading.Thread(target=extract_sources, kwargs={'only': [rel]}, daemon=True).start()      # L-01: read it now, once
+        rel = str(dest.relative_to(root)).replace('\\', '/')
+        threading.Thread(target=extract_sources, kwargs={'rec': rec, 'only': [rel]}, daemon=True).start()   # L-01: read it now, once
         return self.send(200, {'ok': True, 'path': rel, 'name': dest.name, 'size': n})
 
-    def remove(self, rel):
+    def remove(self, rel, deck_id=None):
         if not isinstance(rel, str) or not rel or '\x00' in rel:
             return self.send(400, {'ok': False, 'error': 'bad path'})
-        p = FILES / rel
+        rec = deck_arg(deck_id)
+        if rec is False: return self.send(404, {'ok': False, 'error': 'no-deck'})
+        root = files_root(rec)
+        p = root / rel
         key = os.path.normcase(str(p.resolve()))
-        if not inside(p, FILES) or key not in SESSION_UPLOADS:
+        if not inside(p, root) or key not in SESSION_UPLOADS:
             return self.send(403, {'ok': False, 'error': 'only files added through lumi can be removed here'})
         try:
             p.unlink()
-            forget_extracted(rel)
+            forget_extracted(rel, rec)
         except FileNotFoundError:
             pass
         SESSION_UPLOADS.discard(key); _save_uploads()

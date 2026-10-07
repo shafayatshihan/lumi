@@ -71,7 +71,10 @@ if (-not $ping) {
 }
 
 # Open as an app window in Edge (no tabs or address bar) when available, otherwise in the default browser.
+# Fullscreen, not maximized (maximized keeps the title bar and the taskbar). --start-fullscreen, not --kiosk: kiosk
+# takes the ways out away, and nobody may be shut in. F11 gives the window back, Alt+F4 closes it, and the page shows
+# a "close lumi" control while the window has no title bar. installer/Lumi.cs OpenWindow is the same decision.
 $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
           "$env:LOCALAPPDATA\Microsoft\Edge\Application\msedge.exe") | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-if ($edge) { Start-Process -FilePath $edge -ArgumentList @("--app=$url", '--start-maximized') }
+if ($edge) { Start-Process -FilePath $edge -ArgumentList @("--app=$url", '--start-fullscreen') }
 else { Start-Process $url }

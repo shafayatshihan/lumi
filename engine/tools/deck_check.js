@@ -349,11 +349,15 @@ async function analysePixels({ si, plain, normal, bareOnly }) {
       if (s.w !== 1920 || s.h !== 1080) err(n, `slide is ${s.w} x ${s.h}; slides must be exactly 1920 x 1080.`);
     });
     // B-05 / L-05: every number traceable (the user's files, or a provenance entry, or visibly illustrative)
-    const corpus = claims.loadCorpus(auraRoot), prov = claims.loadProvenance(deck, auraRoot);
+    // This deck's own extracted text, beside the interview.json the caller named. A deck from before per-deck folders has
+    // no such folder, and falls back to the shared .aura/temp/text it has always read.
+    const deckText = interviewArg ? path.join(path.dirname(path.isAbsolute(interviewArg) ? interviewArg : path.join(auraRoot || '.', interviewArg)), 'text') : null;
+    const textDir = deckText && fs.existsSync(deckText) ? deckText : null;
+    const corpus = claims.loadCorpus(auraRoot, textDir), prov = claims.loadProvenance(deck, auraRoot);
     let briefJson = null; try { briefJson = JSON.parse(fs.readFileSync(path.join(auraRoot || '', '.aura', 'brief', 'brief.json'), 'utf8')); } catch (e) { /* no brief */ }
     const verdict = claims.judge({ slides: info.slides.map((s, i) => ({ n: i + 1, text: s.claimText, notes: s.notesText, visibleIllustrative: s.illustrative, figures: s.figures })), corpus, prov, brief: briefJson });
     verdict.errors.forEach(x => err(x.slide, x.msg)); verdict.warnings.forEach(x => warn(x.slide, x.msg));
-    if (!corpus.files && verdict.stat.numbers) warn(0, 'no extracted text of your files was found (.aura/temp/text), so every number needed a provenance entry; if you did upload files, they were not read.');
+    if (!corpus.files && verdict.stat.numbers) warn(0, 'no extracted text of this deck\'s files was found, so every number needed a provenance entry; if you did add files, they were not read.');
     // L-15: the title slide carries the names the interview established - and only those. When this deck's
     // interview.json is named, its `identity` wins; otherwise the old brief is read and nothing changes.
     let identityOf = briefJson;

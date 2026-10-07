@@ -231,6 +231,36 @@ const src = Object.fromEntries(jsFiles.map(f => [f, read(f)]));
     /function showTheme/.test(src['plan.js']) && /interviewState === 'ready' && !pay\.lookUser/.test(src['plan.js'])
     && /mountLooks/.test(src['plan.js']));
   check('F-15: the custom pointer has an opt-out and a forced-colors guard', /setNativePointer/.test(src['cursor.js']) && /forced-colors:active/.test(fs.readFileSync(path.join(cssDir, 'cursor.css'), 'utf8')));
+  // The waiting game BORROWS space; it must never take it. The one document-level key listener in lumi-play.js may act
+  // only while the pointer is over the arena AND nothing at all is focused - a text box, a question card or the chat
+  // input keeps space for itself. These are the lines that make that true; losing any of them is the bug.
+  const play = src['lumi-play.js'], studio = fs.readFileSync(path.join(cssDir, 'studio.css'), 'utf8');
+  check('PLAY: the game reads space only when nothing else holds the keyboard',
+    /const nothingFocused = /.test(play) && /if \(!nothingFocused\(\)\) return;/.test(play)
+    && /if \(!running \|\| hidden \|\| !inside \|\| focused\) return;/.test(play)
+    && /if \(isTyping\(\)\) e\.preventDefault\(\);/.test(play));
+  check('PLAY: the loop runs only while on screen, focused and engaged, and stops the moment it may not',
+    /alive && running && !hidden && !paused && engaged\(\) && onScreen && !document\.hidden && document\.hasFocus\(\)/.test(play)
+    && /if \(!on && raf\) \{ cancelAnimationFrame\(raf\); raf = 0; \}/.test(play));
+  check('PLAY: the game is named for what it is, not after the product, and its controls are one word',
+    /flappy/i.test(play) && !/lumi/i.test((/'aria-label': '([^']*)'/.exec(play.slice(play.indexOf("class: 'pl-arena'"))) || [])[1] || 'lumi')
+    && /\}, 'pause'\)/.test(play) && /paused \? 'resume' : 'pause'/.test(play));
+  check('PLAY: the arena grows to the lower half of the stage, and gives it back',
+    /\.bd-playhost\.is-big\{/.test(fs.readFileSync(path.join(cssDir, 'theme.css'), 'utf8'))
+    && /setBig\(false\)/.test(play) && /host\.classList\.toggle\('is-big', big\)/.test(play));
+  // N1: the slide list had no overflow rule at all, so a long deck spilled out of the stage.
+  check('N1: the slide list has an overflow rule and keeps its wheel off the page',
+    /\.ed-strip-list\{[^}]*overflow-y:auto/.test(studio.replace(/\s*\n\s*/g, '')) && /overscroll-behavior:contain/.test(studio));
+  // Lumi opens fullscreen, which has no title bar: the page must carry the way out, and kiosk must stay out of it.
+  check('the app opens fullscreen in both launch paths, never kiosk, and the page shows the way out', (() => {
+    // the two launch LINES, not the prose around them (the comments name --kiosk to say it is not used)
+    const cs = (/string args = "--app=.*/.exec(fs.readFileSync(path.join(jsDir, '..', '..', '..', 'installer', 'Lumi.cs'), 'utf8')) || [''])[0];
+    const ps = (/Start-Process -FilePath \$edge .*/.exec(fs.readFileSync(path.join(jsDir, '..', '..', 'form.ps1'), 'utf8')) || [''])[0];
+    return /--start-fullscreen/.test(cs) && /--start-fullscreen/.test(ps)
+      && !/--start-maximized|--kiosk/.test(cs + ps)
+      && /mountShellExit/.test(src['app.js']) && /window\.close\(\)/.test(src['shell.js'])
+      && /\.sh-exit\{/.test(studio);
+  })());
 }
 // the font floor (F-01, decided): nothing under 12 px; 12 px only for micro-labels (a short, named allow-list); everything you read is 14+
 {

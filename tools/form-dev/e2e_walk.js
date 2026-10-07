@@ -189,6 +189,35 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     await page.waitForFunction(() => window.__aura.route === 'build', null, { timeout: 30000 });
     await sleep(2500); await shot('build-running'); R.buildScroll = await scrolls();
     R.homeEnabledWhileRunning = await page.evaluate(() => !document.querySelector('.ed-home').disabled);
+    // ---- the waiting game (lumi-play.js): a flappy game beside the REAL current step, while claude works.
+    // What matters: it is named generically, space flaps it only when it owns the keyboard, the arena grows to the
+    // lower half of the stage while you play and shrinks when you pause, and the step beside it is the run's own step.
+    R.game = await page.evaluate(() => {
+      const a = document.querySelector('.pl-arena'), host = document.querySelector('.bd-playhost');
+      if (!a || !host) return { missing: true };
+      const r = a.getBoundingClientRect();
+      return { label: a.getAttribute('aria-label') || '', w: Math.round(r.width), h: Math.round(r.height),
+        focusable: a.tabIndex >= 0, step: (document.querySelector('.pl-step-h') || {}).textContent || '',
+        pauseHidden: !!(document.querySelector('.pl-pause') || {}).hidden };
+    });
+    // space while the chat box has the caret must go to the chat box, never to the game. The box is only open while
+    // claude is taking messages, so the check records whether it was - and either way a space sent with the pointer
+    // over the arena but a control focused must not start the game.
+    const chatOn = await page.locator('.ws-input').isEnabled().catch(() => false);
+    if (chatOn) { await page.click('.ws-input', { timeout: 5000 }).catch(() => {}); await page.keyboard.press('Space'); await sleep(250); }
+    R.gameKeySafe = await page.evaluate(() => {
+      const host = document.querySelector('.bd-playhost'), a = document.querySelector('.pl-arena');
+      const typed = (document.querySelector('.ws-input') || {}).value || '';
+      a.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));     // the pointer is over the game ...
+      const home = document.querySelector('.ed-home'); home.focus();            // ... but a control holds the keyboard
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+      const hovered = host.classList.contains('is-big');
+      a.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
+      home.blur();
+      return { chatOn: true, typed, big: host.classList.contains('is-big'), hoveredButFocusedElsewhere: hovered };
+    });
+    R.gameKeySafe.chatOn = chatOn;
+    await page.fill('.ws-input', '').catch(() => {});
     // W-01: edit the unbuilt slide 3 (coming up) while slide 1 is being built
     await page.click('.bd-up-row >> nth=-1');
     await page.waitForSelector('.bd-card'); await sleep(500); await shot('build-coming-up-edit');
@@ -262,9 +291,26 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     await dlg('stop');
     await page.waitForFunction(() => { const b = document.querySelector('.bd-main'); return b && !b.disabled; }, null, { timeout: 30000 }).catch(() => {});
     R.stopResumeS = +((Date.now() - stoppedAt) / 1000).toFixed(1);
-    R.afterStop = await page.evaluate(() => ({ main: document.querySelector('.bd-main .lbl').textContent, disabled: document.querySelector('.bd-main').disabled }));
+    R.afterStop = await page.evaluate(() => ({ main: document.querySelector('.bd-main .lbl').textContent, disabled: document.querySelector('.bd-main').disabled,
+      // the game yields the moment the run ends: it goes away and gives the lower half of the stage back
+      gameGone: !!document.querySelector('.pl-play').hidden, gameBig: document.querySelector('.bd-playhost').classList.contains('is-big') }));
     await shot('build-stopped');
     await page.click('.bd-main'); await waitBuilt(); await sleep(1200); await shot('build-all-built');
+    // ---- the slide list on the left: it must never spill out of its box, and the wheel over it must navigate
+    // (the owner's 13-slide deck showed a chevron and a wheel that did nothing).
+    const stripState = () => page.evaluate(() => {
+      const list = document.querySelector('.ed-strip-list');
+      const ns = [...list.querySelectorAll('.ed-th')].map(b => b.dataset.n).filter(Boolean);
+      const chev = [...document.querySelectorAll('.ed-strip .pg')].filter(b => !b.hidden).length;
+      return { first: ns[0] || '', last: ns[ns.length - 1] || '', shown: ns.length, chev,
+        spills: list.scrollHeight > list.clientHeight + 2, scrollable: getComputedStyle(list).overflowY };
+    });
+    const s0 = await stripState();
+    await page.hover('.ed-strip-list'); await page.mouse.wheel(0, 260); await sleep(700);
+    const s1 = await stripState();
+    await page.mouse.wheel(0, -260); await sleep(700);
+    const s2 = await stripState();
+    R.strip = { ...s0, pagedDown: s1.first, pagedBack: s2.first, oneScreen: s0.chev === 0 };
     // 0.5.5: a BUILT slide can be removed too, from the slide itself, and it says in a few words that the work goes.
     // Afterwards the counter and the strip beside it must agree - both of them now read the one plan and nothing else.
     const planCount = () => page.evaluate(async () => {
@@ -366,6 +412,24 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
       && new RegExp(`\\b${R.builtAfter}\\b`).test(R.builtCounters.say), JSON.stringify(R.builtCounters));
     ok("claude's questions lock the build and take focus", R.locked === true && R.popFocus === true);
     ok('a question card is never a dead end (an answer chosen, nothing to press, no reason)', /^ok/.test(R.deadEnd || ''));
+    // ---- the waiting game. It exists because a render can take 45 minutes; what it must never do is get in the way.
+    ok('the waiting game shows with the render step while claude works',
+      R.game && !R.game.missing && R.game.step.length > 0 && R.game.w > 0 && R.game.h > 0
+      && R.game.focusable === true && R.game.pauseHidden === true, JSON.stringify(R.game));
+    ok('the game is named for what it is, not after the product',
+      R.game && /flappy/i.test(R.game.label) && !/\blumi\b/i.test(R.game.label), R.game && R.game.label);
+    ok('space never reaches the game while anything else holds the keyboard',
+      R.gameKeySafe && R.gameKeySafe.big === false && R.gameKeySafe.hoveredButFocusedElsewhere === false
+      && (!R.gameKeySafe.chatOn || R.gameKeySafe.typed === ' '), JSON.stringify(R.gameKeySafe));
+    // (space / pause / the arena growing are driven in e2e_blender.js, where a full render gives a long,
+    //  deterministic wait to play through; a slide build here can finish in a second.)
+    ok('the game yields the moment the run ends', R.afterStop.gameGone === true && R.afterStop.gameBig === false);
+    // ---- the slide list: a 13-slide deck must be navigable, and the list must stay inside its box
+    ok('the slide list never spills out of its box', R.strip && R.strip.spills === false && R.strip.scrollable !== 'visible',
+      JSON.stringify(R.strip));
+    ok('a wheel over the slide list navigates it (or there is only one screen of slides)',
+      R.strip && (R.strip.oneScreen || (R.strip.pagedDown !== R.strip.first && R.strip.pagedBack === R.strip.first)),
+      JSON.stringify(R.strip));
     ok('stop leaves a buildable deck', R.afterStop.main === 'make next slide' && R.afterStop.disabled === false);
     ok('stop hands the build back within one poll (under 30 s)', R.stopResumeS < 30);
     ok('rename from the library (W-02)', R.renamed.includes('Renamed from the library'));

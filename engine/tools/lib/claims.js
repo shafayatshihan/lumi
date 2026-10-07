@@ -48,10 +48,13 @@ function readTree(dir, out = []) {
   return out;
 }
 
-// the user's own words and numbers: the extracted text of their files, and the brief
-function loadCorpus(auraRoot) {
+// the user's own words and numbers: the extracted text of their files, and the brief.
+// textDir is THIS deck's own extracted text (.aura/decks/<id>/text). It matters: with one corpus for the whole library a
+// number from another deck's report traces here, the check passes, and nobody learns the number is in no source of THIS
+// deck. Without it, the shared .aura/temp/text of a deck made before per-deck folders, which is what those decks have.
+function loadCorpus(auraRoot, textDir) {
   if (!auraRoot) return { text: '', files: 0 };
-  const files = readTree(path.join(auraRoot, '.aura', 'temp', 'text'));
+  const files = readTree(textDir || path.join(auraRoot, '.aura', 'temp', 'text'));
   let text = '';
   for (const f of files) { try { text += '\n' + fs.readFileSync(f, 'utf8'); } catch (e) { /* skip */ } }
   for (const f of ['brief.md']) { try { text += '\n' + fs.readFileSync(path.join(auraRoot, '.aura', 'brief', f), 'utf8'); } catch (e) { /* none */ } }

@@ -148,9 +148,41 @@ async function until(fn, ms = 60000, every = 250) { const t0 = Date.now(); let v
     c = await waitCard(c => c.mode === 'bar' && /rendering slide 1/.test(c.bar), 20000);
     check('build: approving starts the full render: a slim bar with progress, the slide back at full size', !!c, c);
     await until(async () => /rendering slide 1 · [1-9]/.test(((await card()) || {}).bar || ''), 20000, 200);
-    const during = await page.evaluate(() => ({ main: document.querySelector('.bd-main').disabled, play: !!document.querySelector('.pl-play:not([hidden])'), say: (document.querySelector('.pl-step-h') || {}).textContent }));
-    check('build: while it renders: no next slide, the waiting game shows with the render step', during.main && during.play && /rendering slide 1/.test(during.say || ''), during);
+    // the waiting game is the flappy one now (lumi-play.js): the arena with the pause control, beside the real step
+    const during = await page.evaluate(() => ({ main: document.querySelector('.bd-main').disabled, play: !!document.querySelector('.pl-play:not([hidden])'),
+      arena: !!document.querySelector('.pl-arena'), label: (document.querySelector('.pl-arena') || {}).ariaLabel || ((document.querySelector('.pl-arena') || { getAttribute: () => '' }).getAttribute('aria-label') || ''),
+      say: (document.querySelector('.pl-step-h') || {}).textContent }));
+    check('build: while it renders: no next slide, the flappy waiting game shows with the render step',
+      during.main && during.play && during.arena && /flappy/i.test(during.label || '') && /rendering slide 1/.test(during.say || ''), during);
     check('build: no page scroll while rendering', await noScroll());
+    // A full render is the long wait the game exists for (the owner's real deck took 45 minutes), so this is where it
+    // is played: space flaps it once it holds the keyboard, the arena grows to the lower half of the stage, and the
+    // pause control shrinks it back. A slide build in e2e_walk can finish in a second, which is too short to drive.
+    const g0 = await page.evaluate(() => {
+      const a = document.querySelector('.pl-arena');
+      return { h: Math.round(a.getBoundingClientRect().height), tab: a.tabIndex };
+    });
+    await page.focus('.pl-arena');
+    await page.keyboard.press('Space'); await sleep(200); await page.keyboard.press('Space'); await sleep(700);
+    const g1 = await page.evaluate(() => {
+      const a = document.querySelector('.pl-arena').getBoundingClientRect(), p = document.querySelector('.pl-pause');
+      return { h: Math.round(a.height), big: document.querySelector('.bd-playhost').classList.contains('is-big'),
+        pause: p && !p.hidden ? p.textContent.trim() : null };
+    });
+    check('build: space plays the game and the arena grows to the lower half of the stage',
+      g0.tab >= 0 && g1.big === true && g1.h > g0.h * 2, { g0, g1 });
+    check('build: the control says "pause", in a word', g1.pause === 'pause', g1);
+    check('build: no page scroll while the game is open', await noScroll());
+    await shot('build-game-playing');
+    await page.click('.pl-pause'); await sleep(700);
+    const g2 = await page.evaluate(() => {
+      const a = document.querySelector('.pl-arena').getBoundingClientRect(), p = document.querySelector('.pl-pause');
+      return { h: Math.round(a.height), big: document.querySelector('.bd-playhost').classList.contains('is-big'),
+        resume: p && !p.hidden ? p.textContent.trim() : null };
+    });
+    check('build: pause shrinks it back and offers "resume"',
+      g2.big === false && g2.resume === 'resume' && g2.h < g1.h, { g1, g2 });
+    await page.evaluate(() => document.querySelector('.pl-arena').blur());
     await shot('build-rendering');
     c = await waitCard(c => c.mode === 'bar' && /studio render ready/.test(c.bar), 60000);
     check('build: rendered -> "studio render ready" and "make next slide" is back', !!c && await page.evaluate(() => !document.querySelector('.bd-main').disabled && /next slide/.test(document.querySelector('.bd-main').textContent)), c);

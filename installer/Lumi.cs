@@ -697,6 +697,11 @@ namespace Lumi
         }
 
         // An app window in Edge (no tabs or address bar) when available, otherwise the default browser.
+        // Fullscreen, not maximized: maximized keeps the title bar and the taskbar, which is not what was asked for.
+        // --start-fullscreen, NOT --kiosk: kiosk exists to take the ways out away (it suppresses the window controls
+        // and the F11 toggle), and a person must never be shut in. With --start-fullscreen, F11 gives the window back,
+        // Alt+F4 closes it, and the page shows a "close lumi" control for as long as the window has no title bar
+        // (engine/form/js/shell.js). engine/form.ps1 is the same decision for the dev launch: keep the two in step.
         public static void OpenWindow(string url)
         {
             string[] edges = {
@@ -706,7 +711,7 @@ namespace Lumi
             foreach (string e in edges)
             {
                 if (!File.Exists(e)) continue;
-                string args = "--app=" + url + " --start-maximized";
+                string args = "--app=" + url + " --start-fullscreen";
                 string profile = Program.Env("AURA_EDGE_PROFILE");
                 if (profile != null) args += " --user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check";
                 Process p = Process.Start(e, args);
