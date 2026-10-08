@@ -105,6 +105,15 @@ Nothing answers for the person: the app never fills in a default by itself while
    (`looks/_shared/LOOK-BASE.md` plus `looks/<look>/LOOK.md`), `deck-toolkit.md`, data-edit ids on every text, speaker notes for the
    slide (presentation time is only used to pace the notes), then `deck_check.js` until the slide is clean, and look
    at its picture.
+5a. **Look at it, fix it, look again - and keep going until it is right.** A clean `deck_check.js` means nothing
+   broke a rule; it does not mean the slide is good. So render it and LOOK at the picture, with your own eyes, and
+   ask the plain questions a person would: does the subject read instantly, is anything colliding or cut off, is
+   the figure the right size on the stage, is the text legible over it, does it look like the look it claims to be?
+   **Then fix what you saw and look again.** Repeat until a pass finds nothing worth changing, and say in your
+   reply what you changed between passes. One look is not the loop - the loop is look, fix, look.
+   Two failures this exists to stop, both of which shipped: Flat-Pack went out with its title sitting on top of its
+   own figure, and a dead 3D scene went out as a blank picture - in both cases every automated check passed and
+   nobody looked. Stop when the slide is right, not when the checker goes quiet.
 6. **Do not pack in a build step.** After the step Lumi adds missing text ids, packs the build folder into the deck's work
    folder (the `[deck-folder]` line) and runs its own deck check, then shows the result in the chat. Do not make PDF /
    PowerPoint backups either: Lumi's **Finalize** makes the final file, the 3D videos and the PDF later, without you.

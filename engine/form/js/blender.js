@@ -52,7 +52,7 @@ export function iterLine(est) {
 export function engineNotes(kind, est) {
   const b = ENGINE.blender;
   let time = b.fixed;
-  if (est) time = kind === 'still' ? `still ≈ ${fmtDur(est.still)}` : est.baked ? `≈ ${fmtDur(est['1080'])}`
+  if (est) time = kind === 'still' ? `still ≈ ${fmtDur(est.still)}` : est.baked ? `animation ≈ ${fmtDur(est['1080'])}`
     : `720p ≈ ${fmtDur(est['720'])}, 1080p ≈ ${fmtDur(est['1080'])}`;
   return { blender: `${b.note}; ${time}`, threejs: ENGINE.threejs.note };
 }
@@ -304,7 +304,10 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
     const stale = v.final && v.final.stale ? ' the slide keeps the older render until this one is rendered.' : '';
     if (st === 'previewing') {
       H = sp ? 'making a new preview…' : 'making the first preview…';
-      M = `a quick, rough look at the design. ≈ ${fmtDur((est.preview || {}).seconds || 20)}.`;
+      // a baked animation never stops to ask: the final loop follows the rough look on its own, so its time is said now
+      const all = v.baked ? ((est.preview || {}).seconds || 0) + (fullSeconds(est, 'animation') || 0) : 0;
+      M = v.baked && all ? `a rough look, then the final loop, on this computer. ≈ ${fmtDur(all)} in all.`
+        : `a quick, rough look at the design. ≈ ${fmtDur((est.preview || {}).seconds || 20)}.`;
       showProg = true; P = job && job.etaS != null ? fmtLeft(job.etaS) : 'starting…'; showChg = false; goRow.hidden = true;
     } else if (st === 'changing') {
       const last = ((v.changes || []).slice(-1)[0] || {}).text;

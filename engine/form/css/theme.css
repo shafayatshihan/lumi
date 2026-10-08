@@ -75,17 +75,15 @@
 @keyframes ldStripes{to{background-position:40px 0,0 0,0 0}}
 .ld-runner{position:absolute;bottom:8px;left:calc(var(--p) * (100% - 62px));width:62px;height:62px;transition:left .45s var(--ease);
   filter:drop-shadow(0 6px 6px rgba(74,48,146,.25))}
-.ld-runner svg{display:block;overflow:visible}
-.lumi-art .la-body,.lumi-art .la-foot{transform-box:fill-box;transform-origin:50% 100%}
-.ld-runner.is-running .la-body{animation:laBob .32s var(--ease-io) infinite alternate}
-.ld-runner.is-running .la-foot.l{animation:laStep .32s var(--ease-io) infinite alternate}
-.ld-runner.is-running .la-foot.r{animation:laStep .32s var(--ease-io) infinite alternate-reverse}
-.ld-runner:not(.is-running) .la-body{animation:laBreathe 2.6s var(--ease-io) infinite}
+/* Lumi is a photograph now, not a drawing (lumi-art.js): one <img class="lumi-art">, no feet, no parts to animate
+   separately. The whole character hops instead of its body hopping over its legs, and the step / tear keyframes
+   that moved parts of the old SVG are gone with the parts. */
+.ld-runner svg,.ld-runner img{display:block;overflow:visible}
+.lumi-art{transform-origin:50% 100%}
+.ld-runner.is-running .lumi-art{animation:laBob .32s var(--ease-io) infinite alternate}
+.ld-runner:not(.is-running) .lumi-art{animation:laBreathe 2.6s var(--ease-io) infinite}
 @keyframes laBob{from{transform:translateY(0) rotate(-3deg)}to{transform:translateY(-5px) rotate(3deg)}}
-@keyframes laStep{from{transform:translate(-2px,0) rotate(-14deg)}to{transform:translate(2px,-3px) rotate(14deg)}}
 @keyframes laBreathe{50%{transform:scale(1.03,.97)}}
-.lumi-art .la-tear{animation:laTear 2.4s var(--ease-io) infinite}
-@keyframes laTear{0%,40%{transform:translateY(0);opacity:1}100%{transform:translateY(7px);opacity:0}}
 .ld-line{margin-top:20px;min-height:26px;font-size:18px;line-height:1.4}
 .ld-details-b{margin-top:8px;color:var(--mute)}
 .ld-list{list-style:none;margin-top:14px;width:400px;display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:22px;background:rgba(255,255,255,.72);
@@ -103,7 +101,7 @@
   background:var(--grain-dk) 0 0/150px 150px,linear-gradient(180deg,#fff,#faf8fe);box-shadow:var(--sh-card)}
 .ld-card.is-in{animation:plUp .45s var(--ease) both}
 .ld-face{display:block;margin:-6px 0 0 -6px}
-.ld-face svg{overflow:visible}
+.ld-face svg,.ld-face img{overflow:visible;display:block}
 .ld-c-t{font-family:var(--head);font-weight:900;font-size:25px;line-height:1.12;letter-spacing:-.015em}
 .ld-c-x{font-size:16px;line-height:1.5;color:rgba(8,9,9,.74)}
 .ld-c-b{margin-top:8px;display:flex;flex-wrap:wrap;gap:10px}
@@ -289,7 +287,7 @@ button.hm-upd:hover{color:var(--ink)}
 .pl-play.is-big .pl-step{flex:none}
 .pl-cv{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
 .pl-bird{position:absolute;left:0;top:0;width:48px;height:48px;pointer-events:none;will-change:transform;filter:drop-shadow(0 5px 5px rgba(74,48,146,.25))}
-.pl-bird svg{display:block;width:100%;height:100%;overflow:visible}
+.pl-bird svg,.pl-bird img{display:block;width:100%;height:100%;overflow:visible}
 .pl-hud{position:absolute;left:0;right:0;top:8px;display:flex;flex-direction:column;align-items:center;gap:1px;font-size:14px;color:var(--mute);pointer-events:none}
 .pl-score{font-family:var(--head);font-weight:900;font-size:26px;color:var(--accent);min-width:22px;text-align:center}
 .pl-play.is-big .pl-score{font-size:46px}

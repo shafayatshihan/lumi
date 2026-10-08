@@ -303,12 +303,15 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     popupHost.append(win); popups.push(win);
     tellAsk();
     // F-06: the question takes the keyboard (first option of the first question), unless the person is typing somewhere;
-    // the options are enabled a moment after the card is shown, so try a few times
+    // the options are enabled only once the page learns the run ended (a poll, often over a second away), so keep trying
+    // until they are - but never pull focus from somewhere the person has moved it to in the meantime
     let tries = 0;
+    const was = document.activeElement;
     const takeFocus = () => {
-      if (!alive || !popups.includes(win) || ++tries > 10) return;
+      if (!alive || !popups.includes(win) || ++tries > 130) return;
       const a = document.activeElement;
       if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+      if (a && a !== was && a !== document.body && !win.contains(a)) return;
       const first = win.querySelector('.ch-q:not([hidden]) .ch-opt:not([disabled])');
       if (first) { try { first.focus({ preventScroll: true }); } catch (e) { /* gone */ } } else setTimeout(takeFocus, 150);
     };

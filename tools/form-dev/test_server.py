@@ -432,6 +432,11 @@ def fake_argv(evs):
     return None
 
 
+def raw_sess(deck_id):
+    """The deck's one conversation id, straight off its record."""
+    return json.loads((AURA / 'decks' / f'{deck_id}.json').read_text(encoding='utf-8')).get('sessionId')
+
+
 def flag(argv, name):
     return argv[argv.index(name) + 1] if argv and name in argv and argv.index(name) + 1 < len(argv) else None
 
@@ -783,8 +788,10 @@ def run_v5_suite():
     ev = events_from(n0)
     argv = fake_argv(ev)
     sc1 = (json.loads((AURA / 'decks' / f'{P}.json').read_text(encoding='utf-8')).get('slideConvs') or {}).get('s1') or {}
-    check('v0.5.2: slide 1 is built in its OWN new conversation (not the planning one), with the deck quality',
-          '--resume' not in argv and sc1.get('sessionId') and sc1['sessionId'] != sessP and
+    # 2026-10-08: one conversation for the whole deck (form_server.ONE_DECK_CONVERSATION). Slide 1 is built by the
+    # Claude that planned the deck, so the plan and the look are already in context and no slide opens its own.
+    check('slide 1 is built in the deck conversation, with the deck quality',
+          flag(argv, '--resume') == sessP and not sc1.get('sessionId') and
           flag(argv, '--model') == 'opus' and flag(argv, '--effort') == 'high', (argv, sc1))
     check('build message is per slide and per plan', any('[build-slide id=' in h and 'n=1 of=' in h and 'deck shell' in h for h in heard(ev)), heard(ev)[:1])
     shells = list((AURA / 'temp' / 'build').glob(f'*-{P[:6]}/index.html'))
@@ -902,8 +909,8 @@ def run_v5_suite():
           '[[aura:built' not in evt2 and jpost(f'/api/decks/{P}/build', {'mode': 'next'})[0] == 409, (pj.get('waiting'), pj.get('built'), evt2[:200]))
     argv2 = fake_argv(ev2)
     own = ((json.loads((AURA / 'decks' / f'{P}.json').read_text(encoding='utf-8')).get('slideConvs') or {}).get(deep) or {}).get('sessionId')
-    check('the answers resume the same conversation (--resume): this slide\'s own (v0.5.2)',
-          flag(argv2, '--resume') and flag(argv2, '--resume') == own, (argv2, own))
+    check('the answers resume the deck conversation (--resume), the one the whole deck is built in',
+          flag(argv2, '--resume') and flag(argv2, '--resume') == raw_sess(P) and not own, (argv2, own))
     time.sleep(1.5)
     check('no default timer answers the question', plan_of(P).get('waiting') and plan_of(P).get('built') == 2)
     jpost('/api/claude/reply', {'deckId': P, 'text': 'q1: Add a rim light'})

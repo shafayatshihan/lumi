@@ -371,7 +371,10 @@ def run(T):
         v = wait_status(T, P, s1, ('preview', 'failed'))
         ev = T.events_from(n0)
         argv = T.fake_argv(ev)
-        check('change resumes slide 1\'s OWN conversation', T.flag(argv, '--resume') == sess and sess, (T.flag(argv, '--resume'), sess))
+        # one conversation per deck (2026-10-08): a Blender change resumes the deck's session, like every other edit
+        deck_sess = json.loads((T.AURA / 'decks' / f'{P}.json').read_text(encoding='utf-8')).get('sessionId')
+        check('change resumes the deck conversation', T.flag(argv, '--resume') == deck_sess and deck_sess,
+              (T.flag(argv, '--resume'), deck_sess))
         heard = ' '.join(T.heard(ev))
         check('...with the [blender-change] message and the user\'s text, told not to render', '[blender-change slide=' + s1 in heard and 'make the casing darker' in heard, heard[:200])
         pv = (v.get('previews') or [{}])[-1]

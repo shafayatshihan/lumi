@@ -107,7 +107,8 @@ async function until(fn, ms = 60000, every = 250) { const t0 = Date.now(); let v
     await page.click('.pl-chips[aria-label="main picture"] .pl-chip.on'); await sleep(500);
     await page.click('.pl-eng[data-eng=blender]'); await sleep(500);
     const n2 = await page.textContent('.pl-eng[data-eng=blender]');
-    check('plan: a turning 3D slide shows the animation estimates at 720p and 1080p', /720p ≈ .+, 1080p ≈ .+/.test(n2), n2);
+    // a deck that bakes renders an animation once (one time, no resolution); an older deck still offers 720p and 1080p
+    check('plan: a turning 3D slide says what its animation costs', /animation ≈ .+|720p ≈ .+, 1080p ≈ .+/.test(n2), n2);
     await sleep(2400);
     const e2 = (await api(`/api/decks/${D}/plan`)).engines[s2];
     check('plan: slide 2 chosen as a studio render animation', e2 && e2.engine === 'blender' && e2.kind === 'animation', e2);
@@ -188,8 +189,48 @@ async function until(fn, ms = 60000, every = 250) { const t0 = Date.now(); let v
     check('build: rendered -> "studio render ready" and "make next slide" is back', !!c && await page.evaluate(() => !document.querySelector('.bd-main').disabled && /next slide/.test(document.querySelector('.bd-main').textContent)), c);
     await sleep(2500); await shot('build-rendered');
 
-    // ================================================================ slide 2: animation, 720/1080, render + cancel, skip for now
+    // ================================================================ slide 2: an animation
+    // A deck that bakes (batch 6 B.9, every new deck) renders it once and on its own: a rough look, then the final loop,
+    // no approval and no resolution. What the person must still get is the cost before it is spent, so the card's
+    // first words are recorded as they appear (the rough look can be over in a second under the fake Blender).
+    await page.evaluate(() => {
+      const w = window.__bake = { said: '' };
+      // the up-front "≈ x in all", or (when the fake rough look is over before slide 2's card is up) the bake's own time left
+      w.t = setInterval(() => {
+        const c = document.querySelector('.bl-card:not([hidden])'); if (!c || w.said) return;
+        const m = c.querySelector('.bl-msg'), b = c.querySelector('.bl-bt');
+        if (m && /in all/.test(m.textContent)) w.said = m.textContent.trim();
+        else if (b && /rendering slide 2 .*left/.test(b.textContent)) w.said = b.textContent.trim();
+      }, 100);
+    });
     await page.click('.bd-main');
+    // whether this slide bakes is the server's call (bl_baked), known before it is built; slide 1's card is still on
+    // screen until slide 2 is done, so everything below waits on slide 2's OWN state, never on whatever card shows
+    const v2 = await view(s2);
+    if (v2 && v2.baked) {
+      const seen = new Set();
+      const busy = await until(async () => { const v = await view(s2); if (v && v.status) seen.add(v.status); return v && /previewing|rendering/.test(v.status || '') ? v : null; }, 120000, 300);
+      if (busy) await shot('build-anim-baking');
+      const done = await until(async () => { const v = await view(s2); if (v && v.status) seen.add(v.status); return v && v.status === 'rendered' ? v : null; }, 180000, 300);
+      const said = await page.evaluate(() => { clearInterval(window.__bake.t); return window.__bake.said; });
+      check('build: a baked animation says how long it takes (up front, or as time left while it renders)', /then the final loop.+≈ .+ in all|rendering slide 2 .*left/.test(said), said);
+      check('build: the final loop renders by itself, with no approval asked', !!done && !seen.has('approved'), [...seen]);
+      c = await waitCard(c => c.mode === 'bar' && /studio render ready/.test(c.bar), 30000);
+      const on2 = await page.evaluate(() => /^slide 2 of/.test(document.querySelector('.ed-pos').textContent));
+      check('build: the baked loop lands in slide 2, with no resolution offered (a bake has one)', !!c && on2 && c.res.length === 0, { c, on2 });
+      await page.waitForFunction(() => { const b = document.querySelector('.bd-main'); return b && !b.disabled && /next slide/.test(b.textContent); }, null, { timeout: 30000 }).catch(() => {});
+      check('build: "make next slide" is back once the loop is in', await page.evaluate(() => !document.querySelector('.bd-main').disabled));
+      await shot('build-anim-rendered');
+      await page.click('.bd-main');
+      await page.waitForFunction(() => { const b = document.querySelector('.bd-main'); return b && !b.disabled && /finalize/.test(b.textContent); }, null, { timeout: 90000 });
+      await sleep(800);
+      await page.click('.bd-main');
+      await page.waitForFunction(() => /all done|didn’t work|isn’t finished/.test((document.querySelector('.fz-h') || {}).textContent || ''), null, { timeout: 240000 });
+      const fh0 = await page.textContent('.fz-h');
+      check('finalize: with every studio render done it finishes', /all done/.test(fh0), fh0);
+      await shot('finalize-done');
+    } else {     // a deck that does not bake: 720/1080, render + cancel, skip for now, then the finalize stop for it
+    await page.evaluate(() => clearInterval(window.__bake.t));
     c = await waitCard(c => c.mode === 'open' && /do you like the design/.test(c.head) && c.img > 0, 90000);
     check('build: slide 2 (animation) offers 720p and 1080p, each with its estimate, 720p first', !!c && c.res.length === 2 && /720p ≈/.test(c.res[0]) && /1080p ≈ .+sharper/.test(c.res[1]), c && c.res);
     const on720 = await page.evaluate(() => document.querySelector('.bl-r.on').textContent);
@@ -254,6 +295,7 @@ async function until(fn, ms = 60000, every = 250) { const t0 = Date.now(); let v
     const fh = await page.textContent('.fz-h');
     check('finalize: with every studio render done it finishes', /all done/.test(fh), fh);
     await shot('finalize-done');
+    }
     await page.evaluate(id => window.__aura.edit(id, 1), D);
     await page.waitForFunction(() => window.__aura.route === 'editor', null, { timeout: 20000 });
     c = await waitCard(c => /studio render ready/.test(c.bar), 20000);

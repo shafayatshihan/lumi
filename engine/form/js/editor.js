@@ -84,7 +84,10 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   // where you are looking when you decide it should go. It says plainly that the work is thrown away, in a few words.
   const remB = h('button', { type: 'button', class: 'ed-act ed-rem', hidden: true, 'data-cursor-label': 'remove' },
     h('span', { html: ICON.bin }), 'remove slide');
-  const nav = h('div', { class: 'ed-nav' }, prevB, posTxt, nextB, slideName, h('span', { class: 'ed-gap' }), picB, build ? remB : null, build ? null : finB, build ? null : presentB, build ? null : folderB);
+  // finalize is offered on the BUILD page too (owner, 2026-10-08: "there is no option for save and export?").
+  // Waiting for the last slide was the old rule, and it meant a person with eight good slides and two they had
+  // not started could not save anything at all. paintBuild() enables it as soon as one slide is built.
+  const nav = h('div', { class: 'ed-nav' }, prevB, posTxt, nextB, slideName, h('span', { class: 'ed-gap' }), picB, build ? remB : null, finB, build ? null : presentB, build ? null : folderB);
   preview.append(picPop);
 
   const tip = h('div', { class: 'ed-tip' }, h('span', { class: 'ed-tip-i', html: SVG.tip }),
@@ -345,7 +348,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
         closeModal();
         const r = await store.removeSlide(s.id, { discard: true });
         if (!alive) return;
-        if (r && r.ok) { sfx('success'); say(`slide ${n} is gone.`); cur = Math.max(1, Math.min(cur, (r.count | 0) || 1)); count = 0; thumbs = []; loadFrame(r.mtime || Date.now()); loadThumbs(); loadDeck(); }
+        if (r && r.ok) { sfx('success'); say(`slide ${n} is gone.`); }     // the strip and preview already followed, in onPlan()
         else { sfx('error'); say(r && r.reason ? r.reason : 'couldn’t remove that slide. try again?', true); }
       }, true)], 'bd-rmdlg');
   });
@@ -499,6 +502,9 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     work.hidden = !now;
     preview.classList.toggle('is-busy', now);
     if (now) closeEdit();
+    // the server says "not running" a moment BEFORE after_run() marks the slide built (its "settling" window), so the read
+    // fired on that edge can still see the old plan. Keep reading quickly for a little while, until the new slide lands.
+    if (build && was && !now) settleUntil = Date.now() + SETTLE_MS;
     if (build) { if (was !== now || poke) { planIdle = 0; loadPlan(); } paintBuild(); paintPlay(); }
   }
   offs.push(on('claude:state', d => { if (!d || (d.deckId && d.deckId !== deckId)) return; syncBusy(!!d.waiting); }));
@@ -549,7 +555,8 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
 
   // ---------------------------------------------------------------- mount
   // ---------------------------------------------------------------- build page
-  let pay = null, planT = 0, ideasWas = false;
+  let pay = null, planT = 0, ideasWas = false, settleUntil = 0;
+  const SETTLE_MS = 10000;
   const UP_PER = 3;
   const planSlides = () => store.slides();                                     // F-11: one guarded way to read the slides
   // EVERY page here re-reads the plan from plan-store.js, and this is the one place that reacts to a new one - a poll, a
@@ -564,13 +571,19 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     if (!build) { paintAll(); return; }
     setClaude({ running: !!r.running, deckId });
     if (before < 0 && r.exists) { loadFrame(r.mtime || Date.now()); loadThumbs(); }
-    else if (before >= 0 && r.built !== before && r.exists) {      // a slide was just finished: show it
-      sfx('done');
-      say(r.built >= r.count ? 'every slide is built.' : `slide ${r.built} is ready.`);
-      cur = Math.max(1, r.built); count = 0; thumbs = [];
-      loadFrame(r.mtime || Date.now()); paintStrip(); loadThumbs(); loadDeck();
+    else if (before >= 0 && r.built !== before && r.exists) {      // a slide was finished (or a built one removed): show it
+      settleUntil = 0;
+      if (r.built > before) {
+        sfx('done');
+        say(r.built >= r.count ? 'every slide is built.' : `slide ${r.built} is ready.`);
+        cur = Math.max(1, r.built);
+      } else cur = Math.max(1, Math.min(cur, r.built));
+      // the built slides are the deck file's slides, in order: the strip knows them now, not after the thumbnails render
+      count = r.built; thumbs = [];
+      loadFrame(r.mtime || Date.now()); paintAll(); loadThumbs(); loadDeck();
       if (blc) blc.setSlide(cur);
     }
+    if (r.waiting) settleUntil = 0;                                // claude asked instead: nothing more is coming
     paintBuild();
     paintPlay();
     if (r.count !== wasCount) paintAll();                          // a slide was added or removed: the strip and "slide n of m" follow at once
@@ -587,7 +600,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     else { loadFails++; if (!pay) paintBuild(); }
     // F-09: while nothing changes the poll slows down (and again in a hidden tab or with the server away); any change resets it
     const hot = isBusy() || (pay && pay.buildRest);
-    planT = setTimeout(loadPlan, loadFails ? pace(3000, loadFails, { max: 10000 }) : hot ? pace(1500, planIdle, { max: 4000 }) : pace(5000, planIdle, { max: 15000, hidden: 8000 }));
+    planT = setTimeout(loadPlan, loadFails ? pace(3000, loadFails, { max: 10000 }) : Date.now() < settleUntil ? 500 : hot ?pace(1500, planIdle, { max: 4000 }) : pace(5000, planIdle, { max: 15000, hidden: 8000 }));
   }
   function paintBuild() {
     if (!build) return;
@@ -600,6 +613,10 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     const allDone = n > 0 && b >= n;
     const slides = planSlides();
     const target = slides.find(s => s.id === pay.buildTarget);
+    // save and export is reachable from the moment there is something worth saving - not only at the last slide
+    finB.disabled = b < 1 || running;
+    finB.lastChild.textContent = allDone ? 'finalize' : 'save and export';
+    finB.title = b < 1 ? 'build a slide first' : allDone ? 'make the final file' : `save and export the ${b} slide${b === 1 ? '' : 's'} built so far`;
     bdMain.querySelector('.lbl').textContent = allDone ? 'i’m happy, finalize' : b === 0 ? 'build deck' : 'make next slide';
     bdMain.classList.toggle('is-final', allDone);
     bdMain.disabled = running || acting || (waiting && !allDone);
@@ -745,7 +762,12 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
 
   // a studio-render slide: its card docks under the shrunk preview ('open') or sits as a slim bar ('bar'); the slide stays visible
   let mediaT = 0;
-  async function mediaChanged() {             // the server embeds the new picture and packs the deck again: show it once the file changed
+  // Wait for the PACKED deck to actually change, then show it. Claude finishing is not the same event: Lumi adds
+  // the missing text ids and packs the build folder AFTER the run ends, so a reload fired the moment Claude says
+  // "done" fetches the file as it was before the change - which is the "I asked for a fix and still see the old
+  // slide" bug. `force` keeps the old single-shot behaviour as a floor: if the file never changes (nothing was
+  // actually rewritten) the preview is still refreshed once at the end, so it can never sit stale either way.
+  async function mediaChanged(force) {
     clearTimeout(mediaT);
     const base = (deck && deck.mtime) || (pay && pay.mtime) || 0;
     for (let i = 0; i < 12 && alive; i++) {
@@ -755,6 +777,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
       const m = r && r.deck && r.deck.mtime;
       if (m && m > base) { deck = { ...(deck || {}), ...r.deck }; loadFrame(m); thumbs = []; paintStrip(); loadThumbs(); if (!build) loadDeck(); return; }
     }
+    if (force && alive) { loadFrame(Date.now()); thumbs = []; paintStrip(); loadThumbs(); if (!build) loadDeck(); }
   }
   blc = mountBlenderCard(blDock, { deckId, build, sfx,
     onLayout: m => { el.classList.toggle('is-bl', m === 'open'); el.classList.toggle('has-blbar', m === 'bar'); },
@@ -780,7 +803,10 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
       if (play) play.setAsking(st === 'open'); },        // the waiting game yields on this tick, not when the observer notices
     hintsOk: () => !build || !!(pay && pay.exists && pay.built >= cur),
     onSlide: n => { if (n && n !== cur) { if (count && n > count) return; go(n); } },
-    onDone: () => { if (!alive) return; say('claude’s changes are in. refreshing the preview.'); loadFrame(Date.now()); thumbs = []; paintStrip(); loadThumbs(); loadDeck(); },
+    // the pack runs after the reply lands, so wait for the file to change rather than reloading straight away
+    // The STRIP and the counter update at once (they read the plan, which is already current); only the PREVIEW
+    // waits, because the packed file it shows is written after the run ends.
+    onDone: () => { if (!alive) return; say('claude’s changes are in. refreshing the preview.'); thumbs = []; paintStrip(); loadThumbs(); loadDeck(); mediaChanged(true); },
   });
 
   if (build) {

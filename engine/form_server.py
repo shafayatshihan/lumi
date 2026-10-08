@@ -2121,6 +2121,15 @@ class Runner:
         too large), handing it the plan and the built slides instead of carrying everything. conv='<slide id>' runs in that
         slide's OWN conversation (v0.5.2): resumed when it has one, else started fresh from slide_conv_message()."""
         self.wait_settled()
+        # ONE CONVERSATION PER DECK (owner, 2026-10-08). v0.5.2 gave every slide its own conversation: cheaper on
+        # tokens (docs/conversation-topology-study.md measured it winning at 4, 14 and 30 slides) but each slide was
+        # built by a Claude that had never seen the others, which is why neighbouring slides drifted apart in wording
+        # and staging and why the look had to be re-read every time. The owner chose coherence over cost. Nulling
+        # `conv` here is the whole switch: every build and every edit now resumes the DECK's session, and the
+        # deck-level hand-off at CTX_RESET (which carries the plan and the built slides) is what keeps it bounded.
+        # The per-slide plumbing below is left intact and simply unused, so this is one line to revert.
+        if ONE_DECK_CONVERSATION:
+            conv = None
         again = {'message': message, 'kind': kind, 'quality': quality, 'meta': meta, 'slide': slide, 'conv': conv} if (resume and deck_id) else None
         # L-01: before Claude starts, never during. Every interview turn counts, resumed or not: files may arrive
         # between two questions, and an interview held against a stale extraction asks about a file that changed.
@@ -4278,6 +4287,7 @@ def step_card(slide_id, n):
     return 'Follow the step card and rules of `.claude/skills/aura-slide/building.md`.'
 
 
+ONE_DECK_CONVERSATION = True      # owner, 2026-10-08: one chat for the whole deck (see RUNNER.launch)
 CTX_RESET = int(os.environ.get('AURA_CTX_RESET') or CFG.get('contextResetTokens') or 150000)
 # v0.5.2: a slide's own conversation already holds ~150k tokens right after its build (fresh start + one built slide, the L-17
 # calibration), so handing it off at CTX_RESET would throw its history away on the first edit. It is handed off only once it has
@@ -4344,6 +4354,13 @@ def build_message(rec, slide, n, total, shell=None):
                    'Read tool (replace {{N}} with the slide number).' if look_spec(rec.get('look')) else '')]
                if shell else []),
              f'This slide\'s plan entry (from `{plan_rel(rec["id"])}`, so you need not open it): {slide_card(slide)}',
+             # the owner's report, 2026-10-08: "lumi doesnt check itself if the figures look good or not". deck_check
+             # only proves no rule was broken, so the step says the looking part out loud rather than leaving it to
+             # building.md 5a, which is easy to skim on a long step.
+             'When the slide is built, RENDER IT AND LOOK AT THE PICTURE before you finish: does the figure read, '
+             'is anything cut off, colliding or too small, is the text legible over it? Fix what you see and look '
+             'again, and keep going until a look finds nothing worth changing. A clean deck_check is not the same '
+             'as a good slide. Say in one line what you changed between looks.',
              f'Look: {rec.get("look") or "Claude chooses"}. Already built (match its style; do not redo it): ' +
              ('; '.join(built) if built else 'nothing yet') + '.',
              ('Source text for this slide is already extracted: ' + ', '.join(f'`{t}`' for t in texts) +

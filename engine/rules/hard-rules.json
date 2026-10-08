@@ -302,5 +302,12 @@
       "720": 14,
       "1080": 30
     }
+  },
+  "pictureMix": {
+    "note": "The picture mix a plan should SUGGEST (owner, 2026-10-08). Shares of the deck's slides, and the opening two slides are always a studio-render animation - the opening is where attention is highest. These are suggestions the person changes per slide on the plan page, never something the checker enforces: a deck with no 3D subject must not grow one to hit a number. Time is deliberately NOT a reason to go lower.",
+    "blenderAnimatedPct": 30,
+    "blenderStillPct": 40,
+    "illustrationPct": 30,
+    "openingBlenderAnimatedSlides": 2
   }
 }

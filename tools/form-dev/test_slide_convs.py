@@ -38,7 +38,56 @@ def step(T, deck_id, path, body):
     return s, j, T.events_from(n0)
 
 
+def run_one_conversation(T):
+    """The contract since 2026-10-08: ONE conversation for the whole deck. form_server.ONE_DECK_CONVERSATION nulls
+    `conv` in RUNNER.launch(), so a build and an edit both resume the deck's session and no slide opens its own.
+    The cost of that choice is context growth, so the deck-level hand-off at CTX_RESET is part of the contract and
+    is checked here too: without it a long deck runs into the wall per-slide conversations used to avoid."""
+    check = T.check
+    import test_batch_c
+    print('\n[one conversation per deck]')
+    P = test_batch_c.make_plan_deck(T, 'One conv deck')
+    deck_sess = raw(T, P).get('sessionId')
+    check('planning made the deck conversation', bool(deck_sess), deck_sess)
+
+    s, j, ev1 = step(T, P, f'/api/decks/{P}/build', {'mode': 'next'})
+    check('build slide 1 RESUMES the deck conversation, it does not open its own',
+          s == 200 and T.flag(T.fake_argv(ev1), '--resume') == deck_sess, (T.fake_argv(ev1), deck_sess))
+    # a slideConvs RECORD can still exist - it carries the slide's summary and any notes - but it must hold no
+    # sessionId, because no slide has a conversation of its own any more.
+    check('...and no slide gets a conversation of its own',
+          not any((v or {}).get('sessionId') for v in convs(T, P).values()), convs(T, P))
+
+    s, j, ev2 = step(T, P, f'/api/decks/{P}/build', {'mode': 'next'})
+    check('build slide 2 resumes the SAME conversation, so it has seen slide 1',
+          T.flag(T.fake_argv(ev2), '--resume') == deck_sess, T.fake_argv(ev2))
+    check('...the deck conversation id never moved', raw(T, P).get('sessionId') == deck_sess)
+
+    s, j, ev3 = step(T, P, '/api/claude/reply', {'deckId': P, 'slide': 1, 'text': 'make the title shorter'})
+    check('an edit of slide 1 resumes the deck conversation too',
+          T.flag(T.fake_argv(ev3), '--resume') == deck_sess, T.fake_argv(ev3))
+    check('...and still no slide has its own conversation',
+          not any((v or {}).get('sessionId') for v in convs(T, P).values()), convs(T, P))
+
+    rec = raw(T, P); rec['ctxTokens'] = 10 ** 9; write_raw(T, P, rec)
+    s, j, ev4 = step(T, P, '/api/claude/reply', {'deckId': P, 'text': 'tighten the wording everywhere'})
+    check('past CTX_RESET the deck conversation hands off to a fresh one instead of resuming',
+          '--resume' not in (T.fake_argv(ev4) or []), T.fake_argv(ev4))
+    check('...and the deck moves to the new conversation id',
+          raw(T, P).get('sessionId') != deck_sess, (raw(T, P).get('sessionId'), deck_sess))
+
+
 def run(T):
+    import form_server as fs
+    if getattr(fs, 'ONE_DECK_CONVERSATION', False):
+        # The per-slide behaviour in run_per_slide() is switched OFF in the product (owner, 2026-10-08). Its checks
+        # are kept rather than deleted: the switch is one line in RUNNER.launch, and these are what would prove the
+        # old path still works if it is ever flipped back.
+        return run_one_conversation(T)
+    return run_per_slide(T)
+
+
+def run_per_slide(T):
     check, jget, jpost = T.check, T.jget, T.jpost
     import test_batch_c
     print('\n[v0.5.2 per-slide conversations]')

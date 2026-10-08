@@ -102,6 +102,23 @@ so get it right first time.
   choose: the LOOK decides (`form_server.LOOK_3D`). In Bold Blue a still 3D figure becomes a Blender render when
   Blender is installed; Flat-Pack never uses Blender - its drawings are orthographic three.js. Set it only when the brief
   clearly asks for one; the person picks it on the page.
+### The picture mix to suggest
+
+Numbers: `engine/rules/hard-rules.json` -> `pictureMix`. They are **suggestions you make**, not a quota the
+checker enforces.
+
+Aim the plan at roughly that split of the deck's slides: a studio-render **animation**, a studio-render **still**,
+and the rest **illustration** (2D, charts, live 3D - whatever the slide actually needs). **Slides 1 and 2 are
+always a studio-render animation**: the opening is where attention is highest, and the deck should start by
+showing what it is about rather than describing it.
+
+Two things not to do with this:
+- **Do not invent a subject to hit a share.** A slide whose point is a number, a quote or a list is not improved
+  by a render. If the deck genuinely has fewer things worth modelling, suggest fewer and say so in the plan.
+- **Do not reduce the mix because rendering takes time.** The owner has said plainly that time is not the
+  constraint here. Suggest the picture the slide deserves; the person sees the estimate on the plan page and
+  decides for themselves.
+
 - `photo`: only suggest it when the user has photos, or when a real photo is clearly the right picture; the build
   asks which photo each time.
 - `chart`: only from the user's data, or textbook / published values with a source; otherwise say "illustrative" in

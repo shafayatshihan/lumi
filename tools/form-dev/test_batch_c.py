@@ -317,10 +317,11 @@ def run_live(T, fs):
     evs = jget('/api/claude/events?since=0')[1]['events']
     hand = [e for e in evs if e.get('code') == 'handoff' and e.get('deck') == P]
     sc = json.loads((T.AURA / 'decks' / f'{P}.json').read_text(encoding='utf-8')).get('slideConvs') or {}
-    # v0.5.2: every slide starts its own conversation, so building slide after slide never grows one past the threshold (the
-    # per-slide hand-off itself is tested in test_slide_convs.py)
-    check('L-17 per slide: each built slide keeps its own conversation size, and none needed a hand-off',
-          all(int((sc.get(k) or {}).get('ctxTokens') or 0) > 0 for k in ('s1', 's2', 's3')) and not hand, ({k: v.get('ctxTokens') for k, v in sc.items()}, len(hand)))
+    # 2026-10-08: one conversation per deck, so there is no per-slide size to keep. What must still hold is that
+    # building three slides in a row does not trip a hand-off: the DECK conversation is handed off at CTX_RESET,
+    # and a three-slide deck is nowhere near it.
+    check('L-17: three slides built in one conversation, and none of them needed a hand-off',
+          not hand and not any((sc.get(k) or {}).get('sessionId') for k in ('s1', 's2', 's3')), (sc, len(hand)))
     # D-01: the PowerPoint route
     s, j = jget(f'/api/decks/{P}/pptx')
     check('D-01: pptx status route answers before any export', s == 200 and j.get('running') is False, (s, j))

@@ -187,6 +187,12 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
 
     // ---- build page
     await page.waitForFunction(() => window.__aura.route === 'build', null, { timeout: 30000 });
+    // the slide being built right now says so. Checked first, while slide 1 is surely still in flight: further down the
+    // walk the fake build has often finished, and then there is no "now" row to press (it failed that way, 0.5.6).
+    await page.waitForSelector('.bd-up-row.is-now', { timeout: 15000 }).catch(() => {});
+    await page.evaluate(() => { const r = document.querySelector('.bd-up-row.is-now'); if (r) r.click(); });
+    await sleep(400); R.targetBlocked = await page.evaluate(() => document.querySelector('.ed-toast').textContent);
+    await shot('build-target-blocked');
     await sleep(2500); await shot('build-running'); R.buildScroll = await scrolls();
     R.homeEnabledWhileRunning = await page.evaluate(() => !document.querySelector('.ed-home').disabled);
     // ---- the waiting game (lumi-play.js): a flappy game beside the REAL current step, while claude works.
@@ -224,19 +230,20 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     await page.fill('.bd-card .pl-title-in', 'edited while building'); await page.keyboard.press('Tab');
     await page.click('.pl-dlg .pl-big:has-text("save")'); await sleep(1500);
     R.comingUpSaved = await page.evaluate(async () => { const id = location.hash; const l = await (await fetch('/api/decks')).json(); const d = l.decks.find(x => x.planCount); const p = await (await fetch('/api/decks/' + d.id + '/plan')).json(); return p.plan.slides.map(s => s.title); });
-    // the slide being built right now says so
-    const rows = await page.locator('.bd-up-row').count();
-    await page.evaluate(() => { const r = [...document.querySelectorAll('.bd-up-row')].find(x => x.classList.contains('is-now')); if (r) r.click(); });
-    await sleep(500); R.targetBlocked = await page.evaluate(() => document.querySelector('.ed-toast').textContent);
-    await shot('build-target-blocked');
     // add a slide from the coming-up header, then remove it again.
     // "coming up" counts every slide that is NOT built yet, so it still counts the one Claude is building right now.
     // Whether slide 1 has finished by this point is a race, so the count is checked RELATIVE to what it was before
     // the add, never against a fixed number (a fixed 3 failed whenever slide 1 was still in flight).
     const upN = async () => +((await page.evaluate(() => document.querySelector('.bd-up-n').textContent)) || 0);
     R.upBefore = await upN();
+    // the strip's total is what the person sees: it must take the new slide from the save's own answer, not a later poll
+    const stripN = () => page.evaluate(() => +((document.querySelector('.ed-strip-pg').textContent.match(/(\d+)$/) || [])[1] || 0));
+    R.stripBeforeAdd = await stripN();
     await page.click('.bd-up-add'); await page.waitForSelector('.bd-card'); await page.fill('.bd-card .pl-title-in', 'a slide added mid build'); await page.keyboard.press('Tab');
-    await page.click('.pl-dlg .pl-big:has-text("save")'); await sleep(1500); await shot('build-slide-added');
+    await page.click('.pl-dlg .pl-big:has-text("save")');
+    await page.waitForFunction(() => document.querySelector('.pl-modal').hidden, null, { timeout: 10000 }).catch(() => {});
+    R.stripAfterAdd = await stripN();
+    await sleep(1500); await shot('build-slide-added');
     R.slidesAfterAdd = await upN();
     // "coming up" only shows the first 3 rows and hides the rest behind "+N more", so membership is read from the plan
     // itself, not from the visible rows (a 4th slide is correctly off-list and that is not a failure).
@@ -279,8 +286,20 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
       if (await nx.count() && await nx.first().isVisible()) await nx.first().click(); else break;
     }
     await shot('build-questions-last');
+    // a finished slide must show at once: in the strip (made, not greyed) and in "slide n of m", within moments of the
+    // run ending - not whenever the next idle poll happens to come round (the owner's "not shown instantly" bug)
+    await page.evaluate(() => {
+      const w = window.__shown = { busy: false, idleAt: 0, shownAt: 0 };
+      w.t = setInterval(() => {
+        const busy = !document.querySelector('.ed-work').hidden, now = performance.now();
+        if (busy) { w.busy = true; w.idleAt = 0; } else if (w.busy && !w.idleAt) w.idleAt = now;
+        const th = document.querySelector('.ed-th[data-n="2"]');
+        if (!w.shownAt && th && !th.classList.contains('is-todo') && /^slide 2 of/.test(document.querySelector('.ed-pos').textContent)) w.shownAt = now;
+      }, 50);
+    });
     await page.click('.ws-pop .ch-send');
     await waitBuilt(); await sleep(1200); await shot('build-slide2-done');
+    R.shownLag = await page.evaluate(() => { const w = window.__shown; clearInterval(w.t); return w.idleAt && w.shownAt ? Math.round(w.shownAt - w.idleAt) : null; });
     // ---- stop test on slide 3
     await page.click('.bd-main'); await page.waitForSelector('.bd-stop:not([hidden])', { timeout: 20000 }); await sleep(1500);
     await page.click('.bd-stop'); await page.waitForSelector('.pl-dlg'); await shot('build-stop-dialog');
@@ -402,6 +421,10 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     ok('add / remove a slide mid-build (W-01)', R.addedListed === true && R.removedGone === true
       && R.slidesAfterAdd <= R.upBefore + 1 && R.slidesAfterAdd >= R.upBefore
       && R.slidesAfterRemove < R.slidesAfterAdd);
+    ok('an added slide is in the strip the moment it is saved', R.stripAfterAdd === R.stripBeforeAdd + 1,
+      `${R.stripBeforeAdd} -> ${R.stripAfterAdd}`);
+    ok('a finished slide shows in the strip and the counter at once (under 2 s after claude stops)',
+      R.shownLag !== null && R.shownLag < 2000, `${R.shownLag} ms`);
     // 0.5.5: the owner's ask. A built slide goes too - with a few words saying its work is thrown away, never a paragraph.
     ok('a built slide can be removed, and says plainly that its work goes (0.5.5)',
       /thrown away/.test(R.rmWords || '') && R.rmWords.trim().split(/\s+/).length <= 10 && R.builtAfter === R.builtBefore - 1);
