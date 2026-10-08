@@ -11,6 +11,11 @@ OUT = REPO / 'release' / 'Lumi-Setup.zip'
 TOP_SKIP = {'tools', 'docs', 'release', 'installer', 'temp', '.git', '.github'}   # developer-only, at the repo top level only
 SKIP_DIRS = {'node_modules', '__pycache__'}                                  # anywhere
 SKIP_FILES = {'.gitignore', '.gitattributes', 'Publish to GitHub.bat', 'preview_sheet.png', 'lumi-preview.png'}
+# A markdown file at the REPO ROOT is a working note unless it is the README. RESUME / FIXLOG / SURVEY /
+# LAUNCH-REVIEW / BACKLOG / HANDOFF were 764 KB of internal notes sitting in every download, next to the
+# setup script, readable by anyone the installer is passed to. Named by rule rather than by list so the next
+# working note added at the root does not ship by default.
+KEEP_ROOT_DOCS = {'README.md'}
 EXE = REPO / 'release' / 'Lumi.exe'
 
 OUT.parent.mkdir(exist_ok=True)
@@ -19,7 +24,8 @@ with zipfile.ZipFile(OUT, 'w', zipfile.ZIP_DEFLATED) as z:
     for p in sorted(REPO.rglob('*')):
         rel = p.relative_to(REPO)
         if (p.is_dir() or rel.parts[0] in TOP_SKIP or rel.parts[0].startswith('aura-dev-')    # test sandboxes, gitignored
-                or SKIP_DIRS & set(rel.parts) or rel.name in SKIP_FILES):
+                or SKIP_DIRS & set(rel.parts) or rel.name in SKIP_FILES
+                or (len(rel.parts) == 1 and rel.suffix.lower() == '.md' and rel.name not in KEEP_ROOT_DOCS)):
             continue
         z.write(p, rel.as_posix()); n += 1
     if EXE.exists():
