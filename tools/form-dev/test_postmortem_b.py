@@ -34,11 +34,11 @@ def quality_suite(check, fs):
     check('Q every named tier is inside the matrix it is offered from',
           all(fs.QUALITY_MODEL[t][0] in fs.QUALITY_MODELS and fs.QUALITY_MODEL[t][1] in fs.QUALITY_EFFORTS for t in fs.QUALITIES))
     # one stored value, two ways to see it
-    check('Q picking a tier sets the pair', fs.quality_pair('fast') == ('sonnet', 'medium')
-          and fs.quality_pair('maximum') == ('opus', 'max'), fs.quality_pair('fast'))
+    check('Q picking a tier sets the pair', fs.quality_pair('just-right') == ('opus', 'medium')
+          and fs.quality_pair('maximum') == ('opus', 'high'), fs.quality_pair('just-right'))
     check('Q setting the pair to a tier\'s combination stores and shows THAT tier, not a second setting',
-          fs.pair_quality('opus', 'medium') == 'balanced' and fs.quality_tier('opus/medium') == 'balanced'
-          and fs.norm_quality('opus/medium') == 'balanced', fs.pair_quality('opus', 'medium'))
+          fs.pair_quality('opus', 'medium') == 'just-right' and fs.quality_tier('opus/medium') == 'just-right'
+          and fs.norm_quality('opus/medium') == 'just-right', fs.pair_quality('opus', 'medium'))
     check('Q a pair no tier covers is stored as the pair and reads as Custom',
           fs.norm_quality('opus/xhigh') == 'opus/xhigh' and fs.quality_tier('opus/xhigh') is None
           and 'Custom' in fs.quality_text('opus/xhigh') and 'Opus' in fs.quality_text('opus/xhigh'), fs.quality_text('opus/xhigh'))
@@ -53,15 +53,31 @@ def quality_suite(check, fs):
         ok = fl[0] == '--model' and fl[1] in fs.QUALITY_MODELS and fl[2] == '--effort' and fl[3] in fs.QUALITY_EFFORTS
         if not ok: break
     check('Q every stored quality becomes a real --model / --effort pair', ok, (q, fs.quality_flags(q)))
-    check('Q the default is unchanged (the brief says do not change it)', fs.DEFAULT_QUALITY == 'best'
-          and fs.QUALITY_MODEL['best'] == ('opus', 'high'))
+    check('Q the default is opus + medium, and it is the tier that carries "recommended"',
+          fs.DEFAULT_QUALITY == 'just-right' and fs.QUALITY_MODEL['just-right'] == ('opus', 'medium'))
+    check('Q three tiers, and the names mean what the owner asked: opus high is maximum, sonnet high is balanced',
+          len(fs.QUALITIES) == 3 and fs.QUALITY_MODEL['maximum'] == ('opus', 'high')
+          and fs.QUALITY_MODEL['balanced'] == ('sonnet', 'high'), fs.QUALITY_MODEL)
+    check('Q every tier has one plain word for the page to print',
+          all(fs.quality_view(t)['name'] for t in fs.QUALITIES), [fs.quality_view(t)['name'] for t in fs.QUALITIES])
+    # `maximum` and `balanced` meant OTHER pairs before v0.5.11, so a record written then is rewritten once, by its
+    # pair - EXCEPT `maximum`. Owner's call, 2026-10-08: an old `maximum` deck becomes the NEW maximum (opus/high),
+    # so the tier keeps meaning "the most thorough one" rather than keeping its old exact pair (opus/max).
+    check('Q an old record is rewritten by its pair, and old `maximum` becomes the new maximum (owner, 2026-10-08)',
+          fs.quality_v2({'quality': 'maximum'})['quality'] == 'maximum'
+          and fs.quality_v2({'quality': 'balanced'})['quality'] == 'just-right'
+          and fs.quality_v2({'quality': 'best'})['quality'] == 'maximum'
+          and fs.quality_v2({'quality': 'fast'})['quality'] == 'sonnet/medium', fs.quality_v2({'quality': 'maximum'}))
+    check('Q a stamped record is left alone, so the rewrite happens once and never flips a new choice back',
+          fs.quality_v2({'quality': 'balanced', 'qualityV': fs.QUALITY_V})['quality'] == 'balanced')
     check('Q the plan conversation still runs its own quality, whatever the deck chose',
           fs.quality_flags(fs.PLAN_QUALITY)[1] == 'sonnet')
     opts = fs.quality_options()
     check('Q the look step is given every tier with a share of the allowance against the default',
-          len(opts['tiers']) == 4 and all('share' in t and t['label'] for t in opts['tiers'])
-          and next(t for t in opts['tiers'] if t['quality'] == 'best')['share'] == 1.0
-          and next(t for t in opts['tiers'] if t['quality'] == 'fast')['share'] < 0.3, opts['tiers'])
+          len(opts['tiers']) == 3 and all('share' in t and t['label'] and t['name'] for t in opts['tiers'])
+          and next(t for t in opts['tiers'] if t['quality'] == 'just-right')['share'] == 1.0
+          and next(t for t in opts['tiers'] if t['quality'] == 'balanced')['share'] < 0.3
+          and next(t for t in opts['tiers'] if t['quality'] == 'maximum')['share'] > 1.0, opts['tiers'])
     check('Q the advanced control is given the same matrix the flags come from',
           [m['id'] for m in opts['models']] == list(fs.QUALITY_MODELS)
           and [e['id'] for e in opts['efforts']] == list(fs.QUALITY_EFFORTS))
@@ -89,18 +105,18 @@ def quality_api_suite(T, fs):
     did = (r or {}).get('id')
     if not did:
         check('Q PATCH: a deck could be made', False, r); return
-    a = req('PATCH', f'/api/decks/{did}', {'quality': 'fast'})
-    check('Q PATCH still accepts a plain tier name (0.5.3 / 0.5.4 compatibility)',
-          a.get('ok') and a['deck']['quality'] == 'fast' and a['deck']['qualityView']['model'] == 'sonnet', a)
+    a = req('PATCH', f'/api/decks/{did}', {'quality': 'balanced'})
+    check('Q PATCH still accepts a plain tier name',
+          a.get('ok') and a['deck']['quality'] == 'balanced' and a['deck']['qualityView']['model'] == 'sonnet', a)
     b = req('PATCH', f'/api/decks/{did}', {'model': 'opus', 'effort': 'xhigh'})
     check('Q PATCH accepts the explicit pair and stores it as one value',
           b.get('ok') and b['deck']['quality'] == 'opus/xhigh' and b['deck']['qualityView']['tier'] is None, b)
-    c = req('PATCH', f'/api/decks/{did}', {'effort': 'medium'})
+    c = req('PATCH', f'/api/decks/{did}', {'model': 'opus', 'effort': 'medium'})
     check('Q changing one axis back to a tier\'s combination shows that tier again',
-          c.get('ok') and c['deck']['quality'] == 'balanced' and c['deck']['qualityView']['tier'] == 'balanced', c)
+          c.get('ok') and c['deck']['quality'] == 'just-right' and c['deck']['qualityView']['tier'] == 'just-right', c)
     d = req('PATCH', f'/api/decks/{did}', {'quality': 'opus/high'})
     check('Q PATCH takes "<model>/<effort>" in the quality field too',
-          d.get('ok') and d['deck']['quality'] == 'best', d)
+          d.get('ok') and d['deck']['quality'] == 'maximum', d)
     for bad in ({'quality': 'turbo'}, {'model': 'gpt'}, {'effort': 'insane'}, {'quality': 'fable/max'}):
         e = req('PATCH', f'/api/decks/{did}', bad)
         if e.get('ok'): break
@@ -461,8 +477,10 @@ def live_suite(check, fs, C):
           and 'posTxt.textContent = total()' in ed and 'const n = total();' in ed)
     check('N2 the nav counter no longer reads the sections in the file',
           'slide ${cur} of ${count}' not in ed)
+    # Part C widened this title to also say which slide the chat is aimed at, so the old literal no longer
+    # matches. What must stay true is the PROPERTY: a not-made slide is marked, says so, and cannot be clicked.
     check('N2 a planned slide that is not made yet is shown in its place, greyed and not clickable',
-          'is-todo' in ed and "title: made ? null : 'not made yet'" in ed and 'if (made) b.addEventListener' in ed
+          'is-todo' in ed and "made ?" in ed and "'not made yet'" in ed and 'if (made) b.addEventListener' in ed
           and '.ed-th.is-todo' in css)
     check('N2 the badge says how many of how many while a deck is being built',
           'ready() < n ? `${ready()}/${n}`' in ed)

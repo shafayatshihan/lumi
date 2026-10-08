@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>part C: slide context harness</title>
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/cursor.css">
+<link rel="stylesheet" href="/css/components.css">
+<link rel="stylesheet" href="/css/studio.css">
+<link rel="stylesheet" href="/css/plan.css">
+<link rel="stylesheet" href="/css/theme.css">
+<link rel="icon" href="data:,">
+<style>
+  /* Dev harness for Part C only (one chat, no slide ambiguity). It mounts the REAL chat in edit mode next to a strip that
+     uses the real .ed-th markup, and answers /api/* from a script in the page, so nothing needs a server with a deck on it.
+     Open it through tools/form-dev/static_server.py:  /dev/c_chat.html */
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);display:flex;overflow:hidden}
+  #strip{flex:none;width:210px;padding:14px 10px;overflow-y:auto;background:var(--white,#fff);display:flex;flex-direction:column;gap:10px}
+  #mid{flex:1;min-width:0;display:flex;flex-direction:column;padding:16px;gap:12px}
+  #preview{flex:1;border-radius:18px;background:var(--fur1);display:grid;place-items:center;font-family:var(--head);font-size:40px;color:var(--ink)}
+  #chatHost{flex:none;width:380px;padding:12px 12px 12px 0;display:flex}
+  #chatHost .ws{flex:1;min-height:0}
+</style>
+</head>
+<body>
+<div id="strip" role="listbox" aria-label="slides"></div>
+<div id="mid"><div id="preview">slide 1</div></div>
+<div id="chatHost"></div>
+<script type="module">
+// ---------------------------------------------------------------- the deck this harness pretends to have
+const SLIDES = ['s1', 's2', 's3', 's4', 's5'];
+// ?ask=1: stop with the question still open, which is how a real waiting turn looks (the run ended on an [[aura:ask]])
+const ASK = new URLSearchParams(location.search).has('ask');
+const T = Math.floor(Date.now() / 1000) - 600;
+const EVENTS = [
+  { kind: 'status', code: 'start', text: 'Claude is getting ready', deck: 'd1', t: T },
+  { kind: 'user', text: 'make the title shorter', slide: 4, deck: 'd1', t: T + 10 },
+  { kind: 'tool', tool: 'Read', deck: 'd1', t: T + 12 },
+  { kind: 'say', text: 'Shortened it to “Heat flow”, and moved the subtitle under it so the line does not wrap.', deck: 'd1', t: T + 30 },
+  { kind: 'done', ok: true, deck: 'd1', t: T + 31 },
+  { kind: 'user', text: 'tighten the wording everywhere', slide: null, deck: 'd1', t: T + 60 },
+  { kind: 'say', text: 'Went through all five slides and cut the long sentences down.', deck: 'd1', t: T + 90 },
+  { kind: 'done', ok: true, deck: 'd1', t: T + 91 },
+  { kind: 'user', text: 'the chart looks wrong', slide: 2, deck: 'd1', t: T + 120 },
+  { kind: 'say', text: 'I can rebuild it. One thing first.\n[[aura:choice id="q1" slide="s2" question="Which shape fits the numbers?" options="bars|a line|a table" multi="no"]]', deck: 'd1', t: T + 140 },
+  { kind: 'done', ok: true, text: ASK ? '[[aura:ask]]' : '', deck: 'd1', t: T + 141 },
+];
+// ---------------------------------------------------------------- answer the app's own API from the page
+const J = o => new Response(JSON.stringify(o), { status: 200, headers: { 'content-type': 'application/json' } });
+const real = globalThis.fetch;
+globalThis.fetch = async (url, opts) => {
+  const u = new URL(String(url), location.origin), p = u.pathname;
+  if (p === '/api/claude/status') return J({ ok: true, cli: true, signedIn: true, running: false, sessionId: 'mock' });
+  if (p === '/api/claude/events') {
+    const from = +(u.searchParams.get('since') || 0);
+    return J({ ok: true, events: EVENTS.slice(from), next: EVENTS.length, running: false, waiting: ASK, deckId: 'd1', conv: null, sessionId: 'mock' });
+  }
+  if (p === '/api/decks/d1') return J({ ok: true, deck: { id: 'd1', name: 'harness deck', sessionId: 'mock', slideIds: SLIDES } });
+  if (p === '/api/claude/reply') {
+    const body = JSON.parse(opts.body || '{}');
+    console.log('REPLY', JSON.stringify({ slide: body.slide ?? null, scope: body.scope ?? null, text: body.text }));
+    document.title = `sent slide=${body.slide ?? 'null'} scope=${body.scope ?? 'null'}`;
+    return J({ ok: true, running: false });
+  }
+  return real(url, opts);
+};
+// ---------------------------------------------------------------- the strip, with the app's real classes
+const el = (tag, cls, txt) => { const n = document.createElement(tag); if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
+let cur = 1, aimAt = null, chat = null;
+const strip = document.getElementById('strip');
+function paintStrip() {
+  strip.replaceChildren();
+  for (let i = 1; i <= SLIDES.length; i++) {
+    const aimed = aimAt === i && i !== cur;
+    const b = el('button', 'ed-th' + (i === cur ? ' on' : '') + (aimed ? ' is-aimed' : ''));
+    b.type = 'button'; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', String(i === cur));
+    if (aimed) b.title = 'the chat is about this slide';
+    b.append(el('span', 'ed-th-pic'), el('span', 'ed-th-n', String(i)));
+    if (aimed) b.append(el('span', 'ed-th-aim', 'in chat'));
+    b.addEventListener('click', () => go(i));
+    strip.append(b);
+  }
+}
+function go(n) { cur = n; document.getElementById('preview').textContent = `slide ${n}`; paintStrip(); if (chat) chat.setSlide(n); }
+const { mountWorkshop } = await import('/js/workshop.js');
+chat = mountWorkshop(null, document.getElementById('chatHost'), {
+  deckId: 'd1', mode: 'edit', getSlide: () => cur,
+  onSlide: n => { if (n && n !== cur) go(n); },
+  onTarget: n => { if (n !== aimAt) { aimAt = n; paintStrip(); } },
+});
+paintStrip();
+window.__c = { go, chat, get cur() { return cur; }, get aimAt() { return aimAt; } };
+</script>
+</body>
+</html>

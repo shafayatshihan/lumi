@@ -41,7 +41,10 @@
 .hm-new:hover{transform:translateY(-4px) rotate(-.4deg)}
 .hm-new:active{transform:scale(.97)}
 .hm-new-top{flex:1;display:grid;place-items:center;border-radius:22px;background:var(--lilac);overflow:hidden}
-.hm-new-art{width:228px;height:134px;overflow:visible}
+/* the card art is the character now (an <img>), not a drawn sheet-and-pencil SVG: the sub-rules below only
+   matched parts of that drawing and are inert, kept so the diff is readable. */
+.hm-new-art{width:134px;height:134px;overflow:visible;object-fit:contain;display:block;margin:0 auto;
+  animation:upBob 3.4s var(--ease-io) infinite}
 .hm-new-art .hm-sheet{animation:upBob 3.4s var(--ease-io) infinite}
 .hm-new-art .hm-pencil{transform-origin:181px 49px;transform-box:view-box;transition:transform .5s var(--ease)}
 .hm-new:hover .hm-pencil{transform:rotate(-12deg) translate(-6px,4px)}
@@ -291,7 +294,49 @@
 .ws-clip-x:hover{background:var(--accent);color:var(--pill)}
 .ws-user .ws-bub{display:flex;flex-direction:column;gap:4px}
 .ws-utext{white-space:pre-wrap}
-.ws-slidetag{align-self:flex-end;display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:100px;background:rgba(247,248,250,.18);font-size:14px}
+/* which slide a message is about (workshop.js). One tag everywhere: plain while it names the slide on screen, a button
+   that goes there while it does not - so a reply about slide 2 read from slide 7 can never be mistaken for slide 7's. */
+.ws-slidetag{align-self:flex-start;display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;border:0;border-radius:100px;
+  font:inherit;font-size:14px;line-height:20px;color:inherit;background:var(--btn-soft,#ece6fa);white-space:nowrap;cursor:default}
+.ws-slidetag i{font-style:normal;font-size:14px;line-height:1}
+.ws-slidetag.is-away{cursor:pointer;background:var(--accent);color:var(--pill)}
+.ws-slidetag.is-away:hover{filter:brightness(1.08)}
+.ws-slidetag:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ws-tag-u{align-self:flex-end;background:rgba(247,248,250,.18)}
+.ws-tag-u.is-away{background:var(--pill);color:var(--ink)}
+.ws-tag-c{margin-bottom:6px}
+.ws-chcol{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.ws-note-aim{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap}
+.ws-head-aim{flex:none;margin-left:auto;font-size:14px;color:var(--mute);white-space:nowrap}
+.ws-head-aim.is-set{color:var(--ink);font-weight:600}
+.ws-head-aim[hidden]{display:none}
+
+/* the target chip: it states the inference, and is how you override it for one message */
+.ws-aim{position:relative;display:flex;align-items:center;gap:6px;padding:0 14px 6px;font-size:14px;color:var(--mute)}
+.ws-aim[hidden]{display:none}
+.ws-aim-b{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px;border:0;border-radius:100px;
+  font:inherit;font-size:14px;background:var(--btn-soft,#ece6fa);color:var(--ink);cursor:pointer}
+.ws-aim-b:hover:not(:disabled){filter:brightness(.97)}
+.ws-aim-b:disabled{opacity:.5;cursor:default}
+.ws-aim-b:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ws-aim-b.is-set{background:var(--accent);color:var(--pill)}
+.ws-aim-b i{width:0;height:0;border:4px solid transparent;border-top-color:currentColor;margin-top:3px}
+.ws-aim-b[aria-expanded=true] i{transform:rotate(180deg);margin-top:-3px}
+.ws-aim-m{position:absolute;left:52px;bottom:30px;z-index:5;min-width:170px;padding:4px;border-radius:14px;background:var(--white,#fff);
+  box-shadow:0 10px 28px rgba(74,48,146,.22);display:flex;flex-direction:column;gap:2px}
+.ws-aim-m[hidden]{display:none}
+.ws-aim-i{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:7px 10px;border:0;border-radius:10px;
+  font:inherit;background:transparent;color:var(--ink);text-align:left;cursor:pointer}
+.ws-aim-i:hover{background:var(--btn-soft,#ece6fa)}
+.ws-aim-i:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.ws-aim-i.on{background:var(--btn-soft,#ece6fa)}
+.ws-aim-i.on .ws-aim-il::after{content:" ✓";color:var(--accent)}
+.ws-aim-il{font-size:15px}
+.ws-aim-i small{font-size:14px;color:var(--mute)}
+
+/* the strip agrees with the chat: the slide the chat is aimed at, when you are looking at another one */
+.ed-th.is-aimed .ed-th-pic{outline-color:var(--accent);outline-style:dashed}
+.ed-th-aim{position:absolute;right:6px;bottom:6px;padding:1px 7px;border-radius:100px;background:var(--accent);color:var(--pill);font-size:14px;line-height:18px}
 .ws-ans{display:flex;flex-direction:column;gap:1px}
 .ws-ans-q{font-size:14px;color:rgba(247,248,250,.62)}
 .ws-ans-rest{white-space:pre-wrap;padding-top:2px}

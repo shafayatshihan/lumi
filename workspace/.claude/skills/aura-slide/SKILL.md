@@ -19,6 +19,8 @@ Reference files beside this one (read them when the step says so):
 - `planning.md` (the plan page: `plan.json`, doubts), `building.md` (one slide at a time), `editing.md` (a change request from the editor).
 - `deck-toolkit.md`: how to write a deck for the Aura runtime, the tool commands, `data-edit` ids, how to read the check.
 - `story-arcs.md`: the story shape for each kind of talk, slide counts, presenter vs document mode.
+- `illustration.md`: the slides whose picture is drawn, not rendered — inline SVG, the layout vocabulary, and the
+  honesty rules inside a drawing (LOOK-BASE 4.12).
 - `aura-blend.md` and `brands/`: the Aura look rules and the five themes. `looks/_shared/LOOK-BASE.md`: the structural
   rules every look obeys; `looks/<look>/LOOK.md`: that look's brand (every one of the five).
 - `.claude/skills/power-design/principles/design-principles.md`: the 20 slide rules (all apply).

@@ -157,6 +157,7 @@ def reset(a=None, res=None, fps=None):
             coll.remove(d)
     _fx_reset()
     _ANCHORS.clear()
+    _REAL.clear(); _CAM.clear()
     s = bpy.context.scene
     s.unit_settings.system = 'METRIC'
     s.unit_settings.scale_length = 1.0
@@ -778,7 +779,7 @@ def _area(name, loc, target, power, size, color, size_y=None, shadow=True):
 
 
 def studio(fit=None, bg='canvas', transparent=False, floor='sweep', key=1.0, fill=1.0, rim=1.0, world=1.0,
-           cavity=1.0, wear=1.0):
+           cavity=1.0, wear=1.0, hdri=None, hdri_strength=1.0, hdri_rotation=0.0):
     """Bold Blue studio around the subject (call AFTER building it; fit = its objects).
     bg: palette key or '#hex' -- the exact colour render() composites behind the subject ('canvas' #F9F4F2;
         'stage' #EFEBE6 to sit on a .bb-stage-bg slide; 'cyc' #F1EEEA for the full-bleed title studio).
@@ -790,6 +791,11 @@ def studio(fit=None, bg='canvas', transparent=False, floor='sweep', key=1.0, fil
     cavity/wear: global multipliers on every material's geometry-driven pair -- wear=0 for a factory-new part, a
         moulded plastic shell or a schematic subject. cavity only bites when the cavity nodes exist at all
         (--cavity / the bake path); Cycles path-traces crevice darkening by itself.
+    hdri: a PolyHaven HDRI id ('studio_small_09') whose real light replaces the gradient world in reflections and
+        ambient (asset(); fetched at build time, cached). The film stays transparent, so the background is still the
+        exact slide colour; the key / fill / rim stay. hdri_strength scales it, hdri_rotation (deg) turns it. Offline
+        it falls back to the gradient world. A baked slide relights in three.js with the gradient, so an HDRI changes
+        a Cycles still or per-frame render, not a baked loop.
     Shadow darkness follows the lights: lower key / raise world for paler shadows."""
     s = bpy.context.scene
     fit = fit if isinstance(fit, (list, tuple)) else ([fit] if fit else [o for o in s.objects if o.type == 'MESH'])
@@ -823,6 +829,15 @@ def studio(fit=None, bg='canvas', transparent=False, floor='sweep', key=1.0, fil
     for pos, col in ((0.45, '#CFC8C0'), (0.497, '#9A9086'), (0.53, '#D9D3CC'), (0.7, '#EEEBE6')):
         e = el.new(pos); e.color = lin(col)
     wl.new(ramp.outputs['Color'], bgn.inputs['Color'])
+    files = asset('hdri', hdri) if hdri else None
+    if files:                                    # real captured light; the gradient stays built but unlinked
+        env, mp, tc2 = wn.new('ShaderNodeTexEnvironment'), wn.new('ShaderNodeMapping'), wn.new('ShaderNodeTexCoord')
+        env.image = bpy.data.images.load(files['hdri'], check_existing=True)
+        mp.inputs['Rotation'].default_value[2] = math.radians(hdri_rotation)
+        wl.new(tc2.outputs['Generated'], mp.inputs['Vector']); wl.new(mp.outputs['Vector'], env.inputs['Vector'])
+        wl.new(env.outputs['Color'], bgn.inputs['Color'])
+        bgn.inputs['Strength'].default_value = world * hdri_strength
+        s['lumi_hdri'] = hdri
     # lights: power P = E * K * d^2 (calibrated: a white diffuse under E reads E/pi, same as three.js)
     K, d = 3.6, 2.2 * size
     def at(v):
@@ -894,6 +909,91 @@ def studio(fit=None, bg='canvas', transparent=False, floor='sweep', key=1.0, fil
     return catcher
 
 
+# ---------------------------------------------------------------- the real thing (LOOK-BASE 4.10)
+_REAL = {}
+_CAM = {}           # the rest pose camera() chose: move() animates around it
+
+
+def real(source, liberties=None, **dims):
+    """Declare WHAT is modelled and WHERE its numbers come from (LOOK-BASE 4.10). Required: inspect() is fatal without
+    it. source: where the dimensions were read ('report Table 1', 'brief', 'ISO 4017', 'datasheet p.3'). dims: the
+    real counts and sizes the geometry uses, with units in the name or the value: fin_pitch_mm=2.5, tubes=48,
+    'tube_od': '12.7 mm'. liberties: one line naming any departure from the real thing and why ('fin drawn 0.4 mm,
+    real 0.15 mm, so it shows at 1080p'); a liberty that is not written down is a mistake. Returns the record."""
+    if not str(source or '').strip():
+        raise ValueError('L.real(source=...): say where the dimensions come from')
+    if not dims:
+        raise ValueError('L.real(...): list the real counts and dimensions the model uses')
+    _REAL.clear()
+    _REAL.update(source=str(source), dims={k: v for k, v in dims.items()}, liberties=liberties or '')
+    bpy.context.scene['lumi_real'] = _REAL['source']
+    print(f'[lumi] real: {len(dims)} dimension(s) from {source}' + (f'; liberties: {liberties}' if liberties else ''),
+          flush=True)
+    return _REAL
+
+
+def asset(kind, asset_id, res=None):
+    """A PolyHaven HDRI ('hdri') or texture set ('texture') from Lumi's asset cache, fetched on a miss through the
+    toolkit's fetch_asset.py (one allowlisted host pair, GET only, images and HDRs only). Returns its files dict, or None
+    -- offline, unknown id, or --inspect (which never fetches) -- after ONE plain line saying what is used instead."""
+    tools = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools'))
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    try:
+        import fetch_asset
+    except ImportError:
+        print(f'[lumi] asset {asset_id}: the fetcher is missing from .aura/engine/tools; using the built-in materials',
+              flush=True)
+        return None
+    r = fetch_asset.fetch(kind, asset_id, res or ('2k' if kind == 'hdri' else '1k'),
+                          offline=bool(bpy.context.scene.get('lumi_inspect')))
+    if r.get('ok'):
+        return r['files']
+    print(f'[lumi] asset {asset_id}: {r.get("msg")}', flush=True)
+    return None
+
+
+def pbr(asset_id, fallback='steel', scale=1.0, res='1k', name=None, **kw):
+    """A real scanned PBR surface from PolyHaven (CC0): colour, roughness, metalness and an OpenGL normal map, projected
+    on the object's own box (no UVs needed) at `scale` repeats per metre. Use it where a material's real surface IS
+    the point (cast iron, concrete, worn paint); the presets stay right for clean machined metal. Offline or unknown,
+    it returns L.mat(fallback, **kw) and says so in one line. kw overrides principled inputs as in mat()."""
+    name = name or f'lumi_pbr_{asset_id}'
+    if name in bpy.data.materials:
+        return bpy.data.materials[name]
+    files = asset('texture', asset_id, res)
+    if not files:
+        return mat(fallback, **kw)
+    m, nt, b = _bsdf(name)
+    tc, mp = nt.nodes.new('ShaderNodeTexCoord'), nt.nodes.new('ShaderNodeMapping')
+    mp.inputs['Scale'].default_value = (scale, scale, scale)
+    nt.links.new(tc.outputs['Object'], mp.inputs['Vector'])
+
+    def tex(key, colour):
+        if key not in files: return None
+        n = nt.nodes.new('ShaderNodeTexImage')
+        n.image = bpy.data.images.load(files[key], check_existing=True)
+        n.image.colorspace_settings.name = 'sRGB' if colour else 'Non-Color'
+        n.projection, n.projection_blend = 'BOX', 0.25
+        nt.links.new(mp.outputs['Vector'], n.inputs['Vector'])
+        return n
+    d = tex('diff', True)
+    nt.links.new(d.outputs['Color'], b.inputs['Base Color'])
+    r = tex('rough', False)
+    if r: nt.links.new(r.outputs['Color'], b.inputs['Roughness'])
+    mt = tex('metal', False)
+    if mt: nt.links.new(mt.outputs['Color'], b.inputs['Metallic'])
+    nr = tex('nor', False)
+    if nr:
+        nm = nt.nodes.new('ShaderNodeNormalMap')
+        nt.links.new(nr.outputs['Color'], nm.inputs['Color'])
+        nt.links.new(nm.outputs['Normal'], b.inputs['Normal'])
+    if kw: _set(b, **kw)
+    m['lumi_recipe'] = 'pbr'                                # inspect(): a real surface counts as a texture recipe
+    m['lumi_asset'] = asset_id
+    return m
+
+
 # ---------------------------------------------------------------- camera
 VIEWS = {  # azimuth (deg, negative = camera on the left), elevation (deg), vertical fov (deg)
     'three-quarter': (-22, 14, 30), 'hero': (-16, 6, 24), 'front': (0, 4, 30), 'side': (-90, 6, 30),
@@ -944,6 +1044,7 @@ def camera(target, view='three-quarter', fill=0.7, frame_right=True, azimuth=Non
     cd.shift_x = ((min(xs) + max(xs)) / 2 - cx_goal) * W / H
     cd.shift_y = (min(ys) + max(ys)) / 2 - 0.5
     cd.clip_start, cd.clip_end = max(0.001, dist * 0.01), dist * 50
+    _CAM.clear(); _CAM.update(cam=cam, ctr=ctr.copy(), az=az, el=el, dist=dist, fov=fv)   # the rest pose move() starts from
     return cam
 
 
@@ -1088,6 +1189,93 @@ def turntable(objs, turns=1.0, axis='Z', center=None):
     return spin(e, turns, axis)
 
 
+# ---------------------------------------------------------------- camera moves (LOOK-BASE 4.11)
+# Every move is a set of offsets from the rest pose camera() framed -- azimuth / elevation (deg), distance and fov
+# (factors), roll (deg) -- as a function of t in 0..1. Each one is PERIODIC: offset(0) == offset(1), so the loop closes
+# and frame 1 IS the rest pose (the poster, the PDF page and a measured slide's held frame are the framed picture).
+# A one-way move (a crane up, a push in) is played there and back on u = (1 - cos 2 pi t) / 2, which also eases both
+# ends. Defaults are cross-checked against kevinbadi/blender-skills (crane-shot, dolly-rotate, slow-zoom, perfect-loop,
+# dynamic-full-loop, turntable): their lens changes (45->35, 40->50, 35->65) become fov factors here, scaled down
+# for a loop that has to stay readable behind slide text. No code of theirs is used.
+def _u(t):
+    return (1 - math.cos(2 * math.pi * t)) / 2
+
+
+def _sway(t, a):
+    """a slow handheld drift: whole harmonics only (sin 2 pi k t), so it closes; about a degree, never a wobble.
+    Each term is measured from its value at t = 0, so frame 1 is exactly the rest pose."""
+    w = 2 * math.pi * t
+    h = lambda k, ph: math.sin(k * w + ph) - math.sin(ph)
+    return dict(az=a * (1.2 * h(1, 0) + 0.4 * h(3, 0.6)), el=a * 0.6 * h(2, 1.1),
+                dist=1 + a * 0.012 * h(1, 2.3), roll=a * 0.25 * h(1, 0.9))
+
+
+MOVES = {
+    # name: (what it is, offsets(t, k) with k = the size dial, 1.0 = the default)
+    'still': ('the camera holds the rest pose', lambda t, k: {}),
+    'sway': ('a slow handheld drift about the rest pose', lambda t, k: _sway(t, k)),
+    'crane': ('rises over the subject and comes back (crane-shot)',
+              lambda t, k: dict(el=18 * k * _u(t), dist=1 + 0.22 * k * _u(t), fov=1 + 0.2 * k * _u(t))),
+    'dolly': ('arcs round one side while closing in, and back (dolly-rotate)',
+              lambda t, k: dict(az=30 * k * _u(t), dist=1 - 0.22 * k * _u(t), fov=1 - 0.15 * k * _u(t))),
+    'push': ('a slow push in, the lens lengthening a little, and back (slow-zoom)',
+             lambda t, k: dict(dist=1 - 0.2 * k * _u(t), fov=1 - 0.12 * k * _u(t), az=4 * k * _u(t))),
+    'orbit': ('whole turns round the subject at constant speed (perfect-loop)', lambda t, k: dict(az=360 * k * t)),
+    'whip': ('one turn that lingers on four faces and moves fast between them (dynamic-full-loop)',
+             lambda t, k: dict(az=360 * (t - 0.85 * math.sin(8 * math.pi * t) / (8 * math.pi)),
+                               el=8 * k * math.sin(2 * math.pi * t))),
+}
+
+
+def _place(az, el, dist, fov, roll=0.0):
+    cam, ctr = _CAM['cam'], _CAM['ctr']
+    a, e = math.radians(az), math.radians(el)
+    dvec = Vector((math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e)))
+    cam.location = ctr + dvec * dist
+    q = dvec.to_track_quat('Z', 'Y')
+    if roll:
+        q = q @ Matrix.Rotation(math.radians(roll), 4, 'Z').to_quaternion()
+    cam.rotation_mode = 'QUATERNION'
+    cam.rotation_quaternion = q
+    cam.data.lens = 12.0 / math.tan(math.radians(max(1.0, min(120.0, fov))) / 2)
+
+
+def move(kind='sway', amount=1.0, sway=None):
+    """Move the camera over the loop: call AFTER camera() and loop(). kind is one of MOVES (print L.MOVES for the
+    list): 'still', 'sway' (the default), 'crane', 'dolly', 'push', 'orbit' (amount = turns), 'whip'. amount scales the
+    move. sway (0..1) layers the handheld drift on top of another move (0.5 is plenty). Keys EVERY frame 1..N+1 like
+    animate(), so the loop closes and frame 1 is the framed rest pose.
+    Honesty (LOOK-BASE 4.11): a camera that moves makes a measured figure hard to read. On a slide whose numbers are
+    measured, use 'still' -- a baked slide holds the rest pose there anyway, and the checker flags a moving per-frame
+    render on such a slide. orbit and whip need a subject that reads from every side: frame with fill about 0.55."""
+    if kind not in MOVES:
+        raise ValueError(f'L.move(kind): one of {", ".join(MOVES)}')
+    if not _CAM:
+        raise RuntimeError('call L.camera(parts) before L.move()')
+    n = _loop_n()
+    if kind == 'orbit':
+        amount = max(1, int(round(amount)))      # only whole turns close the loop
+    fn = MOVES[kind][1]
+    cam = _CAM['cam']
+    for f in range(1, n + 2):
+        t = (f - 1) / n
+        o = fn(t, amount)
+        if sway:
+            sw = _sway(t, sway)
+            o = dict(az=o.get('az', 0) + sw['az'], el=o.get('el', 0) + sw['el'],
+                     dist=o.get('dist', 1) * sw['dist'], fov=o.get('fov', 1), roll=sw['roll'])
+        _place(_CAM['az'] + o.get('az', 0), _CAM['el'] + o.get('el', 0), _CAM['dist'] * o.get('dist', 1),
+               _CAM['fov'] * o.get('fov', 1), o.get('roll', 0))
+        cam.keyframe_insert(data_path='location', frame=f)
+        cam.keyframe_insert(data_path='rotation_quaternion', frame=f)
+        cam.data.keyframe_insert(data_path='lens', frame=f)
+    s = bpy.context.scene
+    s['lumi_move'] = kind + (f'+sway{sway:g}' if sway else '')
+    s.frame_set(s.frame_current)
+    print(f'[lumi] camera move: {s["lumi_move"]} over {n} frames', flush=True)
+    return cam
+
+
 # ---------------------------------------------------------------- inspect: a text check, no render (BLENDER.md 6)
 TRI_BUDGET = {'still': 1_000_000, 'anim': 300_000}
 # each finding maps to a row of the BLENDER.md section 8 table, so a fix is one lookup away
@@ -1096,7 +1284,15 @@ INSPECT_ROWS = {
     'hidden': 'all background, no subject', 'clipped': 'cut-off geometry', 'inward-normals': 'dark or faceted surfaces',
     'no-material': 'flat surfaces (LOOK.md 4.1)', 'flat-material': 'flat surfaces (LOOK.md 4.1)',
     'triangles': 'section 7 (render time)', 'vanished': 'a cutaway part is gone',
+    'no-real': 'a likeness, not the thing (LOOK-BASE 4.10)', 'analogy': 'a likeness, not the thing (LOOK-BASE 4.10)',
+    'no-preset': 'a likeness, not the thing (LOOK-BASE 4.10)', 'static-camera': 'section 2c (camera moves)',
+    'move-out-of-frame': 'section 2c (camera moves)',
 }
+# names of stand-ins, not things: an object called one of these is an analogy (clouds for airflow, a heart for health,
+# sparkles for "clean"). Flow, heat and fields are drawn as notation -- arrows, streamlines, particles on the real flow
+# direction, a colour field -- never as a cartoon of the medium. A slide that IS about clouds names its parts otherwise.
+ANALOGY = ('cloud', 'puff', 'sparkle', 'twinkle', 'heart', 'smiley', 'mascot', 'emoji', 'cartoon', 'swoosh',
+           'magic', 'bubble_deco', 'confetti')
 
 
 def _tris(me):
@@ -1218,6 +1414,39 @@ def inspect(emit=True):
     if _VANISHED:
         add(warn, 'vanished', 'a cutaway removed these parts completely; leave them out of the cut, or move the '
                               'cut plane', objects=sorted(set(_VANISHED))[:20])
+
+    # LOOK-BASE 4.10: the real thing, from real numbers, in real materials
+    stats['real'] = _REAL.get('source')
+    if not _REAL:
+        add(fatal, 'no-real', 'no L.real(source, **dims): declare where the dimensions come from and the real counts '
+                              'and sizes the model uses (ask for any you do not know)')
+    stand_ins = [o.name for o in subject if any(w in o.name.lower() for w in ANALOGY)]
+    if stand_ins:
+        add(fatal, 'analogy', 'these parts are stand-ins, not parts of the subject: draw flow / heat / fields as '
+                              'notation (arrows, streamlines, particles), never as a cartoon', objects=stand_ins[:20])
+    used = {m for o in shown for m in o.data.materials if m}
+    if used and not any(m.get('lumi_recipe') for m in used):
+        add(fatal, 'no-preset', 'no part uses a real material: build them with L.mat(kind) / L.pbr(id) / lumi_mech')
+
+    # LOOK-BASE 4.11: a loop moves its camera, and the move keeps the subject in frame
+    stats['move'] = s.get('lumi_move')
+    if anim and not s.get('lumi_move'):
+        add(warn, 'static-camera', 'an animation with a locked-off camera: add L.move("sway") (or another move) '
+                                   'after L.loop(), or L.move("still") on a slide with measured values')
+    if s.get('lumi_move') and s.camera and shown:
+        n, lost = int(s.get('lumi_loop', 0) or 0), []
+        for f in sorted({1 + n // 4, 1 + n // 2, 1 + 3 * n // 4}) if n else []:
+            s.frame_set(f); s.view_layers[0].update()
+            for o in shown:
+                vs = o.data.vertices
+                if len(vs) and not any(0.0 <= p.x <= 1.0 and 0.0 <= p.y <= 1.0 and p.z > 0 for p in (
+                        world_to_camera_view(s, s.camera, o.matrix_world @ vs[i].co)
+                        for i in range(0, len(vs), max(1, len(vs) // 200)))):
+                    lost.append(f'{o.name}@{f}')
+        s.frame_set(1)
+        if lost:
+            add(warn, 'move-out-of-frame', 'the camera move takes these parts out of frame: a smaller amount, or '
+                                           'frame with a smaller fill', objects=lost[:20])
 
     out = {'ok': not fatal, 'fatal': fatal, 'warn': warn, 'stats': stats}
     if emit:

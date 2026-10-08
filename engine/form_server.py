@@ -427,6 +427,14 @@ def adopt_draft(rec):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if target.exists(): shutil.rmtree(target, ignore_errors=True)
                 shutil.move(str(draft_text()), str(target))
+                # D-R1: manifest.json stores ABSOLUTE paths, so after the move every one of them still named
+                # draft-text, which no longer exists - Claude was told to open page pictures at a dead path (seen
+                # on the owner's deck 42a8d8b6c8cd). Not made relative instead: test_batch_e.py:114 and other
+                # readers do Path(entry['text']) directly.
+                mf = target / 'manifest.json'
+                if mf.is_file():
+                    _a, _b = str(draft_text()).replace('\\', '/'), str(target).replace('\\', '/')
+                    mf.write_text(mf.read_text(encoding='utf-8').replace(_a, _b), encoding='utf-8')
     except OSError as e:
         log('draft text could not move', repr(e))
     return rec
@@ -466,23 +474,36 @@ def list_files(rec=None):
     return out
 
 
-# v0.5.1 tiers (owner decision): fast = Sonnet / medium, balanced = Opus / medium, best = Opus / high (default, recommended),
-# maximum = Opus / max ("the best model at the best effort"). Opus tiers fall back to Sonnet. "Even better" is gone: a deck
-# saved with it runs as best.
-QUALITIES = ('best', 'maximum', 'balanced', 'fast')
-DEFAULT_QUALITY = 'best'
-QUALITY_TEXT = {'best': 'Best quality (Opus, recommended)', 'maximum': 'Maximum (Opus, deepest thinking, slowest)',
-                'balanced': 'Balanced (Opus, quicker)', 'fast': 'Fast (Sonnet, quickest, lighter on the plan)'}
-QUALITY_MODEL = {'best': ('opus', 'high'), 'maximum': ('opus', 'max'), 'balanced': ('opus', 'medium'), 'fast': ('sonnet', 'medium'),
+# v0.5.11 tiers (owner decision: "opus high goes max, then sonnet high goes balanced. only 3."). THREE tiers, not four:
+#   just right  = Opus / medium   THE DEFAULT, and the one that carries the "recommended" badge
+#   maximum     = Opus / high     the slowest, most thorough
+#   balanced    = Sonnet / high   quicker, on a lighter model
+# Opus tiers still fall back to Sonnet. The fourth tier is gone and so is the name "best quality".
+# TWO OF THESE NAMES MEANT SOMETHING ELSE BEFORE: `maximum` was Opus / max and `balanced` was Opus / medium. A stored name
+# is therefore NOT enough to know what an old deck was given, so load_deck() rewrites a pre-v2 record ONCE, by the pair it
+# really had (LEGACY_QUALITY), and stamps `qualityV`. Old `maximum` is REMAPPED to the new maximum (opus/high) on the
+# owner's instruction: the tier keeps its meaning ("the most thorough one") rather than its old exact pair.
+QUALITIES = ('just-right', 'maximum', 'balanced')
+DEFAULT_QUALITY = 'just-right'
+QUALITY_NAME = {'just-right': 'just right', 'maximum': 'maximum', 'balanced': 'balanced'}   # the plain word the page shows
+QUALITY_TEXT = {'just-right': 'Just right (Opus, recommended)', 'maximum': 'Maximum (Opus, deepest thinking, slowest)',
+                'balanced': 'Balanced (Sonnet, quicker and lighter)'}
+QUALITY_MODEL = {'just-right': ('opus', 'medium'), 'maximum': ('opus', 'high'), 'balanced': ('sonnet', 'high'),
                  'plan': ('sonnet', 'high')}
+QUALITY_V = 2                      # the tier vocabulary a deck record was written in; bumped when a name changes meaning
+# Owner's call, 2026-10-08: an old `maximum` deck becomes the NEW maximum (opus/high), not the pair it literally
+# ran (opus/max). They chose the tier to keep meaning "the most thorough one", over keeping the exact old setting.
+# The other three are unchanged - they map to pairs that still exist, so nothing about them moves either way.
+LEGACY_QUALITY = {'best': ('opus', 'high'), 'better': ('opus', 'high'), 'maximum': ('opus', 'high'),
+                  'balanced': ('opus', 'medium'), 'fast': ('sonnet', 'medium')}
 PLAN_QUALITY = 'plan'              # the planning page always runs Sonnet / high, whatever the deck's quality
 
 # ---- the advanced pair (owner request, 0.5.5). A named tier and an explicit (model, effort) pair are THE SAME SETTING seen
 # two ways, never two settings that can disagree: `quality` stays the one stored value, and it holds either a tier name or the
-# literal string "<model>/<effort>". `pair_quality()` canonicalises, so choosing opus + medium by hand stores "balanced" and
-# the plain surface shows "Balanced" again; only a pair no tier covers (say opus + xhigh) is stored as a pair and reads
-# "Custom". Every user-facing string in this product is written for someone non-technical, so the model names live ONLY behind
-# the advanced control - the look step keeps the four calm tiers.
+# literal string "<model>/<effort>". `pair_quality()` canonicalises, so choosing opus + medium by hand stores "just-right" and
+# the plain surface lights up "just right" again, badge and all; only a pair no tier covers (say opus + xhigh) is stored as a
+# pair and reads "Custom". Every user-facing string in this product is written for someone non-technical, so the model names
+# live ONLY behind the advanced control - the look step keeps the three calm tiers.
 # MODELS / EFFORTS are what `claude -p` really accepts, checked against the installed CLI (`--effort <low|medium|high|xhigh|max>`;
 # `--model` takes an alias). All 15 combinations run. `fable` is a real alias but needs usage credits, so it is NOT offered:
 # the rule is never to offer a combination the runner cannot run.
@@ -506,6 +527,11 @@ def norm_quality(q):
     """A stored quality, canonicalised: a tier name, 'plan', or '<model>/<effort>' for a pair no tier covers."""
     q = str(q or '').strip().lower()
     if q in QUALITIES or q == PLAN_QUALITY: return q
+    # a name from before the three tiers that is NOT one of them any more ('best', 'better', 'fast') keeps its real pair;
+    # 'maximum' and 'balanced' never reach here - they are current tiers, and an old RECORD holding them is rewritten once
+    # by quality_v2() at load, which is the only place that can tell the old meaning from the new one.
+    if q in LEGACY_QUALITY and q not in QUALITIES:
+        return pair_quality(*LEGACY_QUALITY[q]) or DEFAULT_QUALITY
     if '/' in q:
         m, _, e = q.partition('/')
         return pair_quality(m, e) or DEFAULT_QUALITY
@@ -538,7 +564,11 @@ def quality_view(q):
     """What the page needs to show one stored quality both ways at once: never two values, always one read two ways."""
     q = norm_quality(q)
     m, e = quality_pair(q)
-    return {'quality': q, 'tier': quality_tier(q), 'model': m, 'effort': e, 'label': quality_text(q)}
+    t = quality_tier(q)
+    # `name` is the one plain word the page prints for a tier. It used to be the id itself, with 'best' patched to
+    # 'best quality' in two places at once; an id is no longer a word ('just-right'), so the word comes from here.
+    return {'quality': q, 'tier': t, 'model': m, 'effort': e, 'label': quality_text(q),
+            'name': QUALITY_NAME.get(t) if t else f'{m} · {EFFORT_TEXT.get(e, e)}'}   # lowercase: house voice
 
 
 # How much of the allowance one tier uses against another, and how much longer it takes. ROUGH, and said so wherever it is
@@ -557,7 +587,7 @@ def quality_weight(q):
 
 
 def quality_options():
-    """Everything the look step needs to offer the choice both ways: the four plain tiers, and the explicit model / effort
+    """Everything the look step needs to offer the choice both ways: the three plain tiers, and the explicit model / effort
     matrix behind the advanced control. `share` is this tier's allowance use against the default one (1.0 = the default);
     `claudeShare` is how much of a build is Claude at all - the rest is Blender, which no tier touches."""
     base = quality_weight(DEFAULT_QUALITY) or 1.0
@@ -906,13 +936,25 @@ def deck_json(deck_id):
     return DECKS / f'{deck_id}.json' if isinstance(deck_id, str) and DECK_ID_RE.match(deck_id) else None
 
 
+def quality_v2(rec):
+    """One-time, at read: a record written before the three-tier change keeps the (model, effort) it was really given.
+    `maximum` and `balanced` both meant a different pair then, so the stored NAME cannot be trusted without this stamp;
+    after it, the name means what it says. Idempotent, and it persists on the record's next save."""
+    if not isinstance(rec, dict) or rec.get('qualityV') == QUALITY_V: return rec
+    old = str(rec.get('quality') or '').strip().lower()
+    if old in LEGACY_QUALITY:
+        rec['quality'] = pair_quality(*LEGACY_QUALITY[old]) or DEFAULT_QUALITY
+    rec['qualityV'] = QUALITY_V
+    return rec
+
+
 def load_deck(deck_id):
     f = deck_json(deck_id)
     if not f: return None
     for k in range(6):          # a read that meets another thread's atomic replace (Windows sharing violation) is retried
         try:
             rec = json.loads(f.read_text(encoding='utf-8'))
-            return rec if isinstance(rec, dict) and rec.get('id') == deck_id else None
+            return quality_v2(rec) if isinstance(rec, dict) and rec.get('id') == deck_id else None
         except FileNotFoundError:
             return None
         except (OSError, ValueError):
@@ -948,6 +990,7 @@ def new_deck(brief=None, **fields):
     rec = {'id': uuid.uuid4().hex[:12], 'title': str(basics.get('title') or '').strip() or 'Untitled deck', 'file': None,
            'look': look_of(brief), 'quality': quality_of(brief), 'createdAt': t, 'updatedAt': t, 'sessionId': None,
            'brief': brief, 'build': None, 'caps': dict(DECK_CAPS), 'interviewState': 'asking',
+           'qualityV': QUALITY_V,             # this record's tier names mean what they say (see quality_v2)
            'bake': True}                      # batch 6 B.9: animated studio renders are BAKED in this deck (pinned at creation)
     rec.update(fields)
     return save_deck(rec, touch=False)
@@ -1384,6 +1427,10 @@ def child_env():
     for k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'ELECTRON_RUN_AS_NODE'):
         env.pop(k, None)
     env['PYTHONIOENCODING'] = 'utf-8'
+    # D-R5: web research is ON by default (owner, 2026-10-08) and off when `.aura/research-off` exists. The
+    # tool reads LUMI_RESEARCH itself; this is the one place that decides it, so a run cannot disagree with
+    # the setting half way through.
+    if (AURA / 'research-off').exists(): env['LUMI_RESEARCH'] = 'off'
     # Blender (docs/blender-contract.md section 5): Claude types plain `blender`, so the one Lumi found goes FIRST on PATH, and
     # LUMI_BPY tells a scene where lumi_bpy lives. A .py stand-in (tests) is never put on PATH.
     hit = find_blender()
@@ -1661,11 +1708,29 @@ def environment_line(rec=None):
             f'This deck\'s files are already extracted: {n_text} text file(s) listed in `{tdir}/manifest.json` (text + pictures per file); '
             'read those, do not run extract_text.py or open the originals. A refused or blocked command is policy, not a glitch: never retry '
             'quoting variants and never hand it to a helper agent (it has the same policy); change the mechanism once or say what is blocked.')
-    return line
+    note = scanned_note(rec)
+    return line + (' ' + note if note else '')
 
 
 ENV_CACHE = {'at': 0.0, 'py': False, 'node': False, 'edge': False}
 EXTRACT_LOCK = threading.Lock()
+
+
+def scanned_note(rec=None, rels=None):
+    """D1: which of these files are scanned, and where their page pictures are. Machine-read text gets prose right
+    and table digits wrong (measured, docs/STATUS-D.md), so a number from a scanned page is read off the page
+    picture, never the text alone. This is also the answer to "which of 40 pages does Claude look at": only the
+    pages a slide needs, found through the text."""
+    hits = []
+    for rel, e in sorted(read_manifest(rec).get('files', {}).items()):
+        if rels is not None and rel not in rels: continue
+        if isinstance(e, dict) and e.get('scanned') and e.get('pagePictures'):
+            pics = rel_root(Path(next(iter(e['pagePictures'].values()))).parent)
+            hits.append(f'`{rel}` ({len(e["scanned"])} scanned page(s); pictures `{pics}/page-NNN.jpg`)')
+    if not hits: return ''
+    return ('Scanned: ' + '; '.join(hits) + '. Their text is machine-read: search it to find the page, then Read that '
+            'page picture and take every number from the picture, not the text (table digits are often misread). '
+            'Look only at the pages you need.')
 
 
 def read_manifest(rec=None):
@@ -4080,7 +4145,8 @@ def interview_rules():
     short version is inlined so the interview runs on its own."""
     f = ROOT / '.claude' / 'skills' / 'aura-slide' / 'interviewing.md'
     if f.is_file(): return 'Follow `.claude/skills/aura-slide/interviewing.md` for how to interview.'
-    return ('How to interview: read the extracted files FIRST and never ask what they already answer; ask only what would change a slide '
+    return ('If the files rely on something you could not explain or draw from them alone, learn it before asking: `python .aura/engine/tools/research.py read|look|papers "<the subject in your own words>"`. It is for understanding: never a slide asset, never a number unless cited as provenance kind "published", and never their text, results or names in a query (the tool refuses those). If it answers offline or off, carry on from the files and say so once. '
+            'How to interview: read the extracted files FIRST and never ask what they already answer; ask only what would change a slide '
             '(the point of the talk, who listens and what they know, what they must do afterwards, minutes, formal or casual, how '
             'much maths, what is in and out, how cautious the claims must be, what must not be shown, and which of presenter / '
             'supervisor / institution exist at all). Each round: one short sentence of what you learned, then the questions, then '
@@ -4376,6 +4442,20 @@ def build_message(rec, slide, n, total, shell=None):
              ('This slide lists no extracted source text: use the plan entry and `.aura/brief/brief.md`; extract a file only if the '
               'slide cannot be built without it.'),
              f'Lumi packs the deck into `{work_rel(rec["id"])}/` and runs its own check after this step: you do not run pack_deck.py.']
+
+    # D-R2: the same scanned note, narrowed to the files THIS slide draws on.
+    folder, rels = (rec or {}).get('filesFolder'), set()
+    for src in slide.get('sources') or []:
+        r = str(src).replace(chr(92), '/').lstrip('/')
+        rels.add(r[len(folder) + 1:] if folder and r.lower().startswith(folder.lower() + '/') else r)
+    _note = scanned_note(rec, rels)
+    if _note: lines.append(_note)
+    # D-R5: a figure of a real object - look at one before drawing it. Understanding only; the pictures are
+    # marked REFERENCE ONLY by the tool and never reach a slide.
+    if ((slide.get('visual') or {}).get('main') or '') in ('3d', 'photo', 'diagram'):
+        lines.append('If this figure shows a real object you have not seen, look before you draw: '
+                     '`python .aura/engine/tools/research.py look "<the object>"`. The pictures teach the '
+                     'shape; they are marked REFERENCE ONLY and never go on the slide.')
     eng = slide_engine(rec, slide)
     if eng.get('engine') == 'blender': lines.append(bl_build_block(rec, slide, eng))     # docs/blender-contract.md section 9
     elif eng.get('engine') == 'threejs': lines.append(bl_live_block(slide, eng))         # ...and say so when it is NOT a studio render
@@ -7015,7 +7095,15 @@ class H(BaseHTTPRequestHandler):
             scope = body.get('scope')
             if scope not in (None, 'deck', 'slide'): return self.send(400, {'ok': False, 'error': 'bad scope'})
             slide = reply_slide(deck_id, slide)
-            conv = reply_conv(deck_id, slide, scope)
+            # C-R1: launch() nulls `conv`, but this branches on it BEFORE launching - so a slide-scoped message
+
+            # decided its hand-off from a slide conversation that never runs any more, and deck_handoff() (the L-17
+
+            # reset that keeps the one conversation bounded) was skipped. After Part C most messages are
+
+            # slide-scoped, so that was the deck conversation growing with no ceiling.
+
+            conv = None if ONE_DECK_CONVERSATION else reply_conv(deck_id, slide, scope)
             rec = load_deck(deck_id) if deck_id else None
             handoff = False
             if conv:

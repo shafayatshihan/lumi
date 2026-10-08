@@ -448,30 +448,35 @@ def run_v3_suite():
     SLIDES = SANDBOX / '4 - Your slides'
 
     print('\n[quality flags]')
-    check('best -> opus/high + sonnet fallback', fs.quality_flags('best') == ['--model', 'opus', '--effort', 'high', '--fallback-model', 'sonnet'])
-    check('balanced -> opus/medium + fallback', fs.quality_flags('balanced') == ['--model', 'opus', '--effort', 'medium', '--fallback-model', 'sonnet'])
-    check('fast -> sonnet/medium', fs.quality_flags('fast') == ['--model', 'sonnet', '--effort', 'medium'])
-    check('"even better" is gone: an old deck saved with it runs as best', 'better' not in fs.QUALITIES and fs.quality_flags('better') == fs.quality_flags('best'))
-    check('the picker offers exactly fast / balanced / best / maximum', set(fs.QUALITIES) == {'fast', 'balanced', 'best', 'maximum'})
-    check('maximum -> opus/max + fallback', fs.quality_flags('maximum') == ['--model', 'opus', '--effort', 'max', '--fallback-model', 'sonnet'])
-    check('unknown -> best (the default)', fs.quality_flags('ultra') == fs.quality_flags(None) == fs.quality_flags('best'))
+    check('just-right (the default) -> opus/medium + sonnet fallback',
+          fs.quality_flags('just-right') == ['--model', 'opus', '--effort', 'medium', '--fallback-model', 'sonnet'])
+    check('maximum -> opus/high + fallback', fs.quality_flags('maximum') == ['--model', 'opus', '--effort', 'high', '--fallback-model', 'sonnet'])
+    check('balanced -> sonnet/high', fs.quality_flags('balanced') == ['--model', 'sonnet', '--effort', 'high'])
+    check('the picker offers exactly three tiers', set(fs.QUALITIES) == {'just-right', 'maximum', 'balanced'} and len(fs.QUALITIES) == 3)
+    check('"best quality" is gone as a name, and an old deck saved with it still runs opus/high',
+          'best' not in fs.QUALITIES and fs.quality_flags('best') == fs.quality_flags('maximum'))
+    check('"even better" and "fast" are gone too, and keep the pair they meant',
+          fs.quality_flags('better') == fs.quality_flags('maximum')
+          and fs.quality_flags('fast') == ['--model', 'sonnet', '--effort', 'medium'])
+    check('unknown -> just-right (the default)', fs.quality_flags('ultra') == fs.quality_flags(None) == fs.quality_flags('just-right'))
     check('planning quality is sonnet/high', fs.quality_flags(fs.PLAN_QUALITY) == ['--model', 'sonnet', '--effort', 'high'])
-    brief = {'basics': {'title': 'Heat pipes v3'}, 'look': {'theme': 'Bold Blue'}, 'style': {'quality': 'best', 'amount': 60}}
+    brief = {'basics': {'title': 'Heat pipes v3'}, 'look': {'theme': 'Bold Blue'}, 'style': {'quality': 'just-right', 'amount': 60}}
     jpost('/api/brief', brief)
     md = (AURA / 'brief' / 'brief.md').read_text(encoding='utf-8')
-    check('brief.md has the Quality row', '- **Quality:** Best quality' in md, md[:600])
+    check('brief.md has the Quality row', '- **Quality:** Just right' in md, md[:600])
     s, j = jpost('/api/decks')
     A = j.get('id')
     rec = json.loads((AURA / 'decks' / f'{A}.json').read_text(encoding='utf-8')) if A else {}
     check('POST /api/decks makes a record from the draft', s == 200 and rec.get('title') == 'Heat pipes v3' and
-          rec.get('quality') == 'best' and rec.get('look') == 'Bold Blue' and rec.get('brief', {}).get('basics') == brief['basics'] and
+          rec.get('quality') == 'just-right' and rec.get('look') == 'Bold Blue' and rec.get('brief', {}).get('basics') == brief['basics'] and
           rec.get('file') is None and j.get('deck', {}).get('status') == 'draft', (s, j))
     check('record has every field', all(k in rec for k in ('id', 'title', 'file', 'look', 'quality', 'createdAt', 'updatedAt',
                                                           'sessionId', 'brief')), list(rec))
     s, j, ev = run_and_wait('/api/claude/start', {'deckId': A})
     argv = fake_argv(ev)
-    check('start for a deck ok', s == 200 and j.get('deckId') == A and j.get('quality') == 'best', j)
-    check('start uses best flags', flag(argv, '--model') == 'opus' and flag(argv, '--effort') == 'high' and
+    check('start for a deck ok', s == 200 and j.get('deckId') == A and j.get('quality') == 'just-right', j)
+    check('start uses the default tier (just right: opus / medium)',
+          flag(argv, '--model') == 'opus' and flag(argv, '--effort') == 'medium' and
           flag(argv, '--fallback-model') == 'sonnet' and '--resume' not in argv and '--settings' in argv, argv)
     rec = jget(f'/api/decks/{A}')[1].get('deck', {})
     check('record learned session, file and build', rec.get('sessionId') and rec.get('file') == '4 - Your slides/Heat pipes v3.html' and
@@ -482,9 +487,9 @@ def run_v3_suite():
     hint_say = [e for e in ev if e['kind'] == 'say' and '[[aura:hint slide=3 text="add a simple diagram of the method"]]' in e['text']]
     check('hint markers pass through untouched', hint_say and done and done[-1]['text'].count('[[aura:hint ') == 3, done[-1:] )
 
-    s, j = req('PATCH', f'/api/decks/{A}', {'quality': 'fast', 'title': 'Renamed deck'})[0], None
+    s, j = req('PATCH', f'/api/decks/{A}', {'quality': 'balanced', 'title': 'Renamed deck'})[0], None
     rec = jget(f'/api/decks/{A}')[1].get('deck', {})
-    check('PATCH quality + title', s == 200 and rec.get('quality') == 'fast' and rec.get('title') == 'Renamed deck', (s, rec))
+    check('PATCH quality + title', s == 200 and rec.get('quality') == 'balanced' and rec.get('title') == 'Renamed deck', (s, rec))
     check('PATCH bad quality -> 400', req('PATCH', f'/api/decks/{A}', {'quality': 'turbo'})[0] == 400)
     check('PATCH unknown deck -> 404', req('PATCH', '/api/decks/nope123', {'title': 'x'})[0] == 404)
     check('PATCH foreign origin -> 403', req('PATCH', f'/api/decks/{A}', {'title': 'x'}, headers={'Origin': 'http://evil.example'})[0] == 403)
@@ -493,7 +498,7 @@ def run_v3_suite():
     argv = fake_argv(ev)
     heard = next((e['text'] for e in ev if e['kind'] == 'say' and e['text'].startswith('[fake-heard] ')), '')
     user = next((e for e in ev if e['kind'] == 'user'), {})
-    check('reply uses the deck quality (fast)', flag(argv, '--model') == 'sonnet' and flag(argv, '--effort') == 'medium' and
+    check('reply uses the deck quality (balanced)', flag(argv, '--model') == 'sonnet' and flag(argv, '--effort') == 'high' and
           '--fallback-model' not in argv, argv)
     check('reply resumes the deck session', flag(argv, '--resume') == sessA, (flag(argv, '--resume'), sessA))
     check('slide prefix reaches Claude, user event keeps plain text', heard == '[fake-heard] [slide 3] make it pop' and
@@ -508,7 +513,7 @@ def run_v3_suite():
     s, j, ev = run_and_wait('/api/claude/start', {'deckId': B})
     argv = fake_argv(ev)
     check('a record made from the draft brief can still be built in one go', s == 200 and B and B != A and (AURA / 'decks' / f'{B}.json').is_file(), j)
-    check('default quality is best (opus/high)', flag(argv, '--model') == 'opus' and flag(argv, '--effort') == 'high', argv)
+    check('default quality is just right (opus/medium)', flag(argv, '--model') == 'opus' and flag(argv, '--effort') == 'medium', argv)
     choice = '[[aura:choice id="q1" question="Which look?" options="Bold Blue|Flat-Pack|Claude chooses"]]'
     check('choice marker passes through untouched', any(e['kind'] == 'say' and choice in e['text'] for e in ev) and
           jget('/api/claude/status')[1].get('waiting') is True, [e['text'][:80] for e in ev if e['kind'] == 'say'])
@@ -661,7 +666,7 @@ def run_v5_suite():
           and fs.word_cap('No Such Look') == fs.DEFAULT_WORD_CAP)
 
     print('\n[v0.5 planning]')
-    jpost('/api/brief', {'basics': {'title': 'Plan deck'}, 'look': {'theme': 'Bold Blue'}, 'style': {'quality': 'best'}})
+    jpost('/api/brief', {'basics': {'title': 'Plan deck'}, 'look': {'theme': 'Bold Blue'}, 'style': {'quality': 'just-right'}})
     n0 = jget('/api/claude/status')[1].get('eventCount', 0)
     s, j = jpost('/api/plan/start', {})
     P = j.get('deckId')
@@ -792,7 +797,7 @@ def run_v5_suite():
     # Claude that planned the deck, so the plan and the look are already in context and no slide opens its own.
     check('slide 1 is built in the deck conversation, with the deck quality',
           flag(argv, '--resume') == sessP and not sc1.get('sessionId') and
-          flag(argv, '--model') == 'opus' and flag(argv, '--effort') == 'high', (argv, sc1))
+          flag(argv, '--model') == 'opus' and flag(argv, '--effort') == 'medium', (argv, sc1))
     check('build message is per slide and per plan', any('[build-slide id=' in h and 'n=1 of=' in h and 'deck shell' in h for h in heard(ev)), heard(ev)[:1])
     shells = list((AURA / 'temp' / 'build').glob(f'*-{P[:6]}/index.html'))
     check('v0.5.1: Lumi made the deck shell itself before slide 1 (Claude needs no shell command for it)', bool(shells), shells)
@@ -1079,7 +1084,7 @@ def run_q8_suite():
           "if (running || elsewhere || pendingCard()) { sfx('error'); return; }" in ws_js and 'const canReply = open && (hasRun() || EDIT) && !asking' in ws_js)
 
     print('\n[plan doubts with variants]')
-    jpost('/api/brief', {'basics': {'title': 'Doubt deck'}, 'look': {'theme': 'Bold Blue'}, 'style': {'quality': 'best'}, 'extra': {'notes': 'many-doubts'}})
+    jpost('/api/brief', {'basics': {'title': 'Doubt deck'}, 'look': {'theme': 'Bold Blue'}, 'style': {'quality': 'just-right'}, 'extra': {'notes': 'many-doubts'}})
     s, j = jpost('/api/plan/start', {})
     Q = j.get('deckId')
     pj = wait_plan_idle(Q)

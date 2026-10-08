@@ -77,6 +77,7 @@ if CASE == 'parts':
 elif CASE == 'inspect-ok':
     L.reset(A); L.gpu(A); L.cycles(16)
     g = M.gear(teeth=17, module=0.006, width=0.02, bore=0.02, material=L.mat('steel'))
+    L.real('probe', teeth=17, module_mm=6, width_mm=20, bore_mm=20)         # Part E: a scene declares its numbers
     L.studio(fit=[g]); L.camera([g])
     r = L.inspect()
     check('inspect: a complete scene has nothing fatal', r['ok'], str([f['code'] for f in r['fatal']]))

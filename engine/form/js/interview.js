@@ -54,7 +54,7 @@ export function interviewScene(host, { sfx = () => {}, onAsk, onStart, onRetry }
   const chipsWrap = h('div', { class: 'iv-settled', hidden: true }, h('p', { class: 'iv-settled-h' }, 'so far'), chips);
   const slot = h('div', { class: 'iv-slot' });
   const el = h('div', { class: 'iv' },
-    h('div', { class: 'iv-col' }, h('h1', { class: 'iv-h' }, 'tell claude about your talk'), roundLine, slot, chipsWrap));
+    h('div', { class: 'iv-col' }, h('h1', { class: 'iv-h' }, 'lumi wants to know more'), roundLine, slot, chipsWrap));
   host.replaceChildren(el);
 
   const busyCard = (title, note) => h('div', { class: 'iv-wait' }, h('div', { class: 'iv-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
@@ -95,7 +95,7 @@ export function interviewScene(host, { sfx = () => {}, onAsk, onStart, onRetry }
     }
     dropCard();
     if (running) {
-      slot.replaceChildren(busyCard(round > 1 ? 'claude is thinking about your answers' : 'claude is reading your files',
+      slot.replaceChildren(busyCard(round > 1 ? 'lumi is thinking about your answers' : 'lumi is reading your files',
         round > 1 ? 'the next question is on its way.' : 'it only asks what your files don’t say.'));
       return;
     }

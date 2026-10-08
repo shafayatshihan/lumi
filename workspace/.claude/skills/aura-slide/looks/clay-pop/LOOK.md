@@ -150,6 +150,10 @@ half-pressed grey one, plain = an empty socket, `.no` an orange cross), `.cp-tag
    rest of the object". If you count three colours fighting for attention, two are wrong.
 2. **Chunky, blocky, generously bevelled. No thin parts.** Every edge is rounded wide enough to catch a highlight.
    A part that would be thin in reality (a wire, a blade, a membrane) is modelled thick and says so in the notes.
+   **Thick, never fewer or wider apart** (LOOK-BASE 4.10): thickening keeps the real count and the real pitch, and
+   leaves at least half of each real gap open, so a fin pack still reads as a fin pack and air still has its passage.
+   Write the liberty in `L.real(..., liberties=)`. Satellites (rule 6) are parts of the object, never a stand-in for
+   what flows through it: air, heat and current are drawn as notation (arrows, streamlines) in the primary colour.
 3. **A soft contact shadow directly under the subject**, grounding it; everything that is not standing on something
    floats, with its own soft shadow far below it.
 4. **Micro-detail at the scale of a thumbnail press**: a seam, a screw head, a tiny sticker, a slightly wrong key,
@@ -243,6 +247,34 @@ No thin parts. No gloss, no clearcoat, no chrome-mirror finish. No second wink. 
 confetti satellites that are not the subject's own parts. No texture image, no stock or generated picture, no
 outline pen (that is Flat-Pack). No figure inside a card. No meaningful text baked into a render or a canvas - labels
 are HTML (`.cp-tag`). No per-frame Cycles animation until the bake path ships. No white letters on orange.
+
+---
+
+## 3A. The illustration idiom: the clay set, seen flat on
+
+> Base 4.12 and `illustration.md` say what a drawn picture is. This section is only Clay Pop's surface.
+
+A Clay Pop drawing is the same set as its renders, photographed straight on: **lit clay on a cool studio tile**.
+It is flat only in projection — every solid still has a light side and a shadow side, from the one upper-left key.
+
+| | Clay Pop |
+|---|---|
+| line | none. Clay has no keyline; a form is read from its light |
+| fills | hero and signal take the clay gradient (`--clay-hi` → `--clay` → `--clay-lo`, top to bottom); body white tile, context `--groove`, mark `--clay-top` |
+| corners | 28 px, 16 px on a small part. Nothing is sharp; clay cannot be sharp |
+| lift | the tile shadow — soft, low, slightly offset down, plus the key shadow under a pressed part |
+| labels | Plus Jakarta Sans at 30 px; captions, dimensions and ticks in DM Mono at 24 px |
+| notation | a flow or a field is clay in a lighter tone, or a channel pressed into the tile (`--groove`), never a coloured overlay |
+| texture | the gradient itself. No dots, no grain, no hatching except a cut surface |
+
+1. **Lit from one place.** Every gradient runs light at the top and `--clay-lo` at the bottom, because one key
+   light is above and to the left. Two shapes lit from two directions destroy the set in a single glance.
+2. **Pressed, not drawn.** A track, a rail or a slot is a groove in the tile — `role: 'context'` — and the moving
+   part sits in it. That is this look's equivalent of a guide line; it does not use dashes.
+3. **Orange as text is rare and it is `--clay-ink`**, never `--clay`. Text on a clay part is white and
+   `F.text({ on: … })` picks it.
+4. **Never** a keyline, a sharp corner, a flat untextured orange, a second light direction, a grey that is not
+   `--groove` or `--clay-grey`, or clay used for something that is not a solid.
 
 ---
 

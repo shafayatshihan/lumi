@@ -195,8 +195,11 @@ const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&
 // ...and every look loads the shared deck libraries FIRST: the one post stack (lib/post.js) and the policy that
 // decides whether a slide may have it (lib/post-policy.js). The policy is off for any look it does not know, so
 // loading them changes nothing by itself.
+// ...and the illustration engine (lib/illus.js), which draws the slide's non-3D picture as inline SVG in the look's
+// own drawing style. It registers nothing and draws nothing by itself; a slide uses it by calling LumiIllus.draw.
 const SHARED_HEAD = '<script src="{{ENGINE}}/deck/lib/post.js"></script>\n' +
-                    '<script src="{{ENGINE}}/deck/lib/post-policy.js"></script>\n';
+                    '<script src="{{ENGINE}}/deck/lib/post-policy.js"></script>\n' +
+                    '<script src="{{ENGINE}}/deck/lib/illus.js"></script>\n';
 const LOOK_HEAD = {
   'bold-blue': SHARED_HEAD +
                '<script src="{{ENGINE}}/deck/looks/bold-blue/bold-blue.js"></script>\n' +

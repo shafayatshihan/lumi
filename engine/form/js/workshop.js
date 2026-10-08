@@ -2,16 +2,26 @@
 // (friendly text with [[aura:...]] markers stripped, tool steps as tiny progress lines, replies) plus the sign-in,
 // missing-CLI, usage-limit and error states. Events live on the server, so a reload simply replays them from 0.
 // mountWorkshop(leftEl, rightEl, { getState, bus, audio, deckId, mode, getSlide, onEdit, onHome, onDone, onHints, onSlide,
+//   onTarget(n) (which slide the next message is about; 0: the whole deck),
 //   popupHost, slideInfo(ref) -> Promise<{info, thumb}|null>, onAsk(state 'open'|'collapsed'|'none'), hintsOk() -> bool })
 //   -> { destroy(), setSlide(), fill(text), hints, running }
 // mode 'build' (default): the first build of a deck, with the tracker on the left.
 // mode 'edit' (v0.3 editor): no tracker; replies carry the deck id + selected slide; a hint row and a folder button sit
 // above/in the box; only this deck's events are shown.
 // Both modes show [[aura:choice]] markers as option buttons + a free-text box.
-// v0.5.2 per-slide conversations (edit mode, a deck with a plan): every slide has its own Claude conversation and the deck one
-// more. The chat shows ONE thread: the selected slide's, or the deck's when "whole deck" is picked in the head. While Claude
-// works (or waits for an answer) it shows that run's thread, and keeps it after the run until the person picks another slide
-// or thread. Events carry `conv` (a slide id, or 'deck'); events from before v0.5.2 have none and belong to the deck thread.
+// ONE CONVERSATION PER DECK (owner, 2026-10-08; form_server.ONE_DECK_CONVERSATION). v0.5.2 gave every slide its own Claude
+// conversation and the chat showed one thread at a time, picked by a "slide 1 | whole deck" switch in the head. That switch is
+// gone: there is one conversation, so there is one log, unfiltered, in order. (It had also quietly broken the chat: it filtered
+// events by `conv`, and `conv` is null now, so every slide rendered an EMPTY log on any deck built since the switch.)
+//
+// What survives is SCOPE, which is a different thing. The server still prefixes a message with '[slide n]' or '[whole deck]'
+// (/api/claude/reply), and that prefix is the only thing telling Claude what a message is about. So scope is inferred from the
+// slide the person has open, declared only to override that, and shown in every place that could disagree:
+//   - the target follows getSlide(); an override lasts until that message is sent, then it goes back to following (a sticky
+//     "whole deck" mode is invisible the moment you look away from it, and fails expensively);
+//   - it is bound AT SEND TIME, onto the request and onto the sent bubble, so navigating later cannot retarget a message;
+//   - Claude's side is tagged too. `say`/`tool` events carry no slide, so a turn's slide is the slide of the `user` event that
+//     opened it. When that is not the slide now on screen, the tag becomes a button that goes there.
 import * as api from './api.js';
 import { pace } from './api.js';
 import { emit, setClaude } from './bus.js';
@@ -96,7 +106,12 @@ export function toolLine(ev) {
   }
 }
 
-const AVATAR = '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 20c0-8 5-14 11-14s11 6 11 14c0 4-3 7-11 7S5 24 5 20z" fill="var(--fur3)"/><path d="M8 9l2-5 4 4M24 9l-2-5-4 4" fill="var(--fur4)"/><circle cx="12.5" cy="17" r="2" fill="var(--ink)"/><circle cx="19.5" cy="17" r="2" fill="var(--ink)"/><path d="M14 22c1.3 1 2.7 1 4 0" fill="none" stroke="var(--ink)" stroke-width="1.4" stroke-linecap="round"/><circle cx="9" cy="21" r="1.6" fill="var(--pink)"/><circle cx="23" cy="21" r="1.6" fill="var(--pink)"/></svg>';
+// Claude's own mark. This panel IS Claude - it is labelled "claude" and the messages in it are Claude's - so it
+// carries Claude's logo, supplied by the owner (2026-10-08) and served from assets/claude-mark.png. What was here
+// before was a hand-drawn blob imitating it, which is the kind of stand-in the owner cut across the whole app.
+// Lumi's own character is the plush (assets/lumi-mascot.png) and belongs on Lumi's surfaces: the icon, the loading
+// screen, the home card, the waiting game. Two marks, two speakers, no imitations of either.
+const AVATAR = '<img src="/assets/claude-mark.png" alt="" aria-hidden="true" draggable="false">';
 const SEND = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12.5l4 4 8-9" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const FOLDER = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2.2h7.4a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10.5v5.5M9.3 13.2 12 10.5l2.7 2.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -108,7 +123,7 @@ const ART = {
 };
 
 export function mountWorkshop(leftEl, rightEl, opts = {}) {
-  const { bus, audio, deckId = null, mode = 'build', getSlide = () => null, onEdit, onHome, onDone, onHints, onSlide, popupHost = null, slideInfo = null, onAsk = null, hintsOk = null } = opts;
+  const { bus, audio, deckId = null, mode = 'build', getSlide = () => null, onEdit, onHome, onDone, onHints, onSlide, onTarget = null, popupHost = null, slideInfo = null, onAsk = null, hintsOk = null } = opts;
   const EDIT = mode === 'edit';
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const sfx = n => { try { audio && audio.sfx && audio.sfx(n); } catch (e) { /* optional */ } };
@@ -123,14 +138,17 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
   let cards = [];                // choice cards, newest last
   let attached = null;           // {name, state:'up'|'ok'|'err', p}
   let deckRec = null;
-  let slideIds = [];             // the plan's slide ids: one conversation each (empty: the deck has only its own conversation)
-  let view = 'slide';            // the thread the person picked: the selected slide's, or 'deck'
-  let pinned = null;             // the thread of the last run, kept on screen until the person picks another
-  let runKey = null;             // the thread of the run that is live or waiting (this deck's)
-  let shown;                     // the thread on screen (undefined: nothing rendered yet; null: no threads, everything)
-  let own = [];                  // this deck's events, every thread
+  let slideIds = [];             // the plan's slide ids, in order: index + 1 is the slide number
+  let aim = null;                // the person's override for the next message: {deck:true} | {n} | null (= follow the open slide)
+  let turnSlide;                 // the slide this turn of Claude's is about: a number, 0 (whole deck), or undefined (unknown)
+  let turnTagged = false;        // this turn's first reply already carries the tag
+  let turnTagEl = null;          // that tag, so a question later in the same turn can take it over
+  let tags = [];                 // every slide tag on screen, repainted when the person navigates
+  let askAim = null;             // the slide the open question is about (read only while a question is open)
+  let own = [];                  // this deck's events
+  let replayed = false;          // the editor's history has been put on screen once
+  let polledBusy = false;        // busy (running or waiting) as the last poll saw it
   let lastSel = null;
-  let polledBusy = false;        // busy (running or waiting) as the last poll saw it: a run is pinned once, when it is first seen
   const M = { stage: -1, deck: null, asked: false, ok: null, code: null, t0: 0, tEnd: 0, auth: false, progress: false, stopped: false, failed: false, relaxed: false };
 
   // ---------------------------------------------------------------- left: tracker + actions (build mode)
@@ -152,11 +170,10 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
 
   // ---------------------------------------------------------------- right: chat
   const statusTxt = h('span', { class: 'ws-state' }, 'connecting…');
-  const tSlide = h('button', { type: 'button', class: 'ws-th-b', 'aria-pressed': 'true', 'data-nosfx': '', 'data-cursor-label': 'this slide' }, 'this slide');
-  const tDeck = h('button', { type: 'button', class: 'ws-th-b', 'aria-pressed': 'false', 'data-nosfx': '', 'data-cursor-label': 'whole deck' }, 'whole deck');
-  const threadBar = EDIT ? h('div', { class: 'ws-thread', role: 'group', 'aria-label': 'which conversation', hidden: true }, tSlide, tDeck) : null;
+  // the head says which slide the chat is on, so the header and the strip can never disagree; it is a label, not a control
+  const headAim = EDIT ? h('span', { class: 'ws-head-aim', hidden: true }) : null;
   const head = h('div', { class: 'ws-head' }, h('span', { class: 'ws-ava', html: AVATAR }),
-    h('span', { class: 'ws-who' }, 'claude'), h('span', { class: 'ws-dot', 'aria-hidden': 'true' }), statusTxt, threadBar);
+    h('span', { class: 'ws-who' }, 'claude'), h('span', { class: 'ws-dot', 'aria-hidden': 'true' }), statusTxt, headAim);
   // F-14: the log is not a live region (it gets a line every second or two for half an hour, and replays its whole history on
   // opening); what a screen reader needs is announced separately: claude starting, asking, finishing (see paint) and its words.
   const log = h('div', { class: 'ws-log', role: 'log', 'aria-live': 'off', 'aria-label': 'what claude is doing', tabindex: '0' });
@@ -169,8 +186,13 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
   const clip = h('div', { class: 'ws-clip', hidden: true });
   const box = h('form', { class: 'ws-box' + (EDIT ? ' has-attach' : '') }, folderIco, input, sendBtn, fileIn);
   const hintRow = EDIT ? h('div', { class: 'ws-hints', 'aria-label': 'suggestions' }) : null;
+  // what the next message is about. It states the inference ("slide 4", because slide 4 is open) and is the way to override it.
+  const aimBtn = EDIT ? h('button', { type: 'button', class: 'ws-aim-b', 'aria-haspopup': 'true', 'aria-expanded': 'false',
+    'data-cursor-label': 'what about', 'data-nosfx': '' }, h('span', { class: 'ws-aim-t' }, 'this slide'), h('i', { 'aria-hidden': 'true' })) : null;
+  const aimMenu = EDIT ? h('div', { class: 'ws-aim-m', role: 'menu', hidden: true }) : null;
+  const aimRow = EDIT ? h('div', { class: 'ws-aim', hidden: true }, h('span', { class: 'ws-aim-l' }, 'about'), aimBtn, aimMenu) : null;
   const gateEl = h('div', { class: 'ws-gate', hidden: true });
-  const chat = h('div', { class: 'ws' + (EDIT ? ' ws-edit' : '') + (reduced ? ' ws-reduced' : '') }, head, h('div', { class: 'ws-body' }, log, jump, gateEl), hintRow, clip, box);
+  const chat = h('div', { class: 'ws' + (EDIT ? ' ws-edit' : '') + (reduced ? ' ws-reduced' : '') }, head, h('div', { class: 'ws-body' }, log, jump, gateEl), hintRow, aimRow, clip, box);
   rightEl && rightEl.append(chat);
 
   // ---------------------------------------------------------------- chat helpers
@@ -213,20 +235,71 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     g.more.hidden = extra <= 0;
     g.more.textContent = open ? 'show fewer steps' : `${extra} earlier step${extra === 1 ? '' : 's'}`;
   }
+  // ---------------------------------------------------------------- which slide a message is about
+  // 0 means the whole deck everywhere below; null/undefined means "no slide to show".
+  const slideWord = n => (n ? `slide ${n}` : 'whole deck');
+  const aimDeck = () => (askN() != null ? false : !!(aim && aim.deck));   // an answer is never a whole-deck message
+  // An open question owns the target while it is open: the answer belongs to the slide that was ASKED about, whatever the
+  // person has opened since. It cannot be overridden, because there is nowhere else for an answer to go.
+  const askN = () => (pendingCard() ? askAim : null);
+  const aimN = () => (askN() != null ? askN() : aim ? (aim.deck ? 0 : aim.n) : (getSlide() || 1));
+  // The slide number a question card is about: its choices carry the slide's id (slide_ref on the server), or a number.
+  function choiceN(cs) {
+    for (const c of (cs || [])) {
+      if (!c.slide) continue;
+      const i = slideIds.indexOf(c.slide);
+      if (i >= 0) return i + 1;
+      const n = Number(c.slide);
+      if (Number.isInteger(n) && n > 0) return n;
+    }
+    return null;
+  }
+  // A tag that always tells the truth: plain while it is the slide on screen, a button that goes there while it is not. Every
+  // tag is kept so navigating repaints all of them at once - a message must never look like it is about the slide you moved to.
+  function slideTag(n, cls = '') {
+    const el = h('button', { type: 'button', class: 'ws-slidetag ' + cls, 'data-nosfx': '' });
+    const rec = { el, n };
+    tags.push(rec);
+    el.addEventListener('click', () => {
+      if (!rec.n || rec.n === (getSlide() || 1) || !onSlide) return;
+      sfx('select');
+      try { onSlide(rec.n); } catch (e) { /* optional */ }
+    });
+    paintTag(rec);
+    return el;
+  }
+  function paintTag(rec) {
+    const away = rec.n > 0 && rec.n !== (getSlide() || 1);
+    rec.el.replaceChildren(h('span', {}, slideWord(rec.n)));          // replaceChildren is the DOM's, not h(): a null child would read as the word "null"
+    if (away) rec.el.append(h('i', { 'aria-hidden': 'true' }, '↗'));
+    rec.el.classList.toggle('is-away', away);
+    rec.el.disabled = !away;
+    rec.el.title = away ? `go to slide ${rec.n}` : '';
+    rec.el.setAttribute('aria-label', away ? `go to slide ${rec.n}` : slideWord(rec.n));
+  }
+  function paintTags() {
+    tags = tags.filter(t => t.el.isConnected);
+    tags.forEach(paintTag);
+  }
+
   function bubble(html, extraCls = '') {
     closeSteps();
-    return append(h('div', { class: 'ws-msg ws-claude ' + extraCls }, h('span', { class: 'ws-mini', html: AVATAR }), h('div', { class: 'ws-bub', html })));
+    const bub = h('div', { class: 'ws-bub', html });
+    // the first thing Claude says in a turn carries the turn's slide; the rest of the turn would only repeat it
+    if (EDIT && turnSlide !== undefined && !turnTagged) { turnTagEl = slideTag(turnSlide, 'ws-tag-c'); bub.prepend(turnTagEl); turnTagged = true; }
+    return append(h('div', { class: 'ws-msg ws-claude ' + extraCls }, h('span', { class: 'ws-mini', html: AVATAR }), bub));
   }
   function questionFor(id) {
     for (let i = cards.length - 1; i >= 0; i--) { const c = cards[i].choices.find(x => x.id === id); if (c) return c.question; }
     return null;
   }
-  // A user message: answers to choice questions are shown as "question / answer"; a slide tag for editor messages.
-  function userBubble(text, slide, extraCls = '') {
+  // A user message: answers to choice questions are shown as "question / answer"; a slide tag for editor messages. `n` is the
+  // target this message was BOUND to when it was sent (0: the whole deck) and never changes afterwards.
+  function userBubble(text, n, extraCls = '') {
     const { answers, text: rest } = parseAnswer(text);
     const known = answers.map(a => ({ a, q: questionFor(a.id) })).filter(x => x.q);
     const kids = [];
-    if (slide) kids.push(h('span', { class: 'ws-slidetag' }, `slide ${slide}`));
+    if (n != null) kids.push(slideTag(n, 'ws-tag-u'));
     if (known.length && known.length === answers.length) {
       for (const { a, q } of known) kids.push(h('span', { class: 'ws-ans' }, h('span', { class: 'ws-ans-q' }, q), h('span', {}, a.answer)));
       if (rest) kids.push(h('span', { class: 'ws-ans-rest' }, rest));
@@ -235,6 +308,11 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     return append(h('div', { class: 'ws-msg ws-user ' + extraCls }, h('div', { class: 'ws-bub' }, kids)), { force: true });
   }
   function note(text, cls = '') { closeSteps(); return append(h('p', { class: 'ws-note ' + cls }, text)); }
+  // a note that names its slide: C2's biting case is a question arriving about slide 2 while the person is looking at slide 7
+  function noteAim(text, n, cls = 'ws-quiet') {
+    closeSteps();
+    return append(h('p', { class: 'ws-note ws-note-aim ' + cls }, h('span', {}, text), n == null ? null : slideTag(n, 'ws-tag-n')), { force: true });
+  }
   function card(kind, title, text, buttons = []) {
     closeSteps();
     return append(h('div', { class: `ws-card ws-${kind}` }, h('p', { class: 'ws-card-t' }, title), text ? h('p', { class: 'ws-card-x' }, text) : null,
@@ -342,6 +420,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
         if (ev.code === 'start') {
           if (log.querySelector('.ws-msg, .ws-steps, .ws-card')) note(EDIT ? 'a new build' : 'starting again', 'ws-div');
           resetModel(); M.t0 = ev.t || 0;
+          turnSlide = undefined; turnTagged = false; turnTagEl = null;   // a build run, not a chat turn: no one slide to claim
         }
         note(text ? text.replace(/^Claude/, 'claude') : 'claude is getting ready', 'ws-quiet');
         break;
@@ -358,13 +437,19 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
         if (mk.choices.length) {
           closeSteps();
           cards.forEach(x => x.lock());
+          // the question's own slide wins over the turn's: a whole-deck message can still raise a doubt about one slide
+          const qn = EDIT ? (choiceN(mk.choices) ?? (turnSlide || null)) : null;
+          askAim = qn;
+          // one tag per turn, and the question is the thing that has to be answered: it takes the tag off the line above it
+          if (qn != null && turnTagEl && qn === turnSlide) { turnTagEl.remove(); turnTagEl = null; }
           if (popupHost) {
             cards.push(popupCard(mk.choices));
-            note('claude has a question');
+            if (qn) noteAim('claude has a question about', qn); else note('claude has a question');
           } else {
             const c = choiceCard(mk.choices, { onSend: t => send(t), sfx });
             cards.push(c);
-            append(h('div', { class: 'ws-msg ws-claude ws-choicewrap' }, h('span', { class: 'ws-mini' }), c.el), { force: true });
+            append(h('div', { class: 'ws-msg ws-claude ws-choicewrap' }, h('span', { class: 'ws-mini' }),
+              h('div', { class: 'ws-chcol' }, qn == null ? null : slideTag(qn, 'ws-tag-q'), c.el)), { force: true });
           }
         }
         if (mk.hints.length) {
@@ -400,9 +485,12 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
         break;
       case 'user': {
         lockCards(text);
+        // this message opens a turn, and everything Claude says until the next one is about the same slide
+        turnSlide = EDIT ? (ev.slide || 0) : undefined;
+        turnTagged = false; turnTagEl = null;
         const n = pendingUser.findIndex(p => p.text.trim() === text.trim());
         if (n >= 0) { pendingUser[n].el.classList.remove('ws-pending'); pendingUser.splice(n, 1); }
-        else userBubble(text, ev.slide);
+        else userBubble(text, EDIT ? (ev.slide || 0) : (ev.slide || null));
         M.asked = false; M.ok = null; M.code = null; M.stopped = M.failed = false; M.relaxed = true;
         if (ev.t) M.t0 = ev.t;
         if (M.stage === DONE_STAGE) M.stage = 3;
@@ -473,6 +561,13 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
   // selected slide) is there to change; the chips for the selected slide come first
   const ideasOk = () => !running && !elsewhere && !pendingCard() && !gate && !offline && (EDIT || hasRun()) && (!hintsOk || !!hintsOk());
   function paintHints() {
+    // the ideas row and the target chip sit under the log and change its height: whoever was reading the newest message must
+    // still be reading it afterwards, or their own message disappears behind a row that just appeared
+    const stick = nearBottom();
+    paintHintsIn();
+    if (stick) toBottom(false);
+  }
+  function paintHintsIn() {
     if (onHints) { try { onHints(hints); } catch (e) { /* optional */ } }
     chat.classList.toggle('no-ideas', !ideasOk());
     if (!hintRow) return;
@@ -545,7 +640,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     const sel = getSlide();
     input.placeholder = elsewhere ? 'claude is busy with another deck…' : running ? 'working… write when it’s done'
       : !hasRun() && !EDIT ? 'nothing to reply to yet' : asking ? 'answer claude’s questions first…' : waiting ? 'type your answer…'
-      : EDIT ? (shown === 'deck' ? 'what should change everywhere?' : (threadN() || sel) ? `what should change on slide ${threadN() || sel}?` : 'what should change?')
+      : EDIT ? (aimDeck() ? 'what should change everywhere?' : aimN() ? `what should change on slide ${aimN()}?` : 'what should change?')
       : done ? 'ask for a change…' : 'tell claude what to do next…';
     cards.forEach(c => c.setEnabled(open));
     input.title = running ? 'wait until claude is done' : asking ? 'answer the questions first' : '';
@@ -555,7 +650,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
       : elsewhere ? 'busy with another deck' : running ? 'working' : waiting ? 'waiting for you' : done ? (EDIT ? 'ready' : 'finished')
       : M.stopped ? 'stopped' : M.failed ? 'paused' : hasRun() ? 'idle' : 'ready';
     head.dataset.state = offline ? 'off' : running ? 'run' : waiting ? 'ask' : done ? 'done' : 'idle';
-    paintThread();
+    paintAim();
     if (running && typing.parentNode !== log) { log.append(typing); if (nearBottom()) toBottom(); }
     if (!running && typing.parentNode) typing.remove();
     paintTime();
@@ -641,7 +736,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     if (!alive || running) { if (running && gate && gate !== 'cli') showGate(null); return; }
     if (status && status.cli === false) return showGate('cli');
     if ((M.auth || (status && status.signedIn === false)) && !gateDismissed) return showGate('signin');
-    if (EDIT && deckRec && !deckRec.sessionId && !hasRun() && !perSlide()) return showGate('nosession');
+    if (EDIT && deckRec && !deckRec.sessionId && !hasRun() && !(deckId && slideIds.length)) return showGate('nosession');
     if (!hasRun() && !EDIT) return showGate('start');
     if (gate && gate !== 'cli') showGate(null);
   }
@@ -677,12 +772,14 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     if (attached && attached.state === 'ok') text = (text ? text + '\n' : '') + `use the file ${attached.name}`;
     if (!text || running || sending || elsewhere) return;
     sending = true;
-    let slide = EDIT ? getSlide() : null, scope;
-    if (perSlide()) {
-      if (shown === 'deck') { scope = 'deck'; slide = null; }
-      else { scope = 'slide'; slide = threadN() || slide; }
-    }
-    const b = userBubble(text, slide, 'ws-pending');
+    // BOUND HERE, once. Whatever the person does next - scroll the strip, open another slide - this message keeps this target,
+    // on the wire and on the bubble.
+    const wasAim = aim;
+    const deckWide = EDIT && aimDeck();
+    const slide = EDIT && !deckWide ? aimN() : null;
+    const scope = EDIT && deckId ? (deckWide ? 'deck' : 'slide') : undefined;
+    const b = userBubble(text, EDIT ? (deckWide ? 0 : slide) : null, 'ws-pending');
+    aim = null; paintAim();         // an override is a declaration about one message, not a mode
     const p = { text, el: b };
     pendingUser.push(p);
     lockCards(text);
@@ -696,6 +793,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     if (r && r.ok === false && r.error !== 'busy') {
       b.classList.add('ws-failed'); b.classList.remove('ws-pending');
       const n = pendingUser.indexOf(p); if (n >= 0) pendingUser.splice(n, 1);
+      if (wasAim) { aim = wasAim; paintAim(); }        // nothing was sent, so the override the person chose is still theirs
       if (hadFile) { attached = hadFile; paintClip(); }
       if (r.error === 'cli-missing') { status = { ...(status || {}), cli: false }; showGate('cli'); }
       else { sfx('error'); note(r.error === 'offline' ? 'couldn’t reach lumi, so that wasn’t sent.' : r.error === 'no-session' ? 'claude can’t pick this deck up here. small text changes still work on the slide.' : 'that didn’t send. try again?', 'ws-quiet'); }
@@ -746,60 +844,78 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
   homeLink.addEventListener('click', () => { if (onHome) onHome(); });
   function leftSay(t) { leftToast.textContent = t; leftToast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => leftToast.classList.remove('show'), 3500); }
 
-  // ---------------------------------------------------------------- per-slide threads (v0.5.2)
-  function perSlide() { return EDIT && !!deckId && slideIds.length > 0; }
-  function evThread(ev) { return (ev && ev.conv) || 'deck'; }
-  function threadN() { return shown && shown !== 'deck' ? slideIds.indexOf(shown) + 1 : 0; }
-  function threadKey() {
-    if (!perSlide()) return null;
-    if (runKey && (running || srvWaiting)) return runKey;
-    if (pinned) return pinned;
-    if (view === 'deck') return 'deck';
-    return slideIds[(getSlide() || 1) - 1] || 'deck';
-  }
-  // switching threads replays that thread's history (quietly) into an empty log; false if the thread did not change
-  function renderThread() {
-    const key = threadKey();
-    if (key === shown) return false;
-    shown = key;
+  // ---------------------------------------------------------------- one log, and the target chip
+  // The editor's history, once, in order: one conversation, so no filtering. (This replaced renderThread(), which filtered the
+  // log by each event's `conv` - dead since the server stopped setting it, and it rendered an empty chat on every new deck.)
+  function replayOwn() {
+    if (replayed) return;
+    replayed = true;
     log.replaceChildren(); closeSteps(); cards = []; pendingUser.length = 0; closePopups();
-    M.stage = -1; hints = [];
-    const evs = (key ? own.filter(e => evThread(e) === key) : own).slice(-240);
+    tags = []; M.stage = -1; hints = [];
+    turnSlide = undefined; turnTagged = false; turnTagEl = null;
     live = false;
-    for (const ev of evs) handle(ev);
+    for (const ev of own.slice(-240)) handle(ev);
     live = true;
     toBottom(false);
-    paintThread(); paintHints();
-    return true;
+    paintAim(); paintHints();
   }
-  function paintThread() {
-    if (!threadBar) return;
-    threadBar.hidden = !perSlide();
-    if (threadBar.hidden) return;
-    const deck = shown === 'deck', n = threadN() || getSlide() || 1;
-    tSlide.textContent = `slide ${n}`;
-    tSlide.classList.toggle('on', !deck); tDeck.classList.toggle('on', deck);
-    tSlide.setAttribute('aria-pressed', String(!deck)); tDeck.setAttribute('aria-pressed', String(deck));
-    const locked = !!(runKey && (running || srvWaiting));
-    tSlide.disabled = tDeck.disabled = locked;
-    threadBar.title = locked ? (deck ? 'claude is working on the whole deck' : `claude is working on slide ${n}`) : '';
+  function paintAim() {
+    if (!aimRow) return;
+    aimRow.hidden = !deckId;
+    const n = aimN();
+    if (headAim) {
+      headAim.hidden = !EDIT || !deckId;
+      headAim.textContent = slideWord(n);
+      headAim.classList.toggle('is-set', !!aim);
+    }
+    if (aimRow.hidden) return;
+    aimBtn.querySelector('.ws-aim-t').textContent = slideWord(n);
+    aimBtn.classList.toggle('is-set', !!aim);
+    aimBtn.disabled = !!gate || offline || running || elsewhere || askN() != null;
+    if (aimBtn.disabled) closeAim();
+    aimBtn.title = askN() != null ? 'claude asked about this slide, so your answer goes to it'
+      : aim ? 'you picked this. it goes back to the open slide once you send'
+      : 'the slide you have open. pick another for this message';
+    if (onTarget) { try { onTarget(n); } catch (e) { /* optional */ } }
   }
-  function pickThread(v) {
-    if (tSlide.disabled) return;
-    sfx('select');
-    view = v; pinned = null;
-    renderThread(); paint();
-    if (running || srvWaiting) schedule(60);
+  let aimOpen = false;
+  const onDocDown = e => { if (aimOpen && !aimRow.contains(e.target)) closeAim(); };
+  const onDocKey = e => { if (aimOpen && e.key === 'Escape') { closeAim(); aimBtn.focus({ preventScroll: true }); } };
+  function closeAim() {
+    if (!aimOpen) return;
+    aimOpen = false;
+    aimMenu.hidden = true;
+    aimBtn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', onDocDown, true);
+    document.removeEventListener('keydown', onDocKey, true);
   }
-  tSlide.addEventListener('click', () => pickThread('slide'));
-  tDeck.addEventListener('click', () => pickThread('deck'));
+  function openAim() {
+    const here = getSlide() || 1;
+    const item = (label, sub, on, pick) => {
+      const b = h('button', { type: 'button', class: 'ws-aim-i' + (on ? ' on' : ''), role: 'menuitem', 'data-nosfx': '' },
+        h('span', { class: 'ws-aim-il' }, label), h('small', {}, sub));
+      b.addEventListener('click', () => { sfx('select'); pick(); closeAim(); paintAim(); paint(); if (!input.disabled) input.focus({ preventScroll: true }); });
+      return b;
+    };
+    aimMenu.replaceChildren(
+      item('this slide', `slide ${here}`, !aim, () => { aim = null; }),
+      item('whole deck', 'every slide', aimDeck(), () => { aim = { deck: true }; }));
+    aimMenu.hidden = false;
+    aimOpen = true;
+    aimBtn.setAttribute('aria-expanded', 'true');
+    document.addEventListener('pointerdown', onDocDown, true);
+    document.addEventListener('keydown', onDocKey, true);
+    const first = aimMenu.querySelector('.ws-aim-i');
+    if (first) try { first.focus({ preventScroll: true }); } catch (e) { /* gone */ }
+  }
+  if (aimBtn) aimBtn.addEventListener('click', () => { if (aimBtn.disabled) return; sfx('click'); aimOpen ? closeAim() : openAim(); });
   async function refreshIds() {
     if (!EDIT || !deckId) return;
     const d = await api.decks.get(deckId);
     if (!alive || !d || d.ok === false || !d.deck) return;
     deckRec = d.deck;
     const ids = Array.isArray(d.deck.slideIds) ? d.deck.slideIds : [];
-    if (ids.join() !== slideIds.join()) { slideIds = ids; renderThread(); paint(); }
+    if (ids.join() !== slideIds.join()) { slideIds = ids; paintAim(); paint(); }
   }
 
   // ---------------------------------------------------------------- polling
@@ -818,7 +934,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     }
     offIdle = 0;
     if (offline) { offline = false; idle = 0; }
-    if (r.reset) { log.replaceChildren(); closeSteps(); cards = []; M.stage = -1; base = -1; next = 0; return schedule(0); }
+    if (r.reset) { log.replaceChildren(); closeSteps(); cards = []; tags = []; M.stage = -1; base = -1; next = 0; replayed = false; return schedule(0); }
     let evs = r.events;
     const runDeck = r.deckId || null;
     const forMe = !deckId || !runDeck || runDeck === deckId;
@@ -826,11 +942,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     running = !!r.running && forMe;
     elsewhere = !!r.running && !forMe;
     srvWaiting = forMe ? r.waiting : undefined;
-    runKey = deckId && runDeck === deckId ? (r.conv || 'deck') : null;
     polledBusy = !!(running || srvWaiting);
-    // the run's thread stays on screen after it ends, unless the person picked another slide or thread meanwhile (a pick clears
-    // the pin, and the pin is set only when the run is first seen, so a poll already in flight cannot put it back)
-    if (perSlide() && runKey && polledBusy && !wasBusy) pinned = runKey;
     if (wasBusy && !polledBusy) refreshIds();        // a run may have changed the plan (new slide ids)
     if (base < 0) {
       // first load: a deck's own events (the editor shows its recent history, the workshop its latest build);
@@ -840,7 +952,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
         const startIdx = own.map(e => e && e.kind === 'status' && e.code === 'start').lastIndexOf(true);
         evs = EDIT ? [] : own.slice(Math.max(0, startIdx));
         base = 0;
-        if (EDIT) { shown = undefined; renderThread(); for (const ev of own.slice(-240)) fire('claude:event', { event: ev, replay: true, deckId }); }
+        if (EDIT) { replayOwn(); for (const ev of own.slice(-240)) fire('claude:event', { event: ev, replay: true, deckId }); }
       } else {
         const startIdx = evs.map(e => e && e.kind === 'status' && e.code === 'start').lastIndexOf(true);
         base = typeof r.runStart === 'number' && r.runStart >= 0 && r.runStart <= evs.length ? r.runStart : Math.max(0, startIdx);
@@ -853,9 +965,8 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     } else {
       const fresh = evs.filter(mine);
       if (deckId) { own.push(...fresh); if (own.length > 3000) own = own.slice(-2000); }
-      const moved = EDIT && deckId ? renderThread() : false;      // the visible thread changed: it was replayed with these events
       for (const ev of fresh) {
-        if (!moved && (!EDIT || !shown || evThread(ev) === shown)) handle(ev);
+        handle(ev);                                  // one conversation, one log: every event this deck's belongs on screen
         fire('claude:event', { event: ev, deckId });
       }
     }
@@ -888,8 +999,11 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
   return {
     setSlide() {
       const sel = getSlide();
-      if (sel !== lastSel) { lastSel = sel; pinned = null; view = 'slide'; if (running || srvWaiting) schedule(60); }     // a stale 'running' is re-asked at once
-      if (EDIT && deckId && base >= 0) renderThread();
+      // Moving carries the target along - but only while the person has not said otherwise. A "whole deck" they picked
+      // survives a look at another slide: it is on the chip the whole time, so keeping it is the visible choice and
+      // dropping it would be the silent one.
+      if (sel !== lastSel) { lastSel = sel; closeAim(); if (running || srvWaiting) schedule(60); }     // a stale 'running' is re-asked at once
+      paintTags();                 // every message on screen re-states which slide it was about, from here
       paintHints(); paint();
     },
     fill,
@@ -898,6 +1012,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     destroy() {
       alive = false;
       clearTimeout(pollT); clearTimeout(loginT); clearInterval(tickT); clearTimeout(toastT); clearTimeout(stopArm);
+      if (aimRow) closeAim();
       document.removeEventListener('visibilitychange', onVis);
       left.remove(); chat.remove();
     },

@@ -416,6 +416,24 @@ def _camera(scene, cam, ctr):
     }
 
 
+def _camera_track(scene, cam, ctr):
+    """Part E: L.move() keys the camera on every frame 1..N+1, so the player needs every frame's pose, not one. One row
+    per frame: position (3), quaternion w x y z (4), fovY, fovX - in the same frame and units as _camera(). Row N equals
+    row 0 (the loop closes), and the player interpolates between rows by t, so seek(t) stays a pure function of t."""
+    if not cam or not scene.get('lumi_move'):
+        return None
+    n = int(scene.get('lumi_loop', 0) or 0)
+    if n < 2:
+        return None
+    rows = []
+    for f in range(scene.frame_start, scene.frame_start + n + 1):
+        scene.frame_set(f)
+        c = _camera(scene, cam, ctr)
+        rows.append(c['position'] + c['quaternion'] + [c['fovY'], c['fovX']])
+    scene.frame_set(scene.frame_start)
+    return {'move': scene['lumi_move'], 'frames': n, 'rows': rows}
+
+
 def _manifest(scene, groups, mode, size, seconds, objs):
     cam = scene.camera
     lo, hi = _subject_bounds(objs)
@@ -441,6 +459,8 @@ def _manifest(scene, groups, mode, size, seconds, objs):
         # to_track_quat, so there is no roll to preserve, and a lookAt reproduces it exactly without a quaternion
         # basis change that is easy to get subtly wrong.
         'camera': _camera(scene, cam, ctr),
+        'cameraTrack': _camera_track(scene, cam, ctr),
+        'real': (sys.modules['lumi_bpy']._REAL or None) if 'lumi_bpy' in sys.modules else None,
         'bounds': {'min': [round(v, 6) for v in lo], 'max': [round(v, 6) for v in hi],
                    'size': round((hi - lo).length, 6)},
         # B.4: the hatch is screen-space and must NOT be in a texture. The player injects it per fragment on these

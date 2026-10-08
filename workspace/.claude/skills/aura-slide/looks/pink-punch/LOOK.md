@@ -224,6 +224,38 @@ into WebGL — callouts are HTML (`.pp-pin`, `.pp-tag`, `.pp-pill`).
 
 ---
 
+## 3A. The illustration idiom: a screen print, pulled flat
+
+> Base 4.12 and `illustration.md` say what a drawn picture is. This section is only Pink Punch's surface.
+
+A Pink Punch drawing is a **print**: heavy black keyline, flat spot colours, a hard copy of the shape sitting
+behind it where the press was out of register, and halftone dots where a tone is needed. Nothing is soft.
+
+| | Pink Punch |
+|---|---|
+| line | 5 px black (`--line-w`) around **every** shape, closed, even weight |
+| fills | hero `--brand` pink, body white, context `--bg-paper`, mark `--pop-yellow`, signal `--signal` red |
+| corners | 48 px, and the look's one sharp corner where a card shape is used |
+| lift | the hard offset copy, 8 px right and down, pure black, **never blurred** (`F.part` draws it) |
+| labels | Work Sans at 36 px; captions and dimensions at 28 px |
+| notation | arrows in black with the same 5 px weight; a field or a flow in a pop colour at full strength, never faded |
+| texture | halftone dots over a context shape — the look's one tone. `F.part({ role: 'context' })` applies it |
+
+1. **Spot colours, not shades.** Every fill is one of the pops at full strength. No tint, no gradient, no
+   opacity below 1 except the halftone. A thing that needs "a bit lighter" becomes white with a keyline.
+2. **One pink.** Pink is the voice: the hero part and nothing else. Yellow, teal, periwinkle and orange are for
+   the rest of the drawing, and red is reserved for the one thing that goes wrong.
+3. **The print still obeys the object.** Loud surface, real structure: the counts, the pitch and the order of
+   parts are the real ones (base 4.10). A print is a style of ink, not a licence to draw a cartoon.
+4. **Fewer parts, fatter parts.** A 5 px keyline swallows anything thinner than about 24 px, so a dense
+   fine-detail section — a stack of nine fins, a row of twenty teeth — comes out as a grey mat in this look.
+   Draw fewer of them, larger, or magnify the detail; a section that needs that density belongs in Bold Blue or
+   Flat-Pack.
+5. **Never** a blurred shadow, a gradient, a glow, a thin line, an open shape, type over a pop colour at caption
+   size, or a pop colour as a field behind words.
+
+---
+
 ## 4. The chart idiom (`PPChart.bar` first, `PPChart.line` for a trend)
 
 **A bar chart is this look's native figure** and the first thing to reach for: chunky outlined blocks with a hard black

@@ -25,11 +25,15 @@ import { ICON as ICONS } from './dom.js';
 const SVG = { back: ICONS.back, up: ICONS.up, down: ICONS.down, left: ICONS.left, right: ICONS.rright, play: ICONS.play, folder: ICONS.folder, pen: ICONS.pen,
   tip: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"/></svg>',
 };
+// Part B, v0.5.11: the tier's plain word now comes from the server (qualityView.name), because a tier id is no longer a
+// word people read ('just-right'), and a list of ids here went stale every time the tiers changed. The map is the
+// fallback for a record fetched by an older page, and it holds the OLD names on purpose.
 const QUALITY = { best: 'best quality', maximum: 'maximum', balanced: 'balanced', fast: 'fast' };
 // One stored value, two ways to see it: a named tier shows its plain word, a pair no tier covers shows the pair itself
 // (the only way to make one is the advanced control on the look step, so whoever made it knows what "opus · extra high" means).
 export const qualityWord = deck => {
   const v = (deck && deck.qualityView) || null;
+  if (v && v.name) return v.name;
   if (v && !v.tier && v.model) return `${v.model} · ${v.effort}`;
   return QUALITY[(v && v.tier) || (deck && deck.quality)] || 'balanced';
 };
@@ -38,6 +42,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   const sfx = n => { try { audio && audio.sfx && audio.sfx(n); } catch (e) { /* optional */ } };
   const store = openPlan(deckId);          // the ONE plan for this deck (plan-store.js); this page keeps no copy of it
   let alive = true, deck = null, cur = Math.max(1, slide | 0), count = 0, page = 0, thumbs = [], runtime = false, shim = null;
+  let aimAt = null;              // the slide the chat says its next message is about (0: the whole deck, null: unknown yet)
   let loadT = 0, scene = null, chat = null, editing = null, thumbsT = 0, thumbsVer = 0;
   // F-10: no private copy of "claude is running": it is read from the one shared answer (bus.js), which both the events poll
   // (workshop.js) and this page's plan poll keep up to date, the freshest report winning.
@@ -235,10 +240,13 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
       if (t) { const img = new Image(); img.alt = ''; img.decoding = 'async'; img.src = t.url; img.onerror = () => { pic.classList.add('is-loading'); img.remove(); }; pic.append(img); }
       else pic.append(h('span', { class: 'hm-shimmer' }));
       // a slide the plan has but the deck has not got to yet is shown in its place, greyed, so the list and the plan agree
-      const b = h('button', { type: 'button', class: 'ed-th' + (i === cur && made ? ' on' : '') + (made ? '' : ' is-todo'),
+      const aimed = aimAt === i && i !== cur;          // the chat is pointed here, but you are looking somewhere else
+      const b = h('button', { type: 'button', class: 'ed-th' + (i === cur && made ? ' on' : '') + (made ? '' : ' is-todo') + (aimed ? ' is-aimed' : ''),
         role: 'option', 'aria-selected': i === cur && made ? 'true' : 'false', disabled: made ? null : true,
-        title: made ? null : 'not made yet', 'data-n': i, 'data-cursor-label': made ? `slide ${i}` : 'not made yet', 'data-nosfx': '' },
-        pic, h('span', { class: 'ed-th-n' }, String(i)));
+        title: made ? (aimed ? 'the chat is about this slide' : null) : 'not made yet', 'data-n': i,
+        'data-cursor-label': made ? `slide ${i}` : 'not made yet', 'data-nosfx': '' },
+        pic, h('span', { class: 'ed-th-n' }, String(i)),
+        aimed ? h('span', { class: 'ed-th-aim', 'aria-hidden': 'true' }, 'in chat') : null);
       if (made) b.addEventListener('click', () => go(i));
       items.push(b);
     }
@@ -803,6 +811,9 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
       if (play) play.setAsking(st === 'open'); },        // the waiting game yields on this tick, not when the observer notices
     hintsOk: () => !build || !!(pay && pay.exists && pay.built >= cur),
     onSlide: n => { if (n && n !== cur) { if (count && n > count) return; go(n); } },
+    // which slide the next message is about (0: the whole deck). The strip is the other half of "no ambiguity": when the
+    // chat is aimed somewhere other than the slide on screen, the strip says which one, so the two can never disagree.
+    onTarget: n => { if (n !== aimAt) { aimAt = n; paintStrip(); } },
     // the pack runs after the reply lands, so wait for the file to change rather than reloading straight away
     // The STRIP and the counter update at once (they read the plan, which is already current); only the PREVIEW
     // waits, because the packed file it shows is written after the run ends.

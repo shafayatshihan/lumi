@@ -279,6 +279,113 @@ measured values — a light shaft across a chart is the same crime as bloom on a
 On a light plate (a Bold Blue cyclorama) they read as a soft warm light from the key's side, not as visible beams;
 visible beams need a darker plate. Never raise their strength to make up for that: it washes the plate to white.
 
+### 4.10 The real thing, never a likeness — binding on every look
+
+Every 3D model and every illustration shows **the real object, built from real numbers, in real materials.** A
+person in the audience who works with the thing should recognise it, count its parts and find them right. This rule
+outranks any look's figure idiom: **realistic in structure, thematic in surface.** Bold Blue is the benchmark for
+rigour, not for appearance: Clay Pop stays matte clay, Pink Punch stays a screen print, Flat-Pack stays a drawing, but
+in every one of them the fins are the real number of fins at the real pitch.
+
+1. **The real object at its real proportions.** Model what the subject is (4.0) with the real counts and the real
+   dimensions (4.1): a finned coil has its real fin pitch, tube diameter, tube rows and header; a gear has its teeth.
+   If the brief or the files give a size, use it. If a size you need is not known, ASK it in the build question.
+2. **Enough of it to be it.** A slice so small that it stops reading as the object (24 fins standing for a coil of
+   hundreds) is a likeness. Show the whole object, or a cutaway / section of the whole, or a magnified detail that
+   is **placed inside** the whole so the viewer sees where it sits.
+3. **Real materials.** Every part is made of what it is made of: in Blender `L.mat(kind)` (steel, aluminium, cast
+   iron, titanium, copper, brass, chrome, glass, ceramic, rubber, plastic, paint, clay), a scanned PolyHaven surface
+   `L.pbr(id)`, or a `lumi_mech` part; live, the look's named materials. A look whose surface is not photographic
+   (clay, print, flat fill) keeps its surface - but the *structure* is still the real one.
+4. **No analogy, no mascot, no cartoon stand-in.** Clouds for airflow, a heart for health, sparkles for "clean", a
+   smiling part: never. What is invisible in reality is drawn as **notation** - arrows, streamlines, particles moving
+   along the real flow direction, a colour field mapped to the real quantity with its scale. Notation is honest about
+   being notation; a cartoon pretends to be the medium.
+5. **Depth and layered detail.** Real objects have bevels, fillets, fasteners, seals, headers, return bends, frames
+   and labels. Show the inside with a cutaway or a section (`L.cutaway`, `L.section`) instead of a ghosted shell. The
+   counts in 4.2 are the floor.
+6. **It follows the real equations.** Motion or a field on the figure comes from the physics the deck is about: the
+   real flow direction and the real rotation sense; speeds in the right ratio (air faster through the free area than
+   at the face, a pinion faster than its ring by the tooth ratio). A sine wave that merely looks lively is not motion
+   of the thing. Real simulation is in 4.3.
+7. **A liberty is written down, or it is a mistake.** Some departures are needed - a 0.15 mm fin drawn thicker so it
+   shows at 1080p, a look's "chunky" bevel. Name each one where the numbers are declared (`L.real(..., liberties=)`)
+   and in the speaker notes, and keep it from changing what the picture claims: counts, pitch, ratios and the
+   order of parts stay real.
+
+**What is checked.** In Blender every scene declares its numbers with `L.real('<source>', **dims)`. `--inspect` is
+fatal without it (`no-real`), on a part named as a stand-in (`analogy`), and when no part uses a real material
+(`no-preset`). `deck_check.js` reads each studio render's `scene.py` and fails the slide on the same three; a render
+the person already approved before this rule existed gets a warning instead. Live three.js figures are held to the
+same rule by the checklist (section 10) and by the screenshot: no code can count fins in a picture.
+
+### 4.11 Camera setups and sway — a camera that moves like a camera
+
+Every animated 3D figure moves its camera, slowly, the way a camera operator would: a drift on a held shot, or one
+named move chosen for the slide. Choose a **different** setup on neighbouring 3D slides (the variety rule in 4.0).
+
+| setup | what the camera does | good for |
+|---|---|---|
+| `sway` | a slow handheld drift about the framed pose (about a degree) | any shot that should feel alive but hold still |
+| `push` | a slow push in, the lens lengthening slightly, and back | drawing the eye to one part |
+| `crane` | rises over the subject and comes back | showing a layout from above, a stack, a flow path |
+| `dolly` | arcs round one side while closing in, and back | revealing depth and the side of an assembly |
+| `orbit` | whole turns at constant speed | an object that reads from every side |
+| `whip` | one turn that lingers on four faces | a showpiece hero object (one per deck) |
+| `still` | holds the framed pose | a slide carrying measured values |
+
+In Blender: `L.move('<setup>', amount=1.0, sway=None)` after `L.loop()` (BLENDER.md 2c). Live in Bold Blue:
+`S.shot(t, '<setup>', { amount, sway })` in `update(t)` (the same names and the same offsets). The other looks keep
+their own idiom's motion (`CP3D` `S.sway`, `HS3D` `S.breathe`, `FP3D` / `PP3D` `S.turn`), which is already a
+periodic drift.
+
+1. **A pure function of `t`, and the loop closes.** Every setup is periodic in the slide's period; a one-way move goes
+   there and back on `(1 - cos 2πt) / 2`. `t = 0` is the framed rest pose, so the poster, the PDF page and the still
+   are the composed picture. No clock, no random, no previous frame (4.3).
+2. **Sway is seasoning.** Small and slow: the defaults are tuned so slide text never seems to swim. Raise `amount`
+   only on a hero slide with no numbers on the figure.
+3. **The honesty gate (4.7) governs camera motion too.** On a slide whose values are measured, the camera holds its
+   rest pose: `LumiPostPolicy.cameraMotion(el)` decides it from the same record as post, and both the live engine and
+   the baked player obey it. A per-frame Cycles render cannot be held after the fact, so its `scene.py` must use
+   `L.move('still')` - `deck_check.js` fails it otherwise. `data-camera-move="still"` or `"allow"` on the holder
+   overrides the record when the person says so.
+4. **Continuation (4.8) still applies** on Bold Blue: `S.shot` drives the camera like `S.orbit`, and the declared
+   pose blends in and out around it.
+
+### 4.12 The other picture — illustration, and it is drawn
+
+Roughly a third of a deck's pictures are neither an animated nor a still 3D figure (`hard-rules.json` →
+`pictureMix.illustrationPct`). Those slides get a **drawing**, and a drawing here means **inline SVG written in
+code** — `engine/deck/lib/illus.js`, `LumiIllus`. It packs into the one offline HTML file, stays crisp at any
+stage size and in the PDF, and its `<text>` is real text, so `deck_check.js` measures its size, its contrast and
+its words exactly as it measures a headline. **No raster, no generated image, no icon set, no CDN.** Lumi has no
+image model and a deck must work with no network; an invented picture of the subject is the same failure as an
+invented number.
+
+Everything else in section 4 still binds it. In particular:
+
+1. **4.10 is the whole of it.** The real object, real counts, real proportions, real structure: *realistic in
+   structure, thematic in surface*. A drawing simplifies the **surface**, never the subject. The fins are the real
+   number of fins at the real pitch in a line drawing exactly as they are in a render.
+2. **It is the slide's ONE main visual**, counted as `diagram` in the clash matrix (section 3).
+   `LumiIllus.figure` sets `data-visual="diagram"` on the holder.
+3. **It is still.** No scene, no period, no clock — so the capture contract (4.3) has nothing to hold it to, and the
+   still frame, the PDF page and the recording are the frame the audience sees. Something that must move is a 3D
+   figure or an `Aura.canvas` loop, not this.
+4. **The layout comes from what the slide says**: comparison, progression (it climbs — S4), hierarchy, matrix,
+   cycle, part-to-whole, hub, breakdown. A comparison shows both things whole in one frame (S5).
+5. **Invisible things are notation, never cartoons** (4.10 rule 4), and **every liberty is written down** on the
+   drawing and in the notes (4.10 rule 7).
+6. **Text and numbers inside the picture are text and numbers on the slide.** They obey the look's minimum size and
+   contrast, they count against the word budget, and every number goes through `F.value(…, { kind })` and is traced
+   in `provenance.json` like any other (section 6). The old "a number baked into a picture cannot be checked" hole
+   is closed for drawings: SVG text is checkable, so an untraced number in one has no excuse.
+7. **Post (4.6) does not apply.** There is no holder canvas to put it on, and a filter over a drawing would move
+   every text ratio on it at once.
+
+The drawing surface — line weight, fills, outlines, what a shadow is — is the look's own: its `LOOK.md`, section
+"The illustration idiom". How to write one, and the layout vocabulary: `illustration.md`.
+
 ---
 
 ## 5. Charts
@@ -384,3 +491,9 @@ A look without a `LOOK.md` of its own follows `aura-blend.md` plus this base.
       `data-edit` ids added (`--ids`).
 - [ ] The look's own checklist (its `LOOK.md` section "Before the checker") is also clean.
 - [ ] `deck_check.js` is clean, then look at the screenshots.
+- [ ] Every 3D figure passes 4.10: the real object, real counts and sizes declared with their source, real materials,
+      no stand-in, invisible things as notation, every liberty written down. Would an engineer who builds it nod?
+- [ ] Every animated 3D figure has a camera setup (4.11), different from its neighbours'; measured slides hold still.
+- [ ] Every drawn figure passes 4.12: inline SVG, still, the real object with its real counts, a layout that matches
+      what the slide says, notation never cartoon, every liberty in `F.note` and the notes, every number through
+      `F.value` with a kind, and no colour or stroke width hard-coded past the look's roles.

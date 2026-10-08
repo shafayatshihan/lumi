@@ -61,6 +61,7 @@ import lumi_bpy as L
 a = L.args(); L.reset(a); L.gpu(a); L.cycles(a.samples)      # empty scene, GPU (OptiX>CUDA>...>CPU), AgX quality preset
 
 # ---- SUBJECT (Blender is Z-up; the camera looks from -Y, so "front" = -Y) --------------------------------------
+L.real('brief, slide 4', pipe_od_m=1.0, pipe_wall_m=0.09, pipe_length_m=3.2)   # LOOK-BASE 4.10: real numbers + source
 pipe = L.lathe([(0.41, -1.6), (0.5, -1.6), (0.5, 1.6), (0.41, 1.6)], name='pipe', material=L.mat('steel'))
 plug = L.lathe([(0, -0.55), (0.405, -0.55), (0.405, 0.35), (0.3, 0.45), (0, 0.45)], name='plug',
                material=L.mat('aluminium'))
@@ -86,6 +87,7 @@ render (`--anim`: every frame, 720p by default or 1080p, then an MP4) and your c
 L.camera(parts, view='three-quarter', fill=0.55, frame_right=True)   # smaller fill: the widest angle must still fit
 L.loop(4.0)                          # 4 s at 20 fps = 80 frames; 3 to 6 s is right for a slide
 L.turntable(parts, turns=0.5)        # the whole subject turns half a revolution (use 1.0 if it is not symmetric)
+L.move('sway')                       # the camera setup (section 2c): sway, push, crane, dolly, orbit, whip, still
 # or per part:  L.spin(rotor, turns=2)  |  L.wave(piston, 'location', 2, amplitude=0.08, cycles=2)
 #               L.animate(obj, 'rotation_euler', 0, lambda t: 0.3 * math.sin(2 * math.pi * t))   # any periodic fn of t in 0..1
 L.render(a.out)
@@ -94,8 +96,8 @@ L.render(a.out)
 - Every helper keys frames 1..N+1 with a periodic function, so frame N+1 equals frame 1 and the loop has no jump. Use
   whole turns and whole cycles. Never key by hand with arbitrary end values.
 - `loop(seconds, poster=N)` picks the frame the preview and the PDF page show. Motion blur stays off.
-- Keep motion slow and readable (a half turn in 4 s). The camera does not move. Keep the scene light: under about
-  300k faces.
+- Keep motion slow and readable (a half turn in 4 s). The camera moves only through `L.move()` (section 2c). Keep
+  the scene light: under about 300k faces.
 - **An animation is BAKED** (in a deck made with Lumi 0.5.6 or later): Lumi bakes the materials into textures once
   (about 1-2 minutes) and plays the model live, so the motion costs nothing extra and a change to the motion, timing or
   camera alone is free. **Glass commits the slide to a long render**: a scene with `L.mat('glass')` or any `trans=`
@@ -105,6 +107,51 @@ L.render(a.out)
 The order is fixed. Build the subject, then cut it, then call `studio()` (which sizes itself to the subject), then
 `camera()`, then the loop (animations only), then `render()`. Keep `L.args()` and `L.render(a.out)` as they are: Lumi's
 preview and full render pass their own `--out`, size and samples through them.
+
+## 2c. Camera setups: a camera that moves like a camera (LOOK-BASE 4.11)
+
+Every loop gets ONE camera setup, called after `L.loop()`. `camera()` framed the rest pose; the setup moves around it
+and comes back, so frame 1 is still the framed picture and the loop closes by construction.
+
+```python
+L.camera(parts, view='three-quarter', fill=0.6, frame_right=True)
+L.loop(5.0)
+L.move('crane')                      # rises 18 deg over the subject and back down, the lens widening a little
+# L.move('push', amount=0.7)         # smaller;  L.move('dolly', sway=0.5)  a move with the handheld drift layered on
+# L.move('orbit', amount=1)          # whole turns (frame with fill ~0.55: every side must fit)
+# L.move('still')                    # a slide with measured values (the gate below)
+```
+
+| setup | move | for |
+|---|---|---|
+| `sway` | handheld drift, about 1 degree, never a wobble | any loop that should hold still but feel alive |
+| `push` | dolly in 20 % and the lens 12 % longer, there and back | one part is the point |
+| `crane` | up 18 degrees, back 22 %, lens 20 % wider, there and back | a layout, a flow path, a stack |
+| `dolly` | 30 degrees round one side, in 22 %, there and back | depth, the side of an assembly |
+| `orbit` | `amount` whole turns, constant speed | an object that reads from every side |
+| `whip` | one turn, lingering on four faces | the deck's one showpiece |
+| `still` | holds the rest pose | measured values on the slide |
+
+- Neighbouring 3D slides use **different** setups, and a different `view=` too.
+- A baked loop carries the move: the bake records the camera on every frame and the player replays it by `t`, so a
+  change of setup re-exports in seconds without a re-bake. On a slide with measured values the player holds the rest
+  pose by itself. **A per-frame (glass) render cannot be held after the fact**: use `L.move('still')` there, or
+  `deck_check.js` fails the slide.
+- `--inspect` checks the subject at a quarter, a half and three quarters of the move (`move-out-of-frame`): lower
+  `amount`, or frame with a smaller `fill`.
+- The defaults were cross-checked against the camera skills in `kevinbadi/blender-skills` (crane-shot,
+  dolly-rotate, slow-zoom, perfect-loop, dynamic-full-loop, turntable); their GUI/MCP rigs are not used.
+
+## 2d. Real light and real surfaces from PolyHaven (optional, build time only)
+
+`L.studio(fit=parts, hdri='studio_small_09')` lights the subject with a real captured studio (reflections and
+ambient) instead of the gradient world; the background stays the exact slide colour. `L.pbr('metal_plate',
+fallback='steel', scale=4)` is a real scanned surface (colour, roughness, metalness, normal). Both fetch once through
+Lumi's toolkit and are cached; offline they fall back to the gradient world and to `L.mat(fallback)` and say so in one
+line - never an error. To fetch ahead of time: `python .aura/engine/tools/fetch_asset.py hdri <id>` or `texture <id>`
+(PolyHaven ids only; the tool cannot fetch anything else). Clean machined metal is usually best as a preset; a scanned
+surface is for what really is cast, rolled, painted or weathered. A baked loop relights in three.js, so an HDRI changes
+stills and per-frame renders only.
 
 ## 3. What the helper decides for you (do not re-decide)
 
@@ -228,6 +275,8 @@ Run `--inspect` (section 1) BEFORE a render: the "inspect says" column is the co
 | cut-off or missing near geometry | `clipped` (warn) | clip start is set too far. `camera()` sets it from the distance, so re-run `camera()` after moving parts |
 | a part of the cutaway has vanished | `vanished` (warn) | the part lies entirely inside the half-space the cut removes: leave it out of the cut, or move the cut plane |
 | flat, plasticky surfaces | `no-material` / `flat-material` (warn) | a mesh with no material, or a hand-rolled one with no texture recipe: use `L.mat(kind)` (LOOK.md 4.1) |
+| a likeness, not the thing (LOOK-BASE 4.10) | `no-real` / `analogy` / `no-preset` (fatal) | no `L.real(source, **dims)` declaring the real numbers and their source; a part named as a stand-in (cloud, puff, sparkle, heart ...) - draw flow and heat as arrows or streamlines; or no part in a real material (`L.mat`, `L.pbr`, `lumi_mech`) |
+| a loop with a locked-off camera, or a move that loses the subject | `static-camera` / `move-out-of-frame` (warn) | add `L.move('<setup>')` after `L.loop()` (section 2c); lower its `amount` or the camera's `fill` |
 | the render takes far too long | `triangles` (warn) | over the budget (1 M for a still, 300 k for an animation): simplify, or drop a subdivision |
 | dark or faceted surfaces | `inward-normals` (warn) | normals point inside (`L.fix_normals`) or smoothing is missing (`L.smooth`) |
 | grey, washed-out image | - | plain AgX or a raised exposure: keep the default look |

@@ -13,18 +13,9 @@ import { ICON } from './dom.js';
 const SVG = { plus: ICON.plus, play: ICON.play, folder: ICON.folder, pen: ICON.pen, left: ICON.left, right: ICON.rright,
   user: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M5 19.5c1.2-3.4 3.8-5 7-5s5.8 1.6 7 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>' };
 // The new-deck card's little drawing: a blank slide on a stand, a pencil and sparkles.
-const NEW_ART = `<svg viewBox="0 0 220 130" aria-hidden="true" class="hm-new-art">
-  <ellipse cx="110" cy="122" rx="78" ry="6" fill="var(--lilac)" opacity=".35"/>
-  <path d="M104 96l-12 26M116 96l12 26" stroke="var(--fur5)" stroke-width="5" stroke-linecap="round"/>
-  <g class="hm-sheet"><rect x="42" y="14" width="136" height="84" rx="12" fill="var(--pill)"/>
-  <rect x="58" y="32" width="60" height="9" rx="4.5" fill="var(--accent)"/><rect x="58" y="49" width="84" height="6" rx="3" fill="var(--fur3)"/>
-  <rect x="58" y="61" width="66" height="6" rx="3" fill="var(--fur3)"/><circle cx="150" cy="70" r="14" fill="var(--pink)"/>
-  <path d="M144 70.5l4.5 4.5 7.5-8.5" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <g class="hm-pencil"><rect x="176" y="20" width="10" height="58" rx="3" fill="var(--orange)" transform="rotate(28 181 49)"/>
-  <path d="M168.5 75.5l9.5 5-1-10.5z" fill="#5d4a7e"/><rect x="184" y="16" width="10" height="9" rx="2" fill="var(--pink)" transform="rotate(28 189 20)"/></g>
-  <path class="hm-spark s1" d="M30 30c.8 5 2.4 6.6 7.4 7.4-5 .8-6.6 2.4-7.4 7.4-.8-5-2.4-6.6-7.4-7.4 5-.8 6.6-2.4 7.4-7.4z" fill="var(--lilac)"/>
-  <path class="hm-spark s2" d="M196 92c.6 3.6 1.8 4.8 5.4 5.4-3.6.6-4.8 1.8-5.4 5.4-.6-3.6-1.8-4.8-5.4-5.4 3.6-.6 4.8-1.8 5.4-5.4z" fill="var(--orange)"/>
-</svg>`;
+// The real Lumi, not a drawing of a document. The hand-drawn SVG that used to sit here was the last
+// me-designed picture on the home screen, and the owner cut those (2026-10-08).
+const NEW_ART = '<img class="hm-new-art" src="/assets/lumi-mascot.png" alt="" aria-hidden="true" draggable="false">';
 const EMPTY_ART = `<svg viewBox="0 0 300 180" aria-hidden="true">
   <rect x="40" y="40" width="150" height="92" rx="14" fill="var(--fur1)" transform="rotate(-6 115 86)"/>
   <rect x="96" y="28" width="160" height="98" rx="14" fill="var(--pill)"/>

@@ -237,6 +237,34 @@ form per picture. No label text baked into WebGL — callouts are HTML (`.hs-pin
 
 ---
 
+## 3A. The illustration idiom: soft shapes, no outline
+
+> Base 4.12 and `illustration.md` say what a drawn picture is. This section is only Happy Headspace's surface.
+
+Happy Headspace draws with **shape, not line**. Nothing is outlined; a form is read because its fill differs from
+what is behind it, and because a wide soft shadow lifts it off the page. Every corner is generous.
+
+| | Happy Headspace |
+|---|---|
+| line | none (`weight: 0`). An edge appears only as a change of fill, or as a 4 px `--brand` stroke used as a *mark*, not a border |
+| fills | hero `--brand` orange, body `--surface`, context `--surface-2`, mark `--gold`, signal `--signal` deep purple |
+| corners | 40 px, or a full pill. A right angle is a mistake in this look |
+| lift | one wide soft shadow, low opacity, straight down — the look's whole sense of depth |
+| labels | Quicksand at 36 px; captions and dimensions in Reno Mono at 28 px |
+| notation | a flowing line in `--brand`, rounded caps, never an arrow with a hard triangular head where a tapered one will do |
+| texture | none. No grain, no dots, no hatching except a cut surface |
+
+1. **Orange is the lead and it is never small.** `--brand` fills big shapes and draws the squiggle; it is never
+   caption text, because it is 2.9:1 on white. Text on an orange shape is white, and `F.text({ on: … })` picks it.
+2. **Round, not cute.** Soft corners and warm light, but the object underneath is still the real object with its
+   real counts (base 4.10). A rounded fin is still a fin at the real pitch; a mascot is not.
+3. **Breathing room is the composition.** Fewer parts, more space, one idea. If a drawing feels crowded in this
+   look it has too many parts — split the slide rather than shrink them.
+4. **Never** a black outline, a sharp corner, a hard-edged shadow, a dotted or dashed emphasis, a second warm
+   colour beside the orange, or a drawing that fills the frame edge to edge.
+
+---
+
 ## 4. The chart idiom (`HSChart.line`)
 
 A soft figure, not a widget: a 10 px round-capped stroke, a **soft tinted wash under the lead series only**, pale

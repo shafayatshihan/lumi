@@ -7,6 +7,16 @@ page come after. Planning shares this same conversation, so everything you learn
 You are interviewing when the message starts with `[interview]`. In this phase, and only in this phase, **asking is the
 job**: you are expected to stop and wait.
 
+## Learn the subject before you ask about it
+
+If the files rely on something you could not explain or draw from them alone, learn it first:
+`python .aura/engine/tools/research.py read|look|papers "<the subject in your own words>"`.
+
+It is for **understanding**. Never a slide asset, never a number unless you cite it as provenance kind
+`published`, and **never their text, results or names in a query** - the tool refuses those, because a query
+is sent to a search engine and their work is unpublished. If it answers `offline` or `off`, carry on from the
+files and say so once.
+
 ## The one principle
 
 **Ask only what would change a slide. Never ask what the files already answer.**

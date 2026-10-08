@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light only">
+<title>Part B — the two screens</title>
+<link rel="icon" href="data:,">   <!-- the harness is not the app: stop the browser asking for /favicon.ico -->
+<!-- Part B's render harness. The two screens before building, drawn with the REAL modules and the REAL css, so the
+     layout can be looked at without the form server and without another session's test run.
+       python tools/form-dev/static_server.py 8791
+       http://127.0.0.1:8791/dev/_b_screens.html?screen=plan   (or ?screen=look)
+     Nothing here is shipped: tools/ is excluded from releases. -->
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/components.css">
+<link rel="stylesheet" href="/css/studio.css">
+<link rel="stylesheet" href="/css/plan.css">
+<link rel="stylesheet" href="/css/theme.css">
+<style>
+  html,body{margin:0;background:#eeedf9;overflow:hidden}
+  #stage{opacity:1 !important}
+  /* the harness draws one screen at a time, already visible */
+  #stage[data-route=plan] #plan,#stage[data-route=plan] #planhost{visibility:visible}
+</style>
+</head>
+<body>
+<div id="stage" class="ready instant" data-mode="work" data-route="plan">
+  <section id="plan" class="route" aria-label="plan your deck"></section>
+</div>
+<script type="module">
+import { h, ICON } from '/js/dom.js';
+import { doubtCard } from '/js/plan.js';
+import { mountQuality } from '/js/quality.js';
+
+const stage = document.getElementById('stage');
+const root = document.getElementById('plan');
+const which = new URLSearchParams(location.search).get('screen') || 'plan';
+const many = new URLSearchParams(location.search).get('many') === '1';
+
+// Fit the 1600x900 stage to the window exactly as app.js does, so a screenshot is the real thing.
+const fit = () => { const k = Math.min(innerWidth / 1600, innerHeight / 900); stage.style.transform = `scale(${k})`; };
+addEventListener('resize', fit); fit();
+
+// --- the worst real question from the owner's screenshot: long text, four options, one of them long
+const DOUBT = {
+  id: 'd1', question: 'Which equations should appear on the slides?', multi: false,
+  options: ['Only the performance formula', 'That plus heat and friction factors', 'None on the slides',
+    'Something else, written out in full on its own slide'],
+  default: ['Only the performance formula'],
+};
+
+if (which === 'plan') {
+  // the plan page, exactly as mountPlan builds it: head (with the cost lines), the build button, and the deck strip
+  const costEl = h('div', { class: 'pl-cost', role: 'status' },
+    h('p', { class: 'pl-costl' }, 'about 50 minutes of machine time, most of it pictures.'),
+    h('p', { class: 'pl-costl' }, 'about a quarter of today’s claude allowance.'),
+    h('p', { class: 'pl-costl is-warn' }, 'this is more than the allowance you have left today.'));
+  const head = h('div', { class: 'pl-head' }, h('h1', { class: 'pl-h' }, 'plan your deck'),
+    h('p', { class: 'pl-sub' }, '9 slides · 4 questions for you'), costEl);
+  const buildB = h('button', { type: 'button', class: 'pl-build' }, h('span', {}, 'build my deck'), h('span', { html: ICON.right }));
+  const homeB = h('button', { type: 'button', class: 'ed-home pl-home' }, h('span', { html: ICON.back }), 'my decks');
+  const strip = h('div', { class: 'pl-strip', 'aria-label': 'questions about the whole deck' });
+  const nav = h('span', { class: 'pl-strip-nav' },
+    h('button', { type: 'button', class: 'pg', 'aria-label': 'previous question', html: ICON.left, disabled: true }),
+    h('span', { class: 'pl-strip-n' }, '1 of 4'),
+    h('button', { type: 'button', class: 'pg', 'aria-label': 'next question', html: ICON.rright }));
+  strip.replaceChildren(h('span', { class: 'pl-strip-t' }, h('span', { html: ICON.q }), 'whole deck'),
+    doubtCard(DOUBT, { compact: true, label: 'next question' }), nav);
+  const TITLES = ['why dryers waste heat', 'the test rig', 'how we measured it', 'the numbers', 'friction factor',
+    'what it costs', 'what we changed', 'the result', 'what is next'];
+  const list = h('div', { class: 'pl-list', role: 'listbox', 'aria-label': 'your slides' });
+  const paintList = n => list.replaceChildren(...TITLES.slice(0, n).map((t, i) =>
+    h('div', { class: 'pl-row' + (i === 1 ? ' on' : '') }, h('span', { class: 'pl-n' }, String(i + 1)),
+      h('span', { class: 'pl-rt' }, t))));
+  paintList(9);
+  const listCol = h('div', { class: 'pl-listcol' }, list,
+    h('div', { class: 'pl-listfoot' }, h('button', { type: 'button', class: 'pl-addslide' }, h('span', { html: ICON.plus }), 'add a slide')));
+  // ?badge=1 also opens the per-slide question popover, the OTHER place the same card is drawn (plan.js openBadge)
+  const badge = h('div', { class: 'pl-badgepop', hidden: !new URLSearchParams(location.search).get('badge'),
+    role: 'dialog', 'aria-label': 'a question about this slide' },
+    h('button', { type: 'button', class: 'pl-fix-x', 'aria-label': 'close' }, 'x'),
+    doubtCard(DOUBT, { label: 'use this' }));
+  const card = h('div', { class: 'pl-card' }, h('div', { class: 'pl-chead' }, h('span', { class: 'pl-cpos' }, 'slide 2 of 9')),
+    h('div', { class: 'pl-cbody' }, h('p', { class: 'pl-empty' }, 'the slide editor sits here.')), badge);
+  const main = h('div', { class: 'pl-main has-strip' }, strip, listCol, card);
+  root.replaceChildren(homeB, head, buildB, main);
+  // the same two measurements mountPlan() makes (plan.js remeasure()), so the harness lays out like the real page
+  const remeasure = () => {
+    const top = Math.max(160, Math.round(head.offsetTop + head.offsetHeight + 16));
+    root.style.setProperty('--pl-main-top', `${Math.min(top, 666)}px`);
+    root.style.setProperty('--pl-strip-h', `${strip.hidden ? 0 : Math.round(strip.offsetHeight)}px`);
+    const room = list.clientHeight || 1;                                      // plan.js perPage(): 56 px rows, 6 px gaps
+    paintList(Math.max(4, Math.min(10, Math.floor((room + 6) / 62))));
+  };
+  new ResizeObserver(remeasure).observe(head);
+  new ResizeObserver(remeasure).observe(strip);
+  remeasure();
+} else {
+  // the look step, as showTheme() builds it, with the real quality control and the real mascot
+  stage.dataset.route = 'plan';
+  const qualEl = h('div', { class: 'th-qual' });
+  const listEl = h('div', { class: 'th-list' });
+  const goB = h('button', { type: 'button', class: 'pl-big pl-ink pl-big-s1' },
+    h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'plan my slides')));
+  const th = h('div', { class: 'th' },
+    h('div', { class: 'th-left' }, h('span', { class: 'badge' }, 'the look'), h('h1', { class: 'th-h' }, 'pick a look'),
+      h('p', { class: 'th-lead' }, 'hover a look to see real slides.'),
+      qualEl, h('div', { class: 'pl-bigs' }, goB),
+      h('img', { class: 'th-lumi', src: '/assets/lumi-cutout.png', alt: '', 'aria-hidden': 'true' })),
+    h('div', { class: 'th-illus' }, h('div', { class: 'illus-slot' })), listEl);
+  root.replaceChildren(h('div', { class: 'pl-thhost' }, th));
+  // _b_quality.json is form_server.quality_options() dumped by _b_quality.py - the real tiers, no server needed
+  const opts = await fetch('/dev/_b_quality.json').then(x => x.json()).catch(() => null);
+  if (opts && opts.tiers) {
+    const q = mountQuality(qualEl, { value: opts.default, options: opts });
+    if (many) { const b = qualEl.querySelector('.ql-adv-b'); b && b.click(); }   // the ticks the owner could not see
+    window.__quality = q;
+  } else {
+    qualEl.append(h('p', {}, 'run python tools/form-dev/_b_quality.py first'));
+  }
+}
+document.documentElement.dataset.ready = '1';
+</script>
+</body>
+</html>

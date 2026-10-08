@@ -270,6 +270,31 @@ const src = Object.fromEntries(jsFiles.map(f => [f, read(f)]));
       && /\.sh-exit\{/.test(studio);
   })());
 }
+// ONE CONVERSATION, ONE LOG, AND NO DOUBT WHICH SLIDE (2026-10-08). The server stopped setting `conv`
+// (form_server.ONE_DECK_CONVERSATION), and a chat that still filtered its log by `conv` rendered EMPTY on every deck built
+// after that. Scope survives as the '[slide n]' / '[whole deck]' prefix: inferred from the open slide and shown everywhere,
+// never a thread switch.
+{
+  const w = src['workshop.js'], ed = src['editor.js'];
+  const studio = fs.readFileSync(path.join(cssDir, 'studio.css'), 'utf8');
+  const code = w.replace(/^\s*\/\/.*$/gm, '');          // the comments explain what was removed and why; test the code
+  check('one conversation means one log: nothing filters the chat by conv',
+    !/evThread|renderThread|threadKey|ev\.conv/.test(code));
+  check('the slide / whole-deck CONVERSATION toggle is gone from the chat',
+    !/ws-thread|ws-th-b/.test(w));
+  check('the scope the server reads is still sent: a slide number, or deck',
+    /scope = EDIT && deckId \? \(deckWide \? 'deck' : 'slide'\)/.test(w) && /slide: slide \|\| undefined, scope/.test(w));
+  check('the target is bound BEFORE the reply is awaited, so navigating cannot retarget a sent message',
+    w.indexOf('const slide = EDIT && !deckWide ? aimN() : null;') > 0
+    && w.indexOf('const slide = EDIT && !deckWide ? aimN() : null;') < w.indexOf('await api.claude.reply'));
+  check('an open question owns the target, so an answer goes to the slide that was asked about',
+    /const askN = \(\) => \(pendingCard\(\) \? askAim : null\)/.test(w) && /askN\(\) != null \? askN\(\)/.test(w));
+  check('the chat tells the editor which slide it is on, and the strip shows it',
+    /onTarget/.test(w) && /onTarget: n =>/.test(ed) && /is-aimed/.test(ed) && /\.ed-th\.is-aimed/.test(studio));
+  check('a message about a slide you are not on offers to take you there',
+    /is-away/.test(w) && /onSlide\(rec\.n\)/.test(w)
+    && /\.ws-slidetag\.is-away\{[^}]*cursor:pointer/.test(studio.replace(/\s*\n\s*/g, '')));
+}
 // the font floor (F-01, decided): nothing under 12 px; 12 px only for micro-labels (a short, named allow-list); everything you read is 14+
 {
   const allowed12 = /(\.up-chip|\.lk-sugg|\.ql-rec|\.ql-lab|\.ed-picopt-now|\.ch-tag|\.pl-chip-q|\.hm-look|\.ph-n|\.dots|\.ws-stage|\.up-|\.us-asof|\.aura-cursor|\.pg-label|\.ch-stepof|-sub|-tag|-n\b)/;

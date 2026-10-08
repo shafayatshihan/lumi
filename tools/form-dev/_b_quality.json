@@ -1,0 +1,69 @@
+{
+ "default": "just-right",
+ "tiers": [
+  {
+   "quality": "just-right",
+   "tier": "just-right",
+   "model": "opus",
+   "effort": "medium",
+   "label": "Just right (Opus, recommended)",
+   "name": "just right",
+   "share": 1.0
+  },
+  {
+   "quality": "maximum",
+   "tier": "maximum",
+   "model": "opus",
+   "effort": "high",
+   "label": "Maximum (Opus, deepest thinking, slowest)",
+   "name": "maximum",
+   "share": 1.25
+  },
+  {
+   "quality": "balanced",
+   "tier": "balanced",
+   "model": "sonnet",
+   "effort": "high",
+   "label": "Balanced (Sonnet, quicker and lighter)",
+   "name": "balanced",
+   "share": 0.25
+  }
+ ],
+ "models": [
+  {
+   "id": "opus",
+   "label": "Opus"
+  },
+  {
+   "id": "sonnet",
+   "label": "Sonnet"
+  },
+  {
+   "id": "haiku",
+   "label": "Haiku"
+  }
+ ],
+ "efforts": [
+  {
+   "id": "low",
+   "label": "low"
+  },
+  {
+   "id": "medium",
+   "label": "medium"
+  },
+  {
+   "id": "high",
+   "label": "high"
+  },
+  {
+   "id": "xhigh",
+   "label": "extra high"
+  },
+  {
+   "id": "max",
+   "label": "max"
+  }
+ ],
+ "claudeShare": 0.585
+}

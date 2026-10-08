@@ -80,6 +80,12 @@ async function collectBlender() {
       out.push(it);
     }
   }
+  // Part E (LOOK-BASE 4.11): which holders the honesty gate holds still (measured values on the slide)
+  for (const it of out) {
+    const h = slides[it.n - 1].querySelector(`.bb-blender[data-blender="${CSS.escape(it.sid)}"]`);
+    try { it.held = !!(h && window.LumiPostPolicy && window.LumiPostPolicy.cameraMotion && !window.LumiPostPolicy.cameraMotion(h).moving); }
+    catch (e) { it.held = false; }
+  }
   return out;
 }
 
@@ -147,6 +153,42 @@ function judgeBaked(it, who, R, err) {
   if (bad.length) err(it.n, `${who} background is not the slide colour at its edges: ${bad.slice(0, 3).map(p => `${p[0]} ${hex(p[1])}`).join(', ')} against the slide's ${hex(it.bg)}. The model must sit on a transparent background, or on the slide's own colour (L.studio(bg=...)).`);
 }
 
+/* ------------------------------------------------------------------ Part E: the scene itself (LOOK-BASE 4.10 / 4.11)
+   The pixels cannot say whether a figure is the real thing, but scene.py can say whether it CLAIMS to be: where its
+   numbers come from (L.real), whether its parts are real materials, and whether a part is a stand-in (a cloud for
+   airflow). The scene lives in .aura/decks/<id>/blender/<sid>/scene.py; the build folder's name ends in the first
+   characters of <id>. */
+// any identifier or name in the CODE (comments stripped): the owner's own failing scene named its objects hot0 / cool0
+// but built them with `def puff(...)`, so object names alone would have let it through
+const ANALOGY = /\b\w*(cloud|puff|sparkle|twinkle|heart|smiley|mascot|emoji|cartoon|swoosh|confetti)\w*\b/i;
+function sceneFile(root, deckDir, sid) {
+  const near = path.join(deckDir, 'blender', sid, 'scene.py');
+  if (fs.existsSync(near)) return near;
+  const m = /-([0-9a-f]{6,})$/.exec(path.basename(deckDir));
+  const decks = root ? path.join(root, '.aura', 'decks') : null;
+  if (!m || !decks || !fs.existsSync(decks)) return null;
+  const hits = fs.readdirSync(decks).filter(d => d.startsWith(m[1])).map(d => path.join(decks, d, 'blender', sid, 'scene.py')).filter(f => fs.existsSync(f));
+  return hits.length === 1 ? hits[0] : null;
+}
+function judgeScene(it, who, opts, err, warn) {
+  const f = sceneFile(opts.root, opts.deckDir, it.sid);
+  if (!f) return;
+  const src = fs.readFileSync(f, 'utf8').split(/\r?\n/).map(l => l.replace(/(^|\s)#.*$/, '')).join('\n');   // code, not comments
+  // a render the person already approved is not failed after the fact for a rule it predates: it is told, not blocked
+  const firm = !(it.filled && !it.draft) ? err : warn;
+  if (!/\bL\.real\s*\(/.test(src))
+    firm(it.n, `${who}: scene.py does not say where its numbers come from. Add L.real('<source>', <real counts and sizes>) - a figure without its real dimensions is a likeness, not the thing (LOOK-BASE 4.10)`);
+  const a = ANALOGY.exec(src);
+  if (a) firm(it.n, `${who}: scene.py builds a stand-in (${a[0].slice(0, 40)}): draw flow, heat and fields as notation - arrows, streamlines, particles on the real flow direction - never as a cartoon of the medium (LOOK-BASE 4.10)`);
+  if (!/\bL\.(mat|pbr)\s*\(|\bM\.\w+\s*\(/.test(src))
+    firm(it.n, `${who}: scene.py uses no real material: build every part with L.mat(kind), L.pbr(id) or lumi_mech (LOOK-BASE 4.10)`);
+  const mv = /\bL\.move\s*\(\s*['"](\w+)['"]/.exec(src);
+  if (it.held && mv && mv[1] !== 'still' && !it.baked)
+    err(it.n, `${who}: the slide carries measured values, but its render moves the camera (L.move('${mv[1]}')) and a rendered video cannot be held still. Use L.move('still') on this slide (LOOK-BASE 4.11)`);
+  if (it.kind === 'animation' && !mv && !it.held)
+    warn(it.n, `${who}: the loop's camera is locked off. Add a camera setup after L.loop(): L.move('sway'), or 'crane', 'dolly', 'push', 'orbit', 'whip' (BLENDER.md 2c)`);
+}
+
 function judge(items, opts) {
   const R = opts.rules, errors = [], warnings = [], notes = [];
   const err = (n, m) => errors.push({ slide: n, msg: m }), warn = (n, m) => warnings.push({ slide: n, msg: m });
@@ -159,6 +201,7 @@ function judge(items, opts) {
         err(it.n, `${who} is a studio render holder on a slide that is NOT a studio render slide: this slide's 3D figure is live 3D (three.js), so Lumi never renders a picture for it and the holder stays empty for ever (the deck cannot be finalized). Remove the <div class="bb-blender" data-blender="${it.sid}"> holder and draw the figure live with Aura.scene(...), or ask for the studio render engine on this slide.`);
         continue;
       }
+      try { judgeScene(it, who, opts, err, warn); } catch (e) { warn(it.n, `${who}: the scene check could not run: ${String(e.message || e).slice(0, 120)}`); }
       if (!it.filled) { early(it.n, `${who} is not in the deck yet (Lumi renders a preview after the build step, and the full render after the user approves it)`); continue; }
       if (it.draft) early(it.n, `${who} shows a preview, not the approved render: the user has not approved it yet, so it cannot be finalized`);
       if (it.stale && opts.finalize) warn(it.n, `${who} is older than the scene: the scene changed after the last full render`);

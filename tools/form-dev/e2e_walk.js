@@ -126,12 +126,23 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     // the look step also carries the quality choice now, in the same left column: check it is really there, that the
     // plain surface names no model, that the advanced control opens, and above all that nothing is pushed off the stage
     R.theme = await page.evaluate(() => {
-      const L = document.querySelector('.th-left'), st = document.querySelector('.th') || document.body;
-      const r = L ? L.getBoundingClientRect() : null, s = st.getBoundingClientRect();
+      const st = document.querySelector('.th') || document.body, s = st.getBoundingClientRect();
+      // .th-qual is its own band now (it used to be inside .th-left, under Lumi, where nothing could be seen)
+      const over = ['.th-left', '.th-qual'].reduce((m, sel) => {
+        const e = document.querySelector(sel);
+        return e ? Math.max(m, Math.round(Math.max(0, e.getBoundingClientRect().bottom - s.bottom))) : m;
+      }, 0);
       const note = (document.querySelector('.ql-note') || {}).textContent || '';
+      // the owner's fault: the ticked model and effort were behind the mascot. Ask the page what is really on top.
+      const onTop = sel => [...document.querySelectorAll(sel)].every(e => {
+        const r = e.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!hit && (hit === e || e.contains(hit));
+      });
+      const names = [...document.querySelectorAll('.th-qual .ql-row-t b')].map(b => b.textContent);
       return { rows: document.querySelectorAll('.th-qual .ql-row').length, adv: !!document.querySelector('.ql-adv-b'),
-               advOpen: !!document.querySelector('.ql-adv:not([hidden])'), note,
-               over: r ? Math.round(Math.max(0, r.bottom - s.bottom)) : -1,
+               advOpen: !!document.querySelector('.ql-adv:not([hidden])'), note, over, names,
+               recOn: !!document.querySelector('.ql-row.on .ql-rec'), rowsOnTop: onTop('.th-qual .ql-row'),
                goVisible: !!document.querySelector('.th-left .pl-big.pl-ink') };
     });
     if (R.theme.adv) {
@@ -139,8 +150,17 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
       R.themeAdv = await page.evaluate(() => ({
         open: !!document.querySelector('.ql-adv:not([hidden])'),
         models: [...document.querySelectorAll('.ql-adv .ql-pills')].map(x => [...x.children].map(b => b.textContent)),
-        over: (() => { const L = document.querySelector('.th-left'), s = (document.querySelector('.th') || document.body).getBoundingClientRect();
-          const r = L.getBoundingClientRect(); return Math.round(Math.max(0, r.bottom - s.bottom)); })() }));
+        // the ticked model and the ticked effort, and whether anything is drawn on top of them: THE owner's fault
+        ticked: [...document.querySelectorAll('.ql-adv .ql-pill.on')].map(b => b.textContent),
+        ticksOnTop: [...document.querySelectorAll('.ql-adv .ql-pill')].every(e => {
+          const r = e.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return !!hit && (hit === e || e.contains(hit));
+        }),
+        over: ['.th-left', '.th-qual'].reduce((m, sel) => {
+          const e = document.querySelector(sel), s = (document.querySelector('.th') || document.body).getBoundingClientRect();
+          return e ? Math.max(m, Math.round(Math.max(0, e.getBoundingClientRect().bottom - s.bottom))) : m;
+        }, 0) }));
       await page.click('.ql-adv-b'); await sleep(250);
     }
     await page.locator('.th-list .lk-opt').nth(1).click(); await sleep(800);
@@ -148,6 +168,24 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     await sleep(1200); await shot('planning');
     await page.waitForSelector('.pl-list .pl-row', { timeout: 120000 }); await sleep(1500); await shot('plan-ready'); R.planScroll = await scrolls();
     R.cost = await page.evaluate(() => [...document.querySelectorAll('.pl-costl')].map(p => p.textContent));
+    // the owner's second fault: the question strip was drawn straight over the heading and the cost, and its chips ran
+    // off the right of the stage. Both bands grow now, so this measures them instead of trusting a fixed number.
+    R.planBands = await page.evaluate(() => {
+      const st = document.getElementById('stage'), s = st.getBoundingClientRect(), k = s.width / 1600;
+      const px = v => Math.round(v / k);
+      const clear = sel => [...document.querySelectorAll(sel)].every(e => {
+        const r = e.getBoundingClientRect();
+        if (!r.width || !r.height) return true;
+        const hit = document.elementFromPoint(r.left + Math.min(8, r.width / 2), r.top + r.height / 2);
+        return !!hit && (hit === e || e.contains(hit) || e.contains(hit) || hit.contains(e));
+      });
+      let over = 0;
+      for (const e of st.querySelectorAll('.pl-strip *, .pl-list .pl-row')) {
+        const r = e.getBoundingClientRect();
+        if (r.width && r.height) over = Math.max(over, px(r.right - s.right), px(r.bottom - s.bottom));
+      }
+      return { headClear: clear('.pl-h, .pl-sub, .pl-costl'), over: Math.max(0, over) };
+    });
 
     // F-18: type in the deck question box and let several polls pass
     await page.click('.pl-strip .pl-dq-opt >> nth=1');
@@ -392,8 +430,12 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
     ok('a round mixes a multiple choice and a question in your own words', R.ivKinds.includes('in your words') && R.ivKinds.length > 1);
     ok('a reload in the middle of the interview loses nothing', R.ivReloadKept === true);
     ok('the look is asked once, after the interview, before the plan', R.themeStep === true);
-    ok('the look step offers the four quality tiers and keeps the plan button reachable',
-      R.theme && R.theme.rows === 4 && R.theme.goVisible, JSON.stringify(R.theme));
+    ok('the look step offers THREE quality tiers and keeps the plan button reachable',
+      R.theme && R.theme.rows === 3 && R.theme.goVisible, JSON.stringify(R.theme));
+    ok('the tiers are the ones the owner asked for, and the default carries the recommended badge',
+      R.theme && R.theme.names.join('/') === 'just right/maximum/balanced' && R.theme.recOn, JSON.stringify(R.theme));
+    ok('nothing is drawn over the tiers (the fault was the mascot sitting on the controls)',
+      R.theme && R.theme.rowsOnTop, JSON.stringify(R.theme));
     ok('the look step fits the stage: nothing is pushed off the bottom', R.theme && R.theme.over === 0, JSON.stringify(R.theme));
     ok('the plain quality surface names no model and no "effort"', R.theme && !/opus|sonnet|haiku|effort/i.test(R.theme.note),
       R.theme && R.theme.note);
@@ -405,7 +447,13 @@ const log = (...a) => console.log(`[${tag}]`, ...a);
       JSON.stringify(R.themeAdv));
     ok('...and opening it still does not push the step off the stage', R.themeAdv && R.themeAdv.over === 0,
       JSON.stringify(R.themeAdv));
+    ok('the ticks can actually be SEEN: the default pair is ticked and nothing is drawn over the pills',
+      R.themeAdv && R.themeAdv.ticksOnTop && R.themeAdv.ticked.join('+') === 'Opus+medium', JSON.stringify(R.themeAdv));
     ok('the plan page says how long the whole deck takes', R.cost.some(t => /to make this deck/.test(t)));
+    ok('nothing is drawn over "plan your deck", the slide count or the cost lines',
+      R.planBands && R.planBands.headClear, JSON.stringify(R.planBands));
+    ok('the question strip and the slide list stay inside the stage, however long a question is',
+      R.planBands && R.planBands.over === 0, JSON.stringify(R.planBands));
     // Lumi has just run Claude, so a fresh allowance reading usually exists here. What must never happen is a bare
     // number: an allowance line always carries its "as of" stamp, and no cost is ever quoted in tokens or money.
     // (That the line is left out ENTIRELY when the reading is missing or stale is proved in test_interview.py.)

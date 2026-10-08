@@ -102,22 +102,28 @@ so get it right first time.
   choose: the LOOK decides (`form_server.LOOK_3D`). In Bold Blue a still 3D figure becomes a Blender render when
   Blender is installed; Flat-Pack never uses Blender - its drawings are orthographic three.js. Set it only when the brief
   clearly asks for one; the person picks it on the page.
-### The picture mix to suggest
+### The picture mix to suggest - EVERY look, not just the Blender ones
 
 Numbers: `engine/rules/hard-rules.json` -> `pictureMix`. They are **suggestions you make**, not a quota the
-checker enforces.
+checker enforces, and they apply to **all five looks**.
 
-Aim the plan at roughly that split of the deck's slides: a studio-render **animation**, a studio-render **still**,
-and the rest **illustration** (2D, charts, live 3D - whatever the slide actually needs). **Slides 1 and 2 are
-always a studio-render animation**: the opening is where attention is highest, and the deck should start by
-showing what it is about rather than describing it.
+Aim the plan at roughly that split of the deck's slides: a **3D figure that moves**, a **3D figure that is
+still**, and the rest **illustration** (2D, charts - whatever the slide actually needs). **Slides 1 and 2 always
+get a moving 3D figure**: the opening is where attention is highest, and a deck should start by showing what it
+is about rather than describing it.
+
+**The look decides HOW it is rendered, not WHETHER.** `form_server.LOOK_3D` already holds each look's engine:
+Bold Blue and Clay Pop send a still 3D figure to a Blender studio render; Flat-Pack, Pink Punch and Happy
+Headspace are live three.js, because an assembly drawing, a screen print and a soft-lit form are not
+photographs. So "30% animated 3D" means the same share of slides in every look - a Flat-Pack deck gets the same
+count of moving figures as a Bold Blue one, drawn in Flat-Pack's own language. Leave `engine` out of the plan
+entry and the look chooses correctly on its own.
 
 Two things not to do with this:
 - **Do not invent a subject to hit a share.** A slide whose point is a number, a quote or a list is not improved
-  by a render. If the deck genuinely has fewer things worth modelling, suggest fewer and say so in the plan.
+  by a figure. If the deck genuinely has fewer things worth modelling, suggest fewer and say so in the plan.
 - **Do not reduce the mix because rendering takes time.** The owner has said plainly that time is not the
-  constraint here. Suggest the picture the slide deserves; the person sees the estimate on the plan page and
-  decides for themselves.
+  constraint. Suggest the picture the slide deserves; the person sees the estimate on the plan page and decides.
 
 - `photo`: only suggest it when the user has photos, or when a real photo is clearly the right picture; the build
   asks which photo each time.

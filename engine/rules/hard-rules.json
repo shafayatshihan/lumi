@@ -304,10 +304,10 @@
     }
   },
   "pictureMix": {
-    "note": "The picture mix a plan should SUGGEST (owner, 2026-10-08). Shares of the deck's slides, and the opening two slides are always a studio-render animation - the opening is where attention is highest. These are suggestions the person changes per slide on the plan page, never something the checker enforces: a deck with no 3D subject must not grow one to hit a number. Time is deliberately NOT a reason to go lower.",
-    "blenderAnimatedPct": 30,
-    "blenderStillPct": 40,
+    "note": "The picture mix a plan should SUGGEST (owner, 2026-10-08), and it applies to EVERY look, not just the two that use Blender. The shares are about how many slides carry a rendered 3D figure - animated, still, or neither - and each look renders them with ITS OWN engine (form_server.LOOK_3D): Bold Blue and Clay Pop default a still to a Cycles studio render; Flat-Pack, Pink Punch and Happy Headspace are live three.js by design, because an assembly drawing, a screen print and a soft-lit form are not photographs. An earlier version of this block named Blender in the key names and so could not apply to three of the five looks at all. Suggestions, never a quota: a deck with no 3D subject must not grow one to hit a number, and time is deliberately NOT a reason to go lower.",
+    "animated3dPct": 30,
+    "still3dPct": 40,
     "illustrationPct": 30,
-    "openingBlenderAnimatedSlides": 2
+    "opening3dAnimatedSlides": 2
   }
 }

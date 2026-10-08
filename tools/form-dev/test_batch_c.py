@@ -307,7 +307,7 @@ def run_live(T, fs):
     check('S-08: a deck with nothing built may still change its look', req('PATCH', f'/api/decks/{d2}', {'look': 'Pink Punch'})[0] == 200)
     jpost(f'/api/decks/{P}/build', {'mode': 'next'})
     time.sleep(0.15)
-    s = req('PATCH', f'/api/decks/{P}', {'quality': 'fast'})[0]
+    s = req('PATCH', f'/api/decks/{P}', {'quality': 'maximum'})[0]       # must DIFFER from the deck's own (it is 'balanced')
     busy_now = jget('/api/claude/status')[1].get('running')
     check('S-08: quality cannot change while a run is live on that deck', (s == 409) if busy_now else True, (s, busy_now))
     T.wait_plan_idle(P)

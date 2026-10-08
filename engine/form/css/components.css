@@ -222,7 +222,7 @@
 .ws{position:relative;height:100%;display:flex;flex-direction:column;background:var(--pill);border-radius:26px;overflow:hidden}
 .ws-head{flex:none;height:54px;display:flex;align-items:center;gap:8px;padding:0 18px 0 14px}
 .ws-ava{width:30px;height:30px}
-.ws-ava svg,.ws-mini svg{width:100%;height:100%;display:block}
+.ws-ava svg,.ws-mini svg,.ws-ava img,.ws-mini img{width:100%;height:100%;display:block;object-fit:contain}
 .ws-who{font-family:var(--head);font-weight:900;font-size:18px}
 .ws-dot{margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--fur3);transition:background .3s}
 .ws-state{font-size:14px;color:var(--mute)}

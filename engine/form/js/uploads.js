@@ -8,7 +8,7 @@ import { emit } from './bus.js';
 // The seven folders under "3 - Put your files here", in the order they are offered. This list used to live in the
 // 40-field form (steps.js), which is gone; it belongs beside the panel that actually fills the folders.
 export const FOLDERS = [
-  { name: 'Report', title: 'your report', hint: 'pdf or word', accept: '.pdf,.doc,.docx',
+  { name: 'Report', title: 'your report', hint: 'pdf, word or photos', accept: '.pdf,.doc,.docx,image/*,.heic',
     blurb: 'your thesis, report or write-up. claude reads it first.' },
   { name: 'Images and photos', title: 'photos and pictures', hint: 'jpg, png, heic, svg', accept: 'image/*,.heic',
     blurb: 'setups, samples, prototypes, people.' },

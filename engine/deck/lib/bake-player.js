@@ -176,8 +176,10 @@
     camera.updateProjectionMatrix();
     // the render was composed for Blender's frame; a holder of another shape shows ALL of that frame, centred, like
     // the still's object-fit: contain - a narrower holder widens the view instead of cropping the subject
-    function fit(w, h) {
-      const c = man.camera || {};
+    let fitW = ctx.width, fitH = ctx.height;
+    function fit(w, h, lens) {
+      const c = lens ? Object.assign({}, man.camera, lens) : (man.camera || {});
+      fitW = w; fitH = h;
       if (!c.fovX || !(w > 0 && h > 0)) return;
       const ar = c.aspect || 16 / 9, tx = Math.tan(c.fovX * DEG / 2), ty = Math.tan((c.fovY || 30) * DEG / 2);
       const hy = Math.max(ty, tx / (w / h)), hx = hy * (w / h);          // the holder's half-extent, at least the frame's
@@ -192,6 +194,28 @@
       camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
     }
     fit(ctx.width, ctx.height);
+
+    /* Part E: L.move() baked one camera pose per frame (lumi_bake._camera_track). Interpolated by t between rows -
+       never advanced by dt - so seek(t) is a pure function of t, and row N equals row 0 so the loop closes. The 4.11
+       honesty gate (LumiPostPolicy.cameraMotion) holds the rest pose, row 0, on a slide with measured values. */
+    const track = man.cameraTrack && man.cameraTrack.rows && man.cameraTrack.rows.length > 2 ? man.cameraTrack : null;
+    const gate = track && window.LumiPostPolicy && window.LumiPostPolicy.cameraMotion && ctx.el
+      ? window.LumiPostPolicy.cameraMotion(ctx.el) : { moving: true };
+    if (track && ctx.el) ctx.el.dataset.cameraMove = gate.moving ? track.move : 'held: ' + gate.reason;
+    const toYup = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+    const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), pa = new THREE.Vector3(), pb = new THREE.Vector3();
+    function rowPose(r, p, q) { p.copy(zup(THREE, r)); q.set(r[4], r[5], r[6], r[3]).premultiply(toYup); }
+    function applyTrack(t) {
+      if (!track || !gate.moving) return;
+      const rows = track.rows, n = rows.length - 1;
+      const x = (((t % period) + period) % period) / period * n;
+      const i = Math.min(n - 1, Math.floor(x)), k = x - i, a = rows[i], b = rows[i + 1];
+      rowPose(a, pa, qa); rowPose(b, pb, qb);
+      camera.position.lerpVectors(pa, pb, k);
+      camera.quaternion.slerpQuaternions(qa, qb, k);
+      fit(fitW, fitH, { fovY: a[7] + (b[7] - a[7]) * k, fovX: a[8] + (b[8] - a[8]) * k });
+    }
+    applyTrack(0);
 
     const model = gltf.scene;
     root.add(model);
@@ -253,6 +277,7 @@
       update(t) {
         if (mixer) mixer.setTime(((t % period) + period) % period);   // absolute seek: frame k never depends on k-1
         if (S && S.orbit && o.orbit) S.orbit(t);
+        applyTrack(t);
         placeLabels();
       },
       resize(w, h) {

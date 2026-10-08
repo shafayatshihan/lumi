@@ -386,7 +386,10 @@ export function costLines(cost) {
 }
 
 // ---------------------------------------------------------------- the page
-const PER_PAGE_TALL = 10, PER_PAGE_SHORT = 9;
+// The slide list pages itself to the room it actually has. It used to be a flat 10, or 9 when a question was open,
+// which assumed a page that started at a fixed y and a question strip exactly 84 px tall - neither is true now that
+// both bands grow with their content, and a tall strip pushed the last row off the bottom of the stage.
+const PER_PAGE_TALL = 10, ROW_H = 56, ROW_GAP = 6, LIST_FOOT = 56, PAGE_BOTTOM = 866;
 export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuild, onHome } = {}) {
   const sfx = n => { try { audio && audio.sfx && audio.sfx(n); } catch (e) { /* optional */ } };
   let alive = true, pay = null, plan = null, sel = null, page = 0, pollT = 0, saveT = 0, files = [], lastSeq = 0, noticeSeq = -1;
@@ -422,6 +425,26 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
   const undoB = h('button', { type: 'button', class: 'pl-undo', hidden: true, 'data-cursor-label': 'undo', 'data-nosfx': '' });
   const modal = h('div', { class: 'pl-modal', hidden: true });
   el.replaceChildren(homeB, head, buildB, main, intro, ivHost, thHost, toast, undoB, modal);
+
+  // ---- the two bands that grow: the header (the cost lines come and go, and the over-budget one is two lines long) and
+  // the question strip (a question with four long answers is three rows, not one). Both used to be fixed numbers in the
+  // css, so the strip was drawn straight over "plan your deck" and over the cost it was meant to sit under. Measured
+  // here instead, in stage px: the stage is a scaled 1600x900, so a box's own offsetHeight is already stage px.
+  const BAND_GAP = 16;
+  let perPageWas = 0;
+  function remeasure() {
+    const top = Math.max(160, Math.round(head.offsetTop + head.offsetHeight + BAND_GAP));
+    el.style.setProperty('--pl-main-top', `${Math.min(top, PAGE_BOTTOM - 200)}px`);
+    el.style.setProperty('--pl-strip-h', `${strip.hidden ? 0 : Math.round(strip.offsetHeight)}px`);
+    // fewer rows fit under a taller strip; the list repaints rather than running off the bottom of the stage
+    const per = perPage();
+    if (per !== perPageWas && plan) { perPageWas = per; paintList(true); }
+  }
+  // one observer for both; a question arriving, a cost line changing or a font loading all land here
+  const bandObs = typeof ResizeObserver === 'function' ? new ResizeObserver(() => remeasure()) : null;
+  if (bandObs) { bandObs.observe(head); bandObs.observe(strip); }
+  remeasure();
+
   // F-06: the "ready to build?" dialog takes focus, traps Tab, hides the page behind it and gives focus back
   const openModal = node => { if (modalRel) modalRel(false); modal.replaceChildren(node); modal.hidden = false; modalRel = openDialog(node, { host: modal, onEsc: closeModal }); };
   function closeModal() { modal.hidden = true; if (modalRel) { modalRel(); modalRel = null; } }
@@ -497,15 +520,19 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
     const illus = h('div', { class: 'th-illus' }, h('div', { class: 'illus-slot' }));
     const goB = h('button', { type: 'button', class: 'pl-big pl-ink pl-big-s1', 'data-nosfx': '', 'data-cursor-label': 'plan' },
       h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'plan my slides')));
+    // The quality choice is NOT in the left column any more. Lumi stands at the bottom of that column, and whatever sat
+    // under her - the model and effort ticks, and then the "plan my slides" button - could not be seen at all. She is
+    // Part A's and must not move, so the controls take the empty band under the look preview instead, where there is room
+    // to read them. (.th-qual is placed by plan.css; it is a sibling of .th-left now, not a child of it.)
     thHost.replaceChildren(h('div', { class: 'th' },
       h('div', { class: 'th-left' }, h('span', { class: 'badge' }, 'the look'), h('h1', { class: 'th-h' }, 'pick a look'),
         h('p', { class: 'th-lead' }, 'hover a look to see real slides.'),
-        qualEl, h('div', { class: 'pl-bigs' }, goB),
+        h('div', { class: 'pl-bigs' }, goB),
         // The real Lumi (the knitted character from the loading screen), cropped by the bottom of the column.
         // Not the flat cartoon: this screen is full of someone else's slides, so the one thing that is ours
         // should be the thing people recognise from launch.
         h('img', { class: 'th-lumi', src: '/assets/lumi-cutout.png', alt: '', 'aria-hidden': 'true' })),
-      illus, listEl));
+      qualEl, illus, listEl));
     if (!thLoading) {
       thLoading = true;
       import('./looks.js').then(m => {
@@ -561,7 +588,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
         clearTimeout(armed); stopB.disabled = true; await api.claude.stop(); refresh();
       });
       intro.replaceChildren(h('div', { class: 'pl-wait' }, h('div', { class: 'pl-wait-cards', 'aria-hidden': 'true' }, Array.from({ length: 5 }, (_, i) => h('i', { style: `--i:${i}` }))),
-        h('h2', { class: 'pl-wait-h' }, 'claude is reading your files and planning'), h('p', { class: 'pl-wait-p' }, 'this takes a minute or two.'), stopB));
+        h('h2', { class: 'pl-wait-h' }, 'lumi is reading'), h('p', { class: 'pl-wait-p' }, 'this takes a minute or two.'), stopB));
     }
     head.querySelector('.pl-sub').textContent = p.waiting ? 'claude has a question for you' : 'planning…';
   }
@@ -624,7 +651,10 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
   }
   const openDoubts = (sid = null) => liveDoubts().filter(d => !d.answer && (sid ? d.slide === sid : d.scope === 'deck'));
   const stackOf = key => { let st = stacks.get(key); if (!st) stacks.set(key, st = { at: 0, reached: 0 }); return st; };
-  function perPage() { return openDoubts().length ? PER_PAGE_SHORT : PER_PAGE_TALL; }
+  function perPage() {
+    const room = list.clientHeight || (PAGE_BOTTOM - 160 - (openDoubts().length ? 100 : 0) - LIST_FOOT);
+    return Math.max(4, Math.min(PER_PAGE_TALL, Math.floor((room + ROW_GAP) / (ROW_H + ROW_GAP))));
+  }
 
   function showPlan() {
     if (view !== 'plan') {
@@ -652,12 +682,13 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
     costSig = sig;
     costEl.hidden = !lines.length;
     costEl.replaceChildren(...lines.map(l => h('p', { class: 'pl-costl' + (l.warn ? ' is-warn' : '') }, l.text)));
+    remeasure();                                        // the header just got taller or shorter; the page starts under it
   }
   function paintStrip(force = false) {
     const ds = openDoubts();
     main.classList.toggle('has-strip', !!ds.length);
     strip.hidden = !ds.length;
-    if (!ds.length) { if (stripSig) strip.replaceChildren(); stripSig = ''; return; }
+    if (!ds.length) { if (stripSig) strip.replaceChildren(); stripSig = ''; remeasure(); return; }
     const st = stackOf('deck');
     st.at = Math.min(st.at, ds.length - 1); st.reached = Math.min(Math.max(st.reached, st.at), ds.length - 1);
     // F-18: the question card is rebuilt only when a question really changed, and never while its text box has focus
@@ -675,6 +706,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
     strip.replaceChildren(h('span', { class: 'pl-strip-t' }, h('span', { html: ICON.q }), 'whole deck'),
       doubtCard(d, { sfx, compact: true, label: ds.length === 1 ? 'use this' : last ? 'continue' : 'next question', draft: draftOf(d),
         onDraft: (a, o) => drafts.set(d.id, { picks: a, other: o }), onAnswer: (a, o) => step('deck', ds, a, o) }), ...(nav ? [nav] : []));
+    remeasure();                                        // a longer question makes the strip taller; the slides move down
   }
   // a question's button: keep the answer, go to the next one; on the last, send them all in order
   async function step(key, ds, picks, other) {
@@ -1056,6 +1088,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
   return {
     destroy() {
       alive = false; clearTimeout(pollT); clearTimeout(saveT); clearTimeout(toastT); clearTimeout(undoT); clearLater();
+      if (bandObs) bandObs.disconnect();
       if (modalRel) modalRel(false); if (addRel) addRel(false); if (badgeRel) badgeRel(false);
       if (editor) editor.destroy();
       if (ivScene) { try { ivScene.destroy(); } catch (e) { /* fine */ } ivScene = null; }

@@ -63,6 +63,10 @@ def run_one_conversation(T):
           T.flag(T.fake_argv(ev2), '--resume') == deck_sess, T.fake_argv(ev2))
     check('...the deck conversation id never moved', raw(T, P).get('sessionId') == deck_sess)
 
+    # Hold ctxTokens below CTX_RESET so this checks the RESUME path and not the hand-off: after C-R1 a
+    # slide-scoped reply consults deck_handoff() (it did not before), and two fake builds can legitimately carry
+    # the deck past the threshold - which is the bug C-R1 fixed, and is checked on its own below.
+    rec = raw(T, P); rec['ctxTokens'] = 1000; write_raw(T, P, rec)
     s, j, ev3 = step(T, P, '/api/claude/reply', {'deckId': P, 'slide': 1, 'text': 'make the title shorter'})
     check('an edit of slide 1 resumes the deck conversation too',
           T.flag(T.fake_argv(ev3), '--resume') == deck_sess, T.fake_argv(ev3))

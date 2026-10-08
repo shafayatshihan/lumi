@@ -203,6 +203,34 @@ headline. No label text baked into WebGL — callouts are HTML (`.fp-pin`, `.fp-
 
 ---
 
+## 3A. The illustration idiom: the same manual, flat on the page
+
+> Base 4.12 and `illustration.md` say what a drawn picture is. This section is only Flat-Pack's surface.
+
+Flat-Pack is the one look whose 3D already *is* a drawing, so its 2D is the same pen on the same sheet — a page of
+the manual that happens not to need an axonometric view. A reader must not be able to tell which engine drew it.
+
+| | Flat-Pack |
+|---|---|
+| line | 4 px `--ink` on **every** solid, one weight, no exceptions — the look's whole identity |
+| fills | hero `--brand` blue, body white, context `--bg-grey`, mark `--accent` yellow, signal `--signal` |
+| corners | 8 px; a tag 4 px |
+| lift | none. Flat-Pack has no shadows; depth is overlap and the dashed guide |
+| labels | Noto Sans at 32 px; captions, dimensions and part numbers at 24 px |
+| notation | `F.arrow` only — the manual says "move this" with an arrow and with nothing else. Dashed line = "this goes there" |
+| texture | hatching on a cut surface; nothing else, ever |
+
+1. **Four fills and the pen.** Paper, grey, blue, yellow. A part with no fill named is paper. A drawing that
+   needs a fifth colour needs a second slide.
+2. **Nothing is hidden.** If a part sits inside another, use `F.breakdown` to pull them apart along the axis
+   with the dashed guide between, or cut it open. Never leave the audience guessing what is under the lid.
+3. **Counts are the point.** A manual that draws five screws where there are six is simply wrong: the "6x" pill,
+   the part number and the dimension line are this look's micro-detail. **Ask a count; never invent one.**
+4. **Never** a gradient, a blur, a glow, a second line weight, a soft shape, yellow type above 32 px, or an arrow
+   drawn as a curve.
+
+---
+
 ## 4. The chart idiom (`FPChart.line`)
 
 A drawn figure, not a widget: one pen and flat fills. 6 px series strokes, **direct end labels in an outlined box, no

@@ -194,8 +194,23 @@
     return window.LumiPost.create(THREE, renderer, scene, camera, resolved.cfg);
   }
 
+  /* Part E (LOOK-BASE 4.11): the SAME honesty gate for camera motion. A camera that sways or cranes makes a measured
+     figure hard to read and makes its labels swim, so a slide in the measured record holds its rest pose. A holder
+     can say data-camera-move="allow" when the motion is the point and the numbers are not on the figure.
+     cameraMotion(el) -> { moving: bool, reason } ; el = the 3D holder (or anything inside the slide). */
+  function cameraMotion(el) {
+    var slide = el && el.closest ? el.closest('.slide') : null;
+    if (!slide) return { moving: true, reason: 'not in a slide' };
+    var holder = el.closest('[data-camera-move]');
+    if (holder && holder.getAttribute('data-camera-move') === 'allow') return { moving: true, reason: 'data-camera-move="allow"' };
+    if (holder && holder.getAttribute('data-camera-move') === 'still') return { moving: false, reason: 'data-camera-move="still"' };
+    var m = measuredSlides(slide.ownerDocument);
+    if (m.slides[slideIndex(slide)]) return { moving: false, reason: 'measured values on this slide (' + m.source + ')' };
+    return { moving: true, reason: m.known ? 'no measured values' : 'no provenance record in this page' };
+  }
+
   window.LumiPostPolicy = { version: '1.0', PRESETS: PRESETS, register: register, policyFor: policyFor,
-    resolve: resolve, make: make, measuredSlides: measuredSlides, forget: forget,
+    resolve: resolve, make: make, measuredSlides: measuredSlides, forget: forget, cameraMotion: cameraMotion,
     slideIndex: slideIndex, tierOf: tierOf, expand: expand,
     get looks() { return looks; } };
 

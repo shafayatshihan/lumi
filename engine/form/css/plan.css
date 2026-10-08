@@ -70,8 +70,12 @@
 .pl-wait .pl-bigs{width:auto;flex-direction:row}
 
 /* ---------------------------------------------------------------- plan page: main */
-.pl-main{position:absolute;left:96px;top:160px;width:1408px;height:706px}
-.pl-strip{position:absolute;left:0;top:0;width:1408px;height:84px;display:flex;align-items:center;gap:16px;padding:0 16px 0 18px;border-radius:24px;
+/* The page used to start at a fixed y 160 while the header above it grew with the cost lines, so a deck with an
+   over-budget warning had the question strip drawn straight over "plan your deck" and over the cost itself. Both bands
+   are measured now (plan.js sets --pl-main-top and --pl-strip-h from the real boxes) and nothing is ever covered;
+   the numbers below are only the fallback for the first paint. */
+.pl-main{position:absolute;left:96px;top:var(--pl-main-top,160px);width:1408px;height:calc(866px - var(--pl-main-top,160px))}
+.pl-strip{position:absolute;left:0;top:0;width:1408px;min-height:84px;display:flex;align-items:center;gap:16px;padding:12px 16px 12px 18px;border-radius:24px;
   background:var(--accent);color:var(--pill);animation:plUp .45s var(--ease) both}
 .pl-strip-t{flex:none;display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px 0 8px;border-radius:100px;background:rgba(247,248,250,.14);font-size:17px}
 .pl-strip-t span{display:inline-flex}
@@ -81,7 +85,7 @@
 .pl-strip-nav .pg svg{width:20px;height:20px}
 .pl-strip-n{min-width:56px;text-align:center;font-size:17px}
 .pl-listcol,.pl-card{position:absolute;top:0;bottom:0}
-.pl-main.has-strip .pl-listcol,.pl-main.has-strip .pl-card{top:100px}
+.pl-main.has-strip .pl-listcol,.pl-main.has-strip .pl-card{top:calc(var(--pl-strip-h,84px) + 16px)}
 .pl-listcol{left:0;width:340px;display:flex;flex-direction:column}
 .pl-list{flex:1;min-height:0;display:flex;flex-direction:column;gap:6px}
 .pl-row{position:relative;flex:none;display:flex;align-items:center;gap:10px;height:56px;padding:0 12px 0 6px;border-radius:18px;background:var(--pill);
@@ -218,7 +222,8 @@
 .pl-dq{display:flex;flex-direction:column;gap:10px}
 .pl-dq-q{font-size:20px;line-height:1.35;padding-right:36px}
 .pl-dq-opts{display:flex;flex-wrap:wrap;gap:8px}
-.pl-dq-opt{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 16px 0 10px;border-radius:100px;background:var(--bg);font-size:18px;transition:background .2s,color .2s}
+.pl-dq-opt{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:4px 16px 4px 10px;border-radius:100px;background:var(--bg);font-size:18px;
+  text-align:left;transition:background .2s,color .2s}
 .pl-dq-opt.on{background:var(--accent);color:var(--pill)}
 .pl-dq-tick{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--white);color:transparent}
 .pl-dq-opt.on .pl-dq-tick{background:var(--pill);color:var(--ink)}
@@ -228,13 +233,21 @@
 .pl-dq-free{flex:1;min-width:0;height:44px;padding:0 14px;font-size:18px;background:var(--bg)}
 .pl-dq-send{flex:none;height:44px;padding:0 20px;border-radius:100px;background:var(--accent);color:var(--pill);font-size:18px}
 .pl-dq-send:disabled{opacity:.5}
-.pl-dq.is-compact{flex:1;min-width:0;flex-direction:row;align-items:center;gap:14px}
-.pl-dq.is-compact .pl-dq-q{flex:0 1 360px;padding:0;font-size:19px;line-height:1.25}
-.pl-dq.is-compact .pl-dq-opts{flex:none;flex-wrap:nowrap}
-.pl-dq.is-compact .pl-dq-opt{background:rgba(247,248,250,.14);color:var(--pill)}
+/* The deck strip. This used to be one nowrap row inside a band pinned to 84 px, so a real question - four answers, one
+   of them a sentence - ran 440 px off the right of the stage with the last chip cut in half, while the question itself
+   was squeezed into a 360 px column that overflowed the band downwards. It is a grid now: the question on the left, its
+   answers wrapping on the right, the text box and the button under them. The band grows to fit instead of clipping.
+   The type is a step smaller than the open card (the owner allowed it) and no smaller: 17 / 16 px, floor is 14. */
+.pl-dq.is-compact{flex:1;min-width:0;display:grid;grid-template-columns:minmax(180px,300px) minmax(0,1fr);
+  align-items:center;column-gap:16px;row-gap:9px}
+.pl-dq.is-compact .pl-dq-q{grid-column:1;grid-row:1 / -1;align-self:center;padding:0;font-size:17px;line-height:1.3}
+.pl-dq.is-compact .pl-dq-opts{grid-column:2;grid-row:1;flex-wrap:wrap;gap:6px}
+.pl-dq.is-compact .pl-dq-opt{min-height:38px;padding:3px 14px 3px 8px;font-size:16px;background:rgba(247,248,250,.14);color:var(--pill)}
 .pl-dq.is-compact .pl-dq-opt.on{background:var(--pill);color:var(--ink)}
 .pl-dq.is-compact .pl-dq-opt.on .pl-dq-tick{background:var(--accent);color:var(--pill)}
-.pl-dq.is-compact .pl-dq-foot{flex:1;min-width:200px}
+.pl-dq.is-compact .pl-dq-foot{grid-column:2;grid-row:2;min-width:0}
+.pl-dq.is-compact .pl-dq-free,.pl-dq.is-compact .pl-dq-send{height:40px;font-size:16px}
+.pl-dq.is-compact .pl-dq-sug{font-size:14px}
 .pl-dq.is-compact .pl-dq-free{background:rgba(247,248,250,.14);color:var(--pill)}
 .pl-dq.is-compact .pl-dq-free::placeholder{color:rgba(247,248,250,.6)}
 .pl-dq.is-compact .pl-dq-send{background:var(--pill);color:var(--ink)}
@@ -373,38 +386,55 @@
 .th-left .pl-bigs{margin-top:18px;width:100%}
 /* Lumi leans in from the bottom of the look column and is cropped by it - the character is the one thing on this
    screen that belongs to Lumi rather than to the deck being previewed. Decorative only: aria-hidden, no hit area. */
-.th-lumi{position:absolute;left:-40px;top:574px;width:400px;pointer-events:none;display:block;
-  clip-path:inset(0 0 42px 0);animation:upBob 4.6s var(--ease-io) infinite}
+/* The whole character, not a slice of one. It used to be pushed off the left edge (left:-40px) AND have its
+   feet clipped (clip-path), so it read as a cut-out rather than as Lumi standing in the column. */
+/* The source frame cuts the plush off at the bottom (the gaze video is framed that way), so the image has a
+   flat edge no matter what. Floating it mid-stage made that edge read as "the body is chopped off" - the owner
+   marked it. Sitting it ON the stage floor turns the same edge into the character standing at the
+   bottom of the screen, which is how a cropped character is supposed to read.
+   The top is a measured number, not bottom:0: .th-lumi lives inside .th-left, which is a short
+   auto-height column, so bottom:0 put it at the TOP of the stage over the heading. */
+.th-lumi{position:absolute;left:8px;top:612px;width:320px;pointer-events:none;display:block;
+  animation:upBob 4.6s var(--ease-io) infinite}
 @media (prefers-reduced-motion: reduce){.th-lumi{animation:none}}
 
-/* the quality choice, beside the look: four calm rows, then an advanced control that names the model and the effort */
-.th-qual{display:flex;flex-direction:column;gap:8px;margin-top:6px}
-.ql-h{font-family:var(--head);font-weight:900;font-size:17px;letter-spacing:-.01em}
-.ql-rows{display:flex;flex-direction:column;gap:6px}
-.ql-row{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:7px 12px;border-radius:14px;background:var(--bg);
-  text-align:left;border:0;cursor:pointer;transition:transform .12s ease,background .12s ease}
-.ql-row:hover{transform:translateY(-1px)}
+/* The quality choice: three calm tiers, then an advanced control that names the model and the effort.
+   It used to live inside .th-left, the 330 px column Lumi stands in, so everything under her - which model and which
+   effort are ticked, and then the "plan my slides" button - was simply invisible; that is the fault the owner marked.
+   The character is not the thing to shrink. The controls get their own band instead: under the look preview
+   (.th-illus ends at y 460) and left of the look list (x 1160), which is empty on this screen. Three tiers across,
+   the advanced pair beneath them, nothing under 14 px and the two uppercase micro-labels at 12. */
+.th-qual{position:absolute;left:470px;top:492px;width:660px;display:flex;flex-direction:column;gap:9px;z-index:3}
+.ql-h{font-family:var(--head);font-weight:900;font-size:18px;letter-spacing:-.01em}
+.ql-rows{display:flex;flex-direction:row;gap:8px}
+/* --pill, not --bg: side by side on the page's own background an unpicked tier read as loose text rather than as one
+   of three things to choose between. */
+.ql-row{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:9px 14px;border-radius:16px;
+  background:var(--pill);text-align:left;border:0;cursor:pointer;transition:transform .12s ease,background .12s ease}
+.ql-row:hover{background:var(--white);transform:translateY(-1px)}
 .ql-row.on{background:var(--btn-primary);color:#fff;box-shadow:var(--sh-primary)}
 .ql-row:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-.ql-row-t{font-size:15px;line-height:1.2}
+/* the tier's word and its badge: they wrap onto two lines rather than push the badge out of the card */
+.ql-row-t{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:16px;line-height:1.2}
 .ql-row-t b{font-family:var(--head);font-weight:900}
-.ql-rec{margin-left:8px;font-size:12px;padding:1px 7px;border-radius:999px;background:#0061EF;color:#fff}
+.ql-rec{font-size:12px;padding:1px 8px;border-radius:999px;background:#0061EF;color:#fff;white-space:nowrap}
 .ql-row.on .ql-rec{background:rgba(255,255,255,.22)}
 .ql-row-n{font-size:14px;line-height:1.3;color:var(--mute)}
 .ql-row.on .ql-row-n{color:rgba(255,255,255,.85)}
-.ql-note{display:flex;flex-direction:column;gap:2px;font-size:14px;line-height:1.35;color:var(--mute)}
+.ql-note{display:flex;flex-direction:column;gap:2px;font-size:15px;line-height:1.35;color:var(--mute)}
 .ql-note .ql-warn{color:var(--ink)}
 .ql-adv-b{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;padding:4px 10px;border:0;border-radius:999px;
-  background:transparent;color:var(--mute);font-size:14px;cursor:pointer}
+  background:transparent;color:var(--mute);font-size:15px;cursor:pointer}
 .ql-adv-b:hover{color:var(--ink)}
 .ql-adv-b:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .ql-adv-dots{font-size:16px;line-height:1}
-.ql-adv{display:flex;flex-direction:column;gap:5px;padding:9px 12px;border-radius:14px;background:var(--bg)}
+/* the model row and the effort row, each on one line: a label, then its pills. The ticks are the point of this panel. */
+.ql-adv{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:7px 12px;padding:11px 14px;border-radius:16px;background:var(--bg)}
 .ql-adv[hidden]{display:none}
-.ql-adv-lead{font-size:14px;line-height:1.35;color:var(--mute)}
+.ql-adv-lead{grid-column:1 / -1;font-size:14px;line-height:1.35;color:var(--mute)}
 .ql-lab{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
-.ql-pills{display:flex;flex-wrap:wrap;gap:5px}
-.ql-pill{padding:4px 11px;border-radius:999px;border:0;background:var(--pill);font-size:14px;cursor:pointer}
+.ql-pills{display:flex;flex-wrap:wrap;gap:6px}
+.ql-pill{padding:5px 13px;border-radius:999px;border:0;background:var(--pill);font-size:15px;cursor:pointer}
 .ql-pill.on{background:var(--btn-primary);color:#fff}
 .ql-pill:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .th-illus{position:absolute;left:470px;top:70px;width:660px;height:390px;z-index:2}

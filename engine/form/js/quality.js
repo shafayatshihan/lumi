@@ -1,7 +1,7 @@
 // "how hard claude thinks": the quality choice, on the look step, in two layers.
 //
 // WHY TWO LAYERS. Every user-facing string in this product is written for someone who is not technical, and "Opus / high
-// effort" is jargon to most people - so the plain surface keeps the four calm tiers and says what each one costs and saves
+// effort" is jargon to most people - so the plain surface keeps the three calm tiers and says what each one costs and saves
 // in time and in a plain share of the claude allowance, never in tokens and never in money. But the owner is a power user on
 // their own machine and wants the two real axes, so an advanced control (closed by default, clearly labelled) exposes the
 // model and the effort level by their real names. That surface is for someone who wants the detail.
@@ -16,17 +16,19 @@
 import { h } from './dom.js';
 import { shareWords } from './plan.js';
 
+// v0.5.11: three tiers, not four. The id is no longer a word people read ('just-right'), so the WORD comes from the
+// server as `name` and only the note lives here. Keyed by tier id; a pair no tier covers has no note and no row.
 const TIER_NOTE = {
-  best: 'thinks hardest',
+  'just-right': 'thinks hard, not too slow',
   maximum: 'thinks longest, slowest',
-  balanced: 'a little quicker',
-  fast: 'quickest, lighter model',
+  balanced: 'quicker, lighter model',
 };
+const tierName = t => (t && (t.name || t.quality)) || '';
 
 // -> [{ text, warn }] : what one tier costs against the default, in plain words. `opts` is the server's qualityOptions.
 export function qualityLines(opts, quality) {
   const tiers = (opts && opts.tiers) || [];
-  const def = tiers.find(t => t.quality === ((opts && opts.default) || 'best')) || null;
+  const def = tiers.find(t => t.quality === (opts && opts.default)) || null;
   const now = tiers.find(t => t.quality === quality) || null;
   const out = [];
   if (!now || !def) return out;                       // a custom pair: the advanced control already names it exactly
@@ -41,8 +43,6 @@ export function qualityLines(opts, quality) {
   return out;
 }
 
-const plainName = t => String((t && t.quality) || '').replace('best', 'best quality');
-
 // -> the one line that names a custom pair, or '' for a tier
 export function customLine(view) {
   if (!view || view.tier || !view.model) return '';
@@ -52,8 +52,8 @@ export function customLine(view) {
 // mountQuality(el, { value, options, onChange }) -> { set(quality), destroy() }
 // `value` is the stored quality string; onChange is called with a new stored quality string (never a pair object).
 export function mountQuality(el, { value, options, onChange = () => {}, sfx = () => {} } = {}) {
-  const opts = options || { tiers: [], models: [], efforts: [], default: 'best' };
-  let q = value || opts.default || 'best';
+  const opts = options || { tiers: [], models: [], efforts: [], default: '' };
+  let q = value || opts.default || '';
   const pairOf = s => {
     const t = (opts.tiers || []).find(x => x.quality === s);
     if (t) return [t.model, t.effort];
@@ -86,7 +86,7 @@ export function mountQuality(el, { value, options, onChange = () => {}, sfx = ()
       const on = t.quality === q;
       const b = h('button', { type: 'button', class: 'ql-row' + (on ? ' on' : ''), role: 'radio', 'aria-checked': on ? 'true' : 'false',
         'data-q': t.quality, 'data-nosfx': '', 'data-cursor-label': 'pick' },
-        h('span', { class: 'ql-row-t' }, h('b', {}, t.quality === 'best' ? 'best quality' : t.quality),
+        h('span', { class: 'ql-row-t' }, h('b', {}, tierName(t)),
           t.quality === opts.default ? h('span', { class: 'ql-rec' }, 'recommended') : null),
         h('span', { class: 'ql-row-n' }, TIER_NOTE[t.quality] || ''));
       b.addEventListener('click', () => set(t.quality));

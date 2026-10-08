@@ -1,6 +1,6 @@
 {
   "name": "Lumi",
-  "version": "0.5.10",
+  "version": "0.6.0",
   "repoUrl": "https://github.com/shafayatshihan/lumi",
   "releaseZip": "https://github.com/shafayatshihan/lumi/releases/latest/download/Lumi-Setup.zip",
   "pythonPackages": [
@@ -9,7 +9,8 @@
     "imageio-ffmpeg",
     "python-docx",
     "openpyxl",
-    "pypdf"
+    "pypdf",
+    "pypdfium2"
   ],
   "formPort": 8765
 }

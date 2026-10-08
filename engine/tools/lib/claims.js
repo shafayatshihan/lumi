@@ -8,13 +8,17 @@
 //                      { "slide": 4, "text": "Mach 2.9", "kind": "published", "cite": "Etheridge et al. 2019, Journal of Fluids" },
 //                      { "slide": 5, "text": "31 kPa", "kind": "computed", "from": ["200", "40", "8"] },
 //                      { "slide": 2, "text": "42 %", "kind": "illustrative" },
-//                      { "slide": 3, "text": "4-64 kHz", "kind": "source", "from": "Report section 3" } ] }
+//                      { "slide": 3, "text": "4-64 kHz", "kind": "source", "from": "Report section 3" },
+//                      { "slide": 6, "text": "3.0059 mm", "kind": "scan", "file": "Report/thesis.pdf", "page": 5 } ] }
 //   3. a visible "illustrative" mark - kind illustrative needs the slide to SAY so (illustrative / schematic / not to scale).
+//   "scan" (D1) is a number read by eye off a SCANNED page of the user's own file, whose machine-read text got it wrong: the
+//   manifest must list that page as scanned, and the check prints what the machine reading has nearby so a person can compare.
 //
 // What it catches: a number that is in no source and no declaration; a "source" claim the extracted text does not contain; a
 // figure-read number whose evidence region (the colour bar) is not visible on the slide because the picture was cropped; a
-// declaration missing from the speaker notes; a "computed" number built from numbers that are themselves untraced.
-// What it CANNOT catch (be honest about it): a made-up number that Claude also declares falsely as "published" or "computed"; a number
+// declaration missing from the speaker notes; a "computed" number built from numbers that are themselves untraced; a "scan"
+// claim on a file or page that is not scanned (a page with real text is checked against its text).
+// What it CANNOT catch (be honest about it): a made-up number that Claude also declares falsely as "published", "computed" or "scan"; a number
 // that happens to coincide with an unrelated number in the files (matching is on the numeral, not its meaning); a claim with no digits
 // ("twice as fast"); a number baked into a picture or a 3D texture; whether a cited paper really says what is cited.
 'use strict';
@@ -58,7 +62,42 @@ function loadCorpus(auraRoot, textDir) {
   let text = '';
   for (const f of files) { try { text += '\n' + fs.readFileSync(f, 'utf8'); } catch (e) { /* skip */ } }
   for (const f of ['brief.md']) { try { text += '\n' + fs.readFileSync(path.join(auraRoot, '.aura', 'brief', f), 'utf8'); } catch (e) { /* none */ } }
-  return { text: clean(text), files: files.length };
+  return { text: clean(text), files: files.length, scans: loadScans(textDir || path.join(auraRoot, '.aura', 'temp', 'text')) };
+}
+
+// D1: the scanned pages of this deck's files, from the extractor's manifest: { 'report/thesis.pdf': { file, pages: Set, text: {5: '...'} } }.
+// The page text is the machine reading, cut out of <file>.txt by its "--- page N ..." markers.
+function loadScans(dir) {
+  const out = {};
+  let man; try { man = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')).files || {}; } catch (e) { return out; }
+  for (const [rel, e] of Object.entries(man)) {
+    if (!e || !Array.isArray(e.scanned) || !e.scanned.length) continue;
+    const text = {};
+    try {
+      const parts = fs.readFileSync(path.join(dir, rel + '.txt'), 'utf8').split(/^--- page (\d+)[^\n]*---$/m);
+      for (let i = 1; i < parts.length; i += 2) text[Number(parts[i])] = parts[i + 1] || '';
+    } catch (er) { /* no text: nothing machine-read */ }
+    out[rel.toLowerCase()] = { file: rel, pages: new Set(e.scanned.map(Number)), text };
+  }
+  return out;
+}
+
+const scanOf = (corpus, file) => {
+  const s = (corpus && corpus.scans) || {}, f = String(file || '').replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase();
+  return s[f] || Object.values(s).find(x => f && (x.file.toLowerCase().endsWith('/' + f) || f.endsWith('/' + x.file.toLowerCase()))) || null;
+};
+
+// what the machine reading has on that page that is one slip away from the number: a dropped decimal point (30329 for 3.0329),
+// or one digit misread (3.0039 for 3.0059). Shown in the warning, so the presenter sees both and compares them on the page.
+function nearMiss(value, text) {
+  const want = value.replace(/\D/g, ''), toks = new Set();
+  for (const t of [text || '', String(text || '').replace(/(\d) (?=\d)/g, '$1')]) for (const m of t.matchAll(/\d[\d.,]*\d|\d/g)) toks.add(m[0]);
+  for (const t of toks) {
+    const d = t.replace(/\D/g, '');
+    if (d === want) return t;
+    if (d.length === want.length && [...d].filter((c, i) => c !== want[i]).length === 1) return t;
+  }
+  return '';
 }
 
 const inCorpus = (corpus, value) => {
@@ -82,6 +121,7 @@ const DECLARES = {
   illustrative: /illustrative|schematic|not to scale|placeholder|conceptual|sketch/i,
   computed: /calculated|computed|derived|worked out|estimated/i,
   figure: /figure|fig\.|read (off|from)|chart|plot/i,
+  scan: /scanned|read (off|from) (the )?page|page \d+/i,
 };
 
 // slides: [{ n, text, notes, visibleIllustrative, figures: [{ src, figure, crop }] }]. Returns { errors: [{slide,msg}], warnings, traced, declared, figureRead }
@@ -98,13 +138,22 @@ function judge({ slides, corpus, prov, brief }) {
       if (inCorpus(corpus, x.value)) { stat.traced++; continue; }
       const cs = find(s.n, x.value);
       const label = `"${x.raw}"`;
-      if (!cs.length) { err(s.n, `number ${label} is not in your files and has no provenance entry. Remove it, or add it to provenance.json with its kind (source / published / computed / figure / illustrative) - never leave an unexplained number on a slide.`); continue; }
+      if (!cs.length) { err(s.n, `number ${label} is not in your files and has no provenance entry. Remove it, or add it to provenance.json with its kind (source / published / computed / figure / scan / illustrative) - never leave an unexplained number on a slide.`); continue; }
       stat.declared++;
       for (const c of cs) {
       c._used = true;
       const kind = String(c.kind || '').toLowerCase();
       const notesOk = k => DECLARES[k] && DECLARES[k].test(s.notes || '');
-      if (kind === 'source') err(s.n, `number ${label} is claimed to come from your files (${c.from || c.ref || '?'}) but the extracted text of your files does not contain it. If it was read off a figure, say kind "figure"; if it is not in your files, it is not a source number.`);
+      if (kind === 'source') err(s.n, `number ${label} is claimed to come from your files (${c.from || c.ref || '?'}) but the extracted text of your files does not contain it. If it was read off a figure, say kind "figure"; off a scanned page, kind "scan"; if it is not in your files, it is not a source number.`);
+      else if (kind === 'scan') {
+        const page = Number(c.page), sc = scanOf(corpus, c.file);
+        if (!c.file || !(page >= 1)) { err(s.n, `number ${label} was read off a scanned page but names no file and page (file: "Report/thesis.pdf", page: 5).`); continue; }
+        if (!sc) { err(s.n, `number ${label} cites ${c.file}, which is not a scanned file of this deck (its manifest lists no scanned pages). A file with real text is checked against its text.`); continue; }
+        if (!sc.pages.has(page)) { err(s.n, `number ${label} cites page ${page} of ${sc.file}, which is not a scanned page (scanned: ${[...sc.pages].join(', ')}).`); continue; }
+        if (!notesOk('scan')) err(s.n, `number ${label} was read off scanned page ${page}: the speaker notes must say so ("read off scanned page ${page} of ...") so the presenter can defend it.`);
+        const near = nearMiss(x.value, sc.text[page]);
+        warn(s.n, `number ${label} was read by eye off scanned page ${page} of ${sc.file}; ` + (near ? `the machine reading there says "${near}".` : 'the machine reading has nothing close to it on that page.') + ' Check it against the page.');
+      }
       else if (kind === 'published') {
         const cite = String(c.cite || '');
         if (cite.length < 8) err(s.n, `number ${label} is marked published but has no citation (cite: "Author year, venue").`);
@@ -139,7 +188,7 @@ function judge({ slides, corpus, prov, brief }) {
         }
         if (!notesOk('figure')) err(s.n, `number ${label} was read off a figure: the speaker notes must say "read off figure ..." so the presenter can defend it.`);
         warn(s.n, `number ${label} is not in the text of your files; it was read off ${fig} by eye. Check it against the figure.`);
-      } else err(s.n, `number ${label}: unknown provenance kind "${c.kind}" (use source / published / computed / figure / illustrative).`);
+      } else err(s.n, `number ${label}: unknown provenance kind "${c.kind}" (use source / published / computed / figure / scan / illustrative).`);
       }
     }
   }

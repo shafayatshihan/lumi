@@ -297,6 +297,37 @@ No black or coloured backgrounds, no fog, no gradients behind the object (the sl
 
 ---
 
+## 3A. The illustration idiom: a technical drawing on the studio paper
+
+> Base 4.12 says a drawn picture is inline SVG and still, and `illustration.md` says how to write one. This
+> section is only Bold Blue's surface. `LumiIllus` reads it from the theme; do not restate a colour in a slide.
+
+Bold Blue draws the way its renders photograph: **clean, clinical, exact**. The drawing is a technical section on
+the same warm paper the studio sits on, not a sketch.
+
+| | Bold Blue |
+|---|---|
+| line | 3 px, `--ink`, on the hero and the cut only; a body shape may carry none |
+| fills | hero `--accent`, body `--surface` white, context `--bg-stage`, signal `--hot`, paper `--bg` |
+| corners | 16 px — the same family as the cards, never square, never a pill |
+| lift | one soft shadow under a solid (`--shadow-card`'s weight), never an outline drawn as a shadow |
+| labels | Poppins at 28 px; captions, dimensions and the foot note in DM Mono at 20 px (`.bb-cap`) |
+| notation | arrows and streamlines in `--accent`; a field, a film or anything thermal in `--hot` at 0.2 opacity |
+| texture | none. Bold Blue has no halftone, no grain and no hatching except on a **cut surface** (`F.hatch`) |
+
+1. **One hero part.** Exactly one shape in the drawing is `role: 'hero'` and it is the thing the headline is
+   about. Everything else is white or the stage grey. Blue is the emphasis colour here as it is in the type: a
+   drawing with four blue parts has no emphasis at all.
+2. **Draw the section, not the outline.** Bold Blue's strength is the inside of things: hatch the cut, show the
+   wall thickness, show the collar, show the clearance. A hollow outline reads as a wireframe and looks unfinished
+   beside a studio render.
+3. **Dimensions are drafting, not decoration.** `F.dim` only where the number is the point, and the number is a
+   claim like any other (`F.value`, a kind, `provenance.json`).
+4. **Never** a gradient fill, a glow, a drop shadow you can see as a blur, a second blue, yellow type, a dashed
+   line used for emphasis rather than for a guide, or a label below 20 px.
+
+---
+
 ## 4. The chart idiom (`BBChart.line`)
 
 Hand-drawn SVG on a white rounded card (`.bb-chart`), drawn at the card's real pixel size so every label is exactly its

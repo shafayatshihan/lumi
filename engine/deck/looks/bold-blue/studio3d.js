@@ -506,6 +506,12 @@
       else { renderer.setPixelRatio(Math.max(0.5, renderer.getPixelRatio() * 0.75)); const s = new THREE.Vector2(); renderer.getSize(s); renderer.setSize(s.x, s.y, false); }
     }
 
+    let motionGate = null;
+    const motion = () => motionGate || (motionGate = (() => {
+      const g = window.LumiPostPolicy && window.LumiPostPolicy.cameraMotion && ctx.el ? window.LumiPostPolicy.cameraMotion(ctx.el) : { moving: true };
+      if (!g.moving && ctx.el) ctx.el.dataset.cameraMove = 'held: ' + g.reason;
+      return g;
+    })());
     const S = {
       THREE, scene, camera, key, floor, target, flickerLight: flick, post, renderer, period: ctx.period,
       get quality() { return level; },
@@ -517,11 +523,41 @@
       /* periodic orbit: azimuth, elevation and distance drift on harmonics 1, 2 and 3 of the loop period - unhurried
          and irregular to the eye, but exactly back at its start at t = period */
       orbit(t, s = {}) {
+        if (!motion().moving) return place(s.azimuth ?? opt.azimuth, s.elevation ?? opt.elevation, s.distance ?? opt.distance, s.target);
         const P = s.period || ctx.period || 20, w = TAU * (((t % P) + P) % P) / P;
         const az = (s.azimuth ?? opt.azimuth) + (s.swayAz ?? 7) * Math.sin(w) + (s.swayAz2 ?? 2) * Math.sin(3 * w + 0.6);
         const el = (s.elevation ?? opt.elevation) + (s.swayEl ?? 1.6) * Math.sin(2 * w + 1.1);
         const dist = (s.distance ?? opt.distance) * (1 + (s.breathe ?? 0.015) * Math.sin(w + 2.3));
         place(az, el, dist, s.target);
+      },
+      /* LOOK-BASE 4.11: a named camera setup, the same vocabulary as lumi_bpy.move() so a live slide and a Blender one
+         are directed in one language. S.shot(t, 'crane' | 'dolly' | 'push' | 'orbit' | 'whip' | 'sway' | 'still',
+         { amount, sway, azimuth, elevation, distance, fov, target }). Every offset is periodic in the loop (one-way
+         moves go there and back on (1 - cos w) / 2), so seek(0) == seek(period) and t = 0 is the rest pose. A slide
+         with measured values holds the rest pose (LumiPostPolicy.cameraMotion). */
+      shot(t, name = 'sway', s = {}) {
+        const az0 = s.azimuth ?? opt.azimuth, el0 = s.elevation ?? opt.elevation, d0 = s.distance ?? opt.distance, f0 = s.fov ?? opt.fov;
+        if (!motion().moving) name = 'still';
+        const P = s.period || ctx.period || 20, u = (((t % P) + P) % P) / P, w = TAU * u, U = (1 - Math.cos(w)) / 2;
+        const k = name === 'orbit' ? Math.max(1, Math.round(s.amount ?? 1)) : (s.amount ?? 1);   // only whole turns close
+        const h = (n, ph) => Math.sin(n * w + ph) - Math.sin(ph);                            // 0 at t = 0: the rest pose
+        const o = ({
+          still: {}, sway: {},
+          crane: { el: 18 * k * U, dist: 1 + 0.22 * k * U, fov: 1 + 0.2 * k * U },
+          dolly: { az: 30 * k * U, dist: 1 - 0.22 * k * U, fov: 1 - 0.15 * k * U },
+          push: { dist: 1 - 0.2 * k * U, fov: 1 - 0.12 * k * U, az: 4 * k * U },
+          orbit: { az: 360 * k * u },
+          whip: { az: 360 * (u - 0.85 * Math.sin(4 * w) / (4 * TAU)), el: 8 * k * Math.sin(w) },
+        })[name];
+        if (!o) throw new Error(`BB3D S.shot: unknown setup "${name}"`);
+        const a = name === 'still' ? 0 : (name === 'sway' ? k : (s.sway || 0));     // the handheld drift, lumi_bpy._sway
+        const az = az0 + (o.az || 0) + a * (1.2 * h(1, 0) + 0.4 * h(3, 0.6));
+        const el = el0 + (o.el || 0) + a * 0.6 * h(2, 1.1);
+        const dist = d0 * (o.dist || 1) * (1 + a * 0.012 * h(1, 2.3));
+        const fov = f0 * (o.fov || 1);
+        if (Math.abs(camera.fov - fov) > 1e-9) { camera.fov = fov; camera.updateProjectionMatrix(); }
+        place(az, el, dist, s.target);
+        if (a) camera.rotateZ(a * 0.25 * h(1, 0.9) * Math.PI / 180);
       },
       /* camera tour from BBTime.tour: S.tour(tour(t)) */
       tour(shot) { camera.position.set(shot.pos[0], shot.pos[1], shot.pos[2]); camera.lookAt(shot.target[0], shot.target[1], shot.target[2]); },
