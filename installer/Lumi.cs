@@ -711,9 +711,17 @@ namespace Lumi
             foreach (string e in edges)
             {
                 if (!File.Exists(e)) continue;
-                string args = "--app=" + url + " --start-fullscreen";
-                string profile = Program.Env("AURA_EDGE_PROFILE");
-                if (profile != null) args += " --user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check";
+                // --user-data-dir IS NOT OPTIONAL, and this is the fix for "it doesn't open fullscreen" (owner,
+                // 2026-10-08). Chromium applies command-line flags only to a browser PROCESS it starts. If Edge is
+                // already running - and on a normal desktop it usually is - a new --app window is handed to the
+                // existing process and --start-fullscreen is silently dropped: you get an app window with a title
+                // bar, exactly as reported. Pointing at our own profile forces a separate process, so the flag
+                // takes effect. It also keeps Lumi out of the person's browsing profile, which is right anyway for
+                // a window that only ever talks to 127.0.0.1. AURA_EDGE_PROFILE still overrides it for tests.
+                string profile = Program.Env("AURA_EDGE_PROFILE") ?? Path.Combine(Paths.Aura, "temp", "browser");
+                try { Directory.CreateDirectory(profile); } catch { }
+                string args = "--app=" + url + " --start-fullscreen"
+                            + " --user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check";
                 Process p = Process.Start(e, args);
                 Log.W("opened Edge: pid " + (p != null ? p.Id.ToString(CultureInfo.InvariantCulture) : "?") + "  " + args);
                 return;

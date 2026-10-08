@@ -1,6 +1,6 @@
 {
   "name": "Lumi",
-  "version": "0.5.8",
+  "version": "0.5.9",
   "repoUrl": "https://github.com/shafayatshihan/lumi",
   "releaseZip": "https://github.com/shafayatshihan/lumi/releases/latest/download/Lumi-Setup.zip",
   "pythonPackages": [

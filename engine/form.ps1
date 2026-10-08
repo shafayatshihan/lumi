@@ -76,5 +76,10 @@ if (-not $ping) {
 # a "close lumi" control while the window has no title bar. installer/Lumi.cs OpenWindow is the same decision.
 $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
           "$env:LOCALAPPDATA\Microsoft\Edge\Application\msedge.exe") | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-if ($edge) { Start-Process -FilePath $edge -ArgumentList @("--app=$url", '--start-fullscreen') }
+# --user-data-dir is required, not a nicety: Chromium only applies these flags to a browser PROCESS it starts,
+# so when Edge is already open a new --app window joins it and --start-fullscreen is dropped (you get a title
+# bar). Our own profile forces a separate process, and keeps Lumi out of the person's browsing profile.
+$prof = Join-Path (Join-Path $Aura 'temp') 'browser'
+if (-not (Test-Path $prof)) { New-Item -ItemType Directory -Force $prof | Out-Null }
+if ($edge) { Start-Process -FilePath $edge -ArgumentList @("--app=$url", '--start-fullscreen', "--user-data-dir=$prof", '--no-first-run', '--no-default-browser-check') }
 else { Start-Process $url }

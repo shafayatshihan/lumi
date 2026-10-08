@@ -2723,6 +2723,7 @@ def signin_open_cmd(url, mode, edge):
 LATEST = {'tag': None, 'at': 0.0, 'error': None}
 LATEST_LOCK = threading.Lock()
 LATEST_FILE = TEMP / 'latest-release.json'
+LATEST_CHECKED_THIS_RUN = False     # the first latest_release() of a run always asks GitHub; see the note there
 
 
 def find_edge():
@@ -2758,13 +2759,20 @@ def latest_release():
     """The newest GitHub release tag, cached for 6 hours (memory + .aura/temp). Never raises; None when unknown."""
     if os.environ.get('AURA_LATEST_VERSION'): return os.environ['AURA_LATEST_VERSION']
     if os.environ.get('AURA_NO_NETWORK') == '1': return None
+    global LATEST_CHECKED_THIS_RUN
     with LATEST_LOCK:
         if not LATEST['at']:
             try:
                 LATEST.update(json.loads(LATEST_FILE.read_text(encoding='utf-8')))
             except (OSError, ValueError):
                 pass
-        if time.time() - LATEST['at'] < 6 * 3600: return LATEST['tag']
+        # THE FIRST CHECK OF EVERY RUN IGNORES THE CACHE (owner, 2026-10-08: "update didnt came"). The 6-hour cache
+        # is right for a long session - nobody wants a GitHub call on every poll - but it also meant that opening
+        # Lumi within 6 hours of the last check could not see a release published in between, which is exactly when
+        # a person looks. Starting the app is the moment to ask, so the first call after start always asks.
+        fresh = not LATEST_CHECKED_THIS_RUN
+        LATEST_CHECKED_THIS_RUN = True
+        if not fresh and time.time() - LATEST['at'] < 6 * 3600: return LATEST['tag']
         m = re.search(r'github\.com/([^/]+)/([^/#?]+)', str(CFG.get('repoUrl') or ''))
         tag, err = None, None
         if m:
