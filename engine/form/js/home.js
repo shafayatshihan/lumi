@@ -33,7 +33,7 @@ const EMPTY_ART = `<svg viewBox="0 0 300 180" aria-hidden="true">
   <path d="M60 150h200" stroke="var(--lilac)" stroke-width="4" stroke-linecap="round" stroke-dasharray="2 12"/>
   <circle cx="270" cy="34" r="6" fill="var(--pink)"/><circle cx="34" cy="120" r="4" fill="var(--orange)"/>
 </svg>`;
-const LOOK_DOT = { 'Pink Punch': '#e46fa0', 'Bold Blue': '#2f5cf5', 'Flat-Pack': 'var(--orange)', 'Happy Headspace': '#f6c445', 'Yellow Frame': '#ffd23a' };
+const LOOK_DOT = { 'Pink Punch': '#e46fa0', 'Bold Blue': '#2f5cf5', 'Flat-Pack': 'var(--orange)', 'Happy Headspace': '#f6c445', 'Clay Pop': '#ff6a13' };
 
 function when(iso) {
   const d = new Date(iso);
@@ -57,11 +57,11 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
     h('span', { class: 'hm-new-top', html: NEW_ART }),
     h('span', { class: 'hm-new-row' }, h('span', { class: 'hm-new-plus', html: SVG.plus }),
       h('span', { class: 'hm-new-t' }, h('span', { class: 'hm-new-h' }, 'make a new deck'),
-        h('span', { class: 'hm-new-s' }, 'tell me about your talk. claude builds it.'))));
+        h('span', { class: 'hm-new-s' }, 'tell me about your talk'))));
   newCard.addEventListener('click', () => { sfx('launch'); onNew && onNew(); });
   const contCard = d ? h('button', { type: 'button', class: 'hm-cont', 'data-cursor-label': 'continue', 'data-nosfx': '' },
     h('span', { class: 'hm-cont-h' }, 'continue your draft'),
-    h('span', { class: 'hm-cont-s' }, `you’re at step ${d.step}. pick up where you left off.`)) : null;
+    h('span', { class: 'hm-cont-s' }, `step ${d.step}`)) : null;
   if (contCard) contCard.addEventListener('click', () => { sfx('launch'); onResume && onResume(); });
   // the Claude account: email + plan and "switch account". Switching signs Lumi's Claude out, then goes back to the
   // loading screen, which runs the private-window sign-in and the "is this you?" confirmation (never a silent bind).
@@ -73,9 +73,9 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
     const plan = String(st.subscriptionType || '').toLowerCase();
     acct.hidden = false;
     acct.classList.toggle('is-free', plan === 'free');
-    acct.title = plan === 'free' ? 'Lumi works, but Claude’s Free plan has very little Claude Code usage, so builds may stop early; Pro or higher is recommended.' : '';
+    acct.title = plan === 'free' ? 'the free plan may stop a build early. pro or higher works best.' : '';
     const label = String(st.planLabel || (plan ? plan + ' plan' : 'signed in')).toLowerCase();
-    acctT.replaceChildren(...(st.signedIn ? [...(st.email ? [h('b', {}, st.email), ' · '] : []), h('b', {}, label)] : ['claude: not signed in']));
+    acctT.replaceChildren(...(st.signedIn ? [...(st.email ? [h('b', {}, st.email), ' · '] : []), h('b', {}, label)] : ['not signed in']));
     acctSignedIn = !!st.signedIn;                      // the TRUTH: never re-derive this from the button label
     if (!acctArm) acctGo.textContent = st.signedIn ? 'switch account' : 'sign in';   // don't clobber 'tap again'
   }
@@ -100,17 +100,15 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
   api.claude.status(true).then(st => { if (!alive) return; paintAcct(st); if (st && st.signedIn && st.confirmed === false) toSignin(); });
   const runUpdate = b => startUpdate('update', { say, sfx, alive: () => alive, button: b });
   // F-15: the soft custom pointer can be switched off for the normal Windows pointer (remembered on this computer)
-  const pointerB = h('button', { type: 'button', class: 'hm-pointer', 'data-nosfx': '', 'aria-pressed': 'false', title: 'switch between lumi’s soft mouse pointer and the normal Windows pointer', 'aria-label': 'mouse pointer: switch between lumi’s soft pointer and the normal one' });
+  const pointerB = h('button', { type: 'button', class: 'hm-pointer', 'data-nosfx': '', 'aria-pressed': 'false', title: 'mouse pointer style', 'aria-label': 'mouse pointer: switch between lumi’s soft pointer and the normal one' });
   const paintPointer = native => { pointerB.textContent = native ? 'soft pointer' : 'normal pointer'; pointerB.setAttribute('aria-pressed', native ? 'true' : 'false'); };
   import('./cursor.js').then(m => { if (!alive || !m.nativePointer) return; paintPointer(m.nativePointer()); pointerB.hidden = false;
     pointerB.addEventListener('click', () => { const on = !m.nativePointer(); m.setNativePointer(on); paintPointer(on); }); }, () => { pointerB.hidden = true; });
   pointerB.hidden = true;
   const left = h('div', { class: 'hm-left' },
-    h('span', { class: 'badge' }, 'your library'),
     h('h1', { class: 'q hm-head' }, 'your decks'),
-    h('p', { class: 'lead hm-lead' }, 'open one to change it with claude, or start something new.'),
     update ? h('button', { type: 'button', class: 'hm-upd', 'data-cursor-label': 'update', onclick: e => runUpdate(e.currentTarget) },
-      h('span', { class: 'hm-upd-dot' }), `update available (${String(update.latest).replace(/^v/, '')}). tap to update.`) : null,
+      h('span', { class: 'hm-upd-dot' }), `update to ${String(update.latest).replace(/^v/, '')}`) : null,
     acct, newCard, contCard);
   const grid = h('div', { class: 'hm-grid', role: 'list', 'aria-label': 'your decks' });
   const count = h('span', { class: 'hm-count' });
@@ -176,7 +174,7 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
       closeMenu();
       const r = await api.decks.archive(dk.id, !dk.archived);
       if (!alive) return;
-      if (r && r.ok) { sfx('done'); say(dk.archived ? 'back in the library.' : 'archived. it is under “archived” at the bottom.'); refresh.sig = ''; refresh(); }
+      if (r && r.ok) { sfx('done'); say(dk.archived ? 'back in the library.' : 'archived.'); refresh.sig = ''; refresh(); }
       else { sfx('error'); say('couldn’t do that. try again?'); }
     });
     const del = item('delete', async () => {
@@ -186,7 +184,7 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
       if (!alive) return;
       if (r && r.ok) {
         sfx('deselect'); refresh.sig = ''; refresh();
-        say(`“${dk.title || 'untitled deck'}” moved to the bin.${r.keptFinal ? ' your finished files in “4 - Your slides” were not touched.' : ''}`, async () => {
+        say(`“${dk.title || 'untitled deck'}” moved to the bin.${r.keptFinal ? ' your finished slides are kept.' : ''}`, async () => {
           const b = await api.decks.restore(r.binned);
           if (!alive) return;
           if (b && b.ok) { sfx('success'); say('brought back.'); refresh.sig = ''; refresh(); } else { sfx('error'); say('couldn’t bring it back. it is still in the folder “.aura/decks/_deleted”.'); }
@@ -209,7 +207,7 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
     const box = h('div', { class: 'hm-thumb' });
     if (dk.status === 'building') {
       box.classList.add('is-building');
-      box.append(h('span', { class: 'hm-build' }, h('i'), h('i'), h('i')), h('span', { class: 'hm-tlabel' }, 'claude is building it…'));
+      box.append(h('span', { class: 'hm-build' }, h('i'), h('i'), h('i')), h('span', { class: 'hm-tlabel' }, 'building…'));
       return box;
     }
     if (!dk.thumb) {
@@ -236,7 +234,7 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
     if (dk.flow === 'plan' && !dk.planCount && !dk.exists) return h('span', { class: 'hm-status', 'data-k': 'wait' }, h('i'), 'planning');
     if (dk.exists && (!dk.finalized || dk.changedSinceFinalize)) {
       const b = h('button', { type: 'button', class: 'hm-status hm-fin', 'data-k': 'wait', 'data-cursor-label': 'finalize', 'data-nosfx': '' }, h('i'),
-        dk.finalized ? 'changed since finalizing · ' : 'not finalized yet · ', h('span', { class: 'hm-fin-go' }, dk.finalized ? 'finalize again' : 'finalize'));
+        dk.finalized ? 'changed · ' : 'not finalized yet · ', h('span', { class: 'hm-fin-go' }, dk.finalized ? 'finalize again' : 'finalize'));
       b.addEventListener('click', e => { e.stopPropagation(); sfx('launch'); onFinalize && onFinalize(dk); });
       return b;
     }
@@ -286,11 +284,11 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
       // F-19: not "no decks yet" and not a vanished account pill: say what is wrong and offer the retry
       const again = h('button', { type: 'button', class: 'hm-retry', 'data-nosfx': '' }, 'try again now');
       again.addEventListener('click', () => { again.disabled = true; idle = 0; refresh().then(() => { again.disabled = false; }); });
-      grid.replaceChildren(h('div', { class: 'hm-empty' }, h('div', { class: 'hm-empty-art', html: EMPTY_ART }),
+      grid.replaceChildren(h('div', { class: 'hm-empty' }, h('div', { class: 'hm-empty-art', html: EMPTY_ART }, h('img', { class: 'hm-empty-lumi', src: '/assets/lumi-cutout.png', alt: '', 'aria-hidden': 'true' })),
         h('p', { class: 'hm-empty-t' }, 'can’t reach lumi'), h('p', { class: 'hm-empty-x' }, 'is its window still open? your decks are safe. lumi keeps trying.'), again));
     } else if (!shown.length) {
-      grid.replaceChildren(h('div', { class: 'hm-empty' }, h('div', { class: 'hm-empty-art', html: EMPTY_ART }),
-        h('p', { class: 'hm-empty-t' }, showArchived ? 'nothing archived' : 'no decks yet'), h('p', { class: 'hm-empty-x' }, showArchived ? 'decks you archive wait here.' : 'your first one shows up right here once claude has built it.')));
+      grid.replaceChildren(h('div', { class: 'hm-empty' }, h('div', { class: 'hm-empty-art', html: EMPTY_ART }, h('img', { class: 'hm-empty-lumi', src: '/assets/lumi-cutout.png', alt: '', 'aria-hidden': 'true' })),
+        h('p', { class: 'hm-empty-t' }, showArchived ? 'nothing archived' : 'no decks yet'), h('p', { class: 'hm-empty-x' }, showArchived ? 'decks you archive wait here.' : 'your first one appears here.')));
     } else grid.replaceChildren(...items.map(deckCard));
     grid.dataset.dir = dir;
     count.textContent = loaded === true && shown.length ? `${shown.length} deck${shown.length === 1 ? '' : 's'}` : '';

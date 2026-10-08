@@ -70,10 +70,16 @@ function playwright() {
   try { return require(path.join(ENGINE, 'node_modules', 'playwright-core')); }
   catch (e) { return require('playwright-core'); }
 }
-async function launch() {
+// A GPU-less or driver-broken machine still has to produce a deck: these force ANGLE onto SwiftShader, Chromium's
+// software GL. Verified end to end on 2026-10-07 - the real finalize of a two-scene three.js deck took 9.2 s and the
+// frames carry the lit mesh, so this is a usable fallback and not just a test switch. finalize.js retries with it.
+const SOFT_GL_ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-gpu-sandbox'];
+
+async function launch(opts) {
   if (process.env.AURA_TEST_NO_BROWSER) throw new Error('Microsoft Edge could not be started for the check: (test switch AURA_TEST_NO_BROWSER)');
   const { chromium } = playwright();
-  const extraArgs = (process.env.AURA_BROWSER_ARGS || '').split(/\s+/).filter(Boolean);   // e.g. --use-angle=swiftshader to test a software GL
+  // the caller's args go LAST so a deliberate retry (finalize's software-GL fallback) outranks the env switch
+  const extraArgs = (process.env.AURA_BROWSER_ARGS || '').split(/\s+/).filter(Boolean).concat((opts && opts.args) || []);
   try { return await chromium.launch({ channel: 'msedge', args: extraArgs }); }
   catch (e) {
     try { return await chromium.launch({ channel: 'chrome', args: extraArgs }); }
@@ -132,4 +138,4 @@ async function probeRender(page, { expectHttp = true } = {}) {
 
 const rel = (root, f) => (root ? path.relative(root, f) : f).split(path.sep).join('/');
 
-module.exports = { probeRender, ENGINE, findAuraRoot, resolveDeck, serveRootFor, serve, launch, openDeck, shootSlides, slideInfo, rel };
+module.exports = { probeRender, ENGINE, SOFT_GL_ARGS, findAuraRoot, resolveDeck, serveRootFor, serve, launch, openDeck, shootSlides, slideInfo, rel };

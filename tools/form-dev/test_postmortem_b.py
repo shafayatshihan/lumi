@@ -537,7 +537,7 @@ def live_suite(check, fs, C):
     check('N4 the page has the call, and the editor has the control in both modes',
           'plan/picture' in js and 'ed-pic' in ed and 'change the picture' in ed and '.ed-picopt' in css)
     check('N4 the control says the slide will be made again, in plain words',
-          'make this slide again' in ed and 'the words and the plan stay' in ed)
+          'make this slide again' in ed and 'the words stay' in ed)
 
     # N5 - one primary save-and-export, nothing removed
     fz = (ENGINE / 'form' / 'js' / 'finalizing.js').read_text(encoding='utf-8')

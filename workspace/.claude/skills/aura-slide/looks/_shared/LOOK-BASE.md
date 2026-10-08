@@ -204,6 +204,81 @@ No default untextured material. No floating object without grounding. No second 
 `Math.random()` or `performance.now()` in `update`. No camera spin faster than one sway per period. No GLTF downloads,
 no CDN, no add-on imports (they will not be packed).
 
+### 4.6 Cinematic weight — the hero rule
+
+**Contrast creates impact. If every slide is spectacular, none is.** Spend the effects budget on the opening and let
+the middle be calm; that is the same principle that makes a film's opening shot land. So the amount of cinematic effort
+a slide gets is decided by **where it sits in the deck**, not slide by slide:
+
+| tier | which slides | what they get |
+|---|---|---|
+| **hero** | the first two | the deck's best figure, the longest bake, the fullest post stack the look allows |
+| **body** | everything between | clean 3D, no post beyond what the look already gives every slide |
+| **closing** | the last slide (or `data-kind="closing"`) | echoes the hero tier, so the deck frames itself |
+
+This is a rule of the base, not a per-deck decision, and it is **enforced in code**: a look registers its three tiers in
+`engine/deck/lib/post-policy.js`, the policy reads the slide's position and picks one, and `engine/deck/lib/post.js` is
+the one stack that renders it. A slide overrides with `data-post="<preset>"` on its `<section>`; a scene overrides with
+`BB3D.studio(ctx, { post: … })`. **An unregistered look gets no post at all** — nothing is on by default.
+
+Three things constrain it, and none is negotiable:
+
+- **Post is drawn inside the 3D holder's own canvas and nowhere else.** Slide text is HTML above that canvas, so its
+  measured contrast cannot change. Never reach for a whole-slide filter: it would move every text ratio at once, and
+  `deck_check.js` fails a slide below its contrast floor.
+- **Every effect is a pure function of `t`** (4.3). An effect that blends the previous frame, jitters across frames or
+  reads the clock breaks `seek(t)`, so it is refused by name, not quietly dropped.
+- **Honesty outranks impact.** See 4.7.
+
+### 4.7 Never post on a slide that carries measured values
+
+Bloom blows out an error bar. Depth of field hides the part of a figure a number was read from. A slide whose numbers
+are traced to the user's files or declared in `provenance.json` (kind `source`, `published`, `computed` or `figure`)
+therefore gets **no post**, whatever tier it sits in, unless the look states in its policy that it allows it. This is
+the same record `deck_check.js` judges numbers against, so the gate cannot drift from the claim.
+
+`illustrative` is not a measured value: a slide that says on its face that its shape is illustrative has nothing to
+blow out.
+
+A deck that looks like a film trailer is a worse deck for anything that has to be believed. When in doubt, the body
+stays calm.
+
+### 4.8 Camera continuation — one space, declared
+
+Slide N+1's camera can start where slide N's ended, so the deck reads as one space instead of a pile of renders. Use it
+between consecutive 3D slides about the same subject or the same world; not between unrelated ones.
+
+**It is declared in the markup, never handed over at run time.** Each slide must stay a pure function of `t` (4.3): a
+deck opened on slide 7 shows what the video shows. So:
+
+```html
+<div class="aura-3d" data-scene="s1" data-period="20"
+     data-camera='{"azimuth":-16,"elevation":5,"distance":16,"target":[0,1.4,0],"fov":24}'></div>
+...
+<div class="aura-3d" data-scene="s2" data-period="20" data-camera-from="prev"
+     data-camera='{"azimuth":30,"elevation":12,"distance":12,"target":[0,1.2,0],"fov":30}'></div>
+```
+
+- `data-camera` is the slide's **rest pose** and wins over the same options in the scene's JS — write the pose once, here.
+  "Where slide N ended" means this pose.
+- `data-camera-from="prev"` starts the loop on the previous slide's `data-camera`. Over one period the camera eases in
+  over the first 20 %, holds its own pose (orbit included) for 60 %, and eases back over the last 20 %, so the loop
+  still closes. The still frame (0.35 × period) is in the hold.
+- Drive the camera with `S.orbit(t)` (or not at all). A scene that places the camera with numbers of its own will not
+  match the pose it declares.
+- Never pass a camera between slides through a global, `sessionStorage` or the previous frame. It looks right in a
+  browser and breaks `seek(t)`, the recording and the PDF.
+
+### 4.9 Volumetric light — atmosphere for an establishing shot
+
+Light shafts from the key light (`shafts` in `engine/deck/lib/post.js`) are part of the `cinematic` preset only, so a
+slide gets them by asking: `data-post="cinematic"` on a hero or closing slide. They are the first effect the adaptive
+ladder drops, they decline quietly on a GPU that cannot run them, and the 4.7 gate removes them from any slide carrying
+measured values — a light shaft across a chart is the same crime as bloom on an error bar.
+
+On a light plate (a Bold Blue cyclorama) they read as a soft warm light from the key's side, not as visible beams;
+visible beams need a darker plate. Never raise their strength to make up for that: it washes the plate to white.
+
 ---
 
 ## 5. Charts
@@ -213,6 +288,25 @@ titles in lowercase with units, honest scales. Real data always carries a source
 reference in the notes. No data → draw an **illustrative** shape (`illustrative: true`: the chart prints "illustrative"
 and drops the y numbers) and say so in the notes. Up to 3 chips beside it name what to see, in the order the eye should
 travel.
+
+### 5.1 Cinematic to establish, flat to measure
+
+**3D for impact and metaphor; never 3D for reading a value.** A perspective-projected bar chart distorts the comparison
+it exists to make — the far bar is smaller because it is far, not because it is less — and that is a misread waiting to
+happen, not a style. It also cuts straight against the honesty rules in 6.
+
+Four patterns that are genuinely striking and stay honest:
+
+1. **Data as physical objects in a real scene** — the actual parts, sized by the measured value, in the setting they
+   belong to. The viewer compares objects, not projected lengths.
+2. **Extruded ribbons over a flat baseline**, read against a 2D axis that stays true. The depth is decoration; the
+   measurement happens against the flat axis.
+3. **Particle or flow fields** for a process — heat, air, current, traffic — where the point is behaviour, not
+   magnitude. Nothing here is read off.
+4. **A 3D establishing figure that resolves into a clean 2D chart** for the actual numbers. This is the one worth
+   standardising, and it is where the name comes from.
+
+If a viewer will say a number out loud from the picture, the picture is flat.
 
 ---
 

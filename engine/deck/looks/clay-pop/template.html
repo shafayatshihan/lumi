@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en" data-look="clay-pop">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<!-- Lumi deck in the Clay Pop look: the claymation studio. The authority is
+       .claude/skills/aura-slide/looks/_shared/LOOK-BASE.md   (the rules every look obeys)
+       .claude/skills/aura-slide/looks/clay-pop/LOOK.md       (this look's palette, type, motion and figure idiom)
+     Read BOTH before writing a slide. Add slides from the archetype menu with
+       node .aura/engine/tools/new_deck.js --snippet <archetype> --theme clay-pop --slide <n>      (list: --snippet list)
+     and paste each one before the closing slide. Rules in one breath: 1920 x 1080, 96 px safe zone (.safe), Plus Jakarta
+     Sans + DM Mono and nothing else, sizes 24 / 30 / 40 / 56 / 80 / 120 / 168, ONE orange clay-key .em phrase per
+     headline, ONE main visual per slide, ONE vibrant orange doing almost all the work on the #F0F0F5 studio, every
+     figure lit clay (a Blender render for a still - L.mat('clay'); CP3D.studio for anything that moves), exactly ONE
+     wink of personality per figure, speaker notes 60-300 words in <aside class="notes" data-aura-notes>, stable
+     data-edit ids.
+     STAGING NOTE: the slide-1 figure at the bottom is a NEUTRAL placeholder (a clay block and three beads), not a
+     design. Decide what the subject really is (LOOK-BASE 4.0) and model IT, in clay. When the plan makes this still a
+     Blender render, replace the .aura-3d holder with
+       <div class="bb-blender cp-full" data-blender="<slide id>" data-kind="still" role="img" aria-label="..."></div>
+     and delete the script below. -->
+<link rel="stylesheet" href="{{ENGINE}}/deck/runtime.css">
+<link rel="stylesheet" href="{{ENGINE}}/deck/themes/clay-pop.css">
+<script type="importmap">{"imports":{"three":"{{ENGINE}}/node_modules/three/build/three.module.js"}}</script>
+<script src="{{ENGINE}}/deck/runtime.js"></script>
+{{LOOK_HEAD}}<style>
+  /* deck-specific layout goes here; clay-pop.css already sets type, colour, the footer, the clay keys, the stat pills,
+     the label tags, the title column (.cp-hero) and the landing motion */
+</style>
+</head>
+<body>
+<main class="deck" data-mode="presenter">
+
+  <!-- ============ 01 title + the hero figure, full bleed, subject on the right (archetype: title-hero) ============ -->
+  <section class="slide" data-kind="title" data-minutes="0.75" data-title="Title">
+    <div class="aura-3d cp-full" data-scene="s1-hero" data-period="12" aria-hidden="true"></div>
+    <div class="safe">
+      <div class="cp-hero">
+        <p class="kicker" data-edit="s1-1">{{KICKER}}</p>
+        <h1 class="title" data-edit="s1-2">{{TITLE}}</h1>
+        <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. A deck with no supervisor must have no "With thanks" line - never invent a role the interview did not establish. -->
+        <ul class="cp-meta">
+          <li data-optional="identity" data-edit="s1-3"><span class="lb">Presented by</span><b>Presenter Name</b></li>
+          <li data-optional="identity" data-edit="s1-4"><span class="lb">For</span><b>Course or event</b><br>Institution</li>
+        </ul>
+      </div>
+      <footer class="cp-foot" data-nonclaim><span class="cp-mark" data-edit="s1-5">Deck mark</span><span class="cp-pageno"></span></footer>
+    </div>
+    <aside class="notes" data-aura-notes>
+      <p>Open by naming the thing on the screen, not the theory behind it. Say what it is in one plain sentence, then say
+      why this room should care about it today.</p>
+      <p>Point at the model: tell them it is the real object, made in clay so its shape reads at a glance, and that the
+      pieces floating beside it are its own parts, pulled out so they can be seen.</p>
+      <p>Frame the talk in three beats: why it matters, how it works, what we found. If asked, say the model is a
+      schematic, not a photograph, and say which proportions are to scale.</p>
+    </aside>
+  </section>
+
+  <!-- paste archetype slides here (node .aura/engine/tools/new_deck.js --snippet list) -->
+
+  <!-- ============ closing: design it for THIS deck (LOOK-BASE section 2): message, subject figure, layout variant ============ -->
+  <section class="slide" data-kind="closing" data-minutes="0.5" data-title="Closing">
+    <div class="safe">
+      <div class="cp-main">
+        <div class="cp-l w7">
+          <h1 class="cp-thanks cp-msg" data-edit="s99-0">One sentence that fits <span class="em">this talk</span></h1>
+          <p class="cp-q" data-edit="s99-1">A last line: question, next step or contact</p>
+          <div class="cp-rule"></div>
+          <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. A deck with no supervisor must have no "With thanks" line - never invent a role the interview did not establish. -->
+          <ul class="cp-people">
+            <li data-optional="identity"><span class="lb" data-edit="s99-2">Presented by</span><strong data-edit="s99-3">Presenter Name</strong><em data-edit="s99-4">ID or role</em></li>
+            <li class="gap" data-optional="identity"><span class="lb" data-edit="s99-5">With thanks</span><strong data-edit="s99-6">Supervisor Name</strong><em data-edit="s99-7">Title, institution</em></li>
+          </ul>
+        </div>
+        <div class="cp-r w5"></div>
+      </div>
+      <footer class="cp-foot" data-nonclaim><span class="cp-mark" data-edit="s99-8">Deck mark</span><span class="cp-pageno"></span></footer>
+    </div>
+    <aside class="notes" data-aura-notes>
+      <p>Say the closing message in your own words, then thank the people named and open the floor.</p>
+      <p>Leave this slide up during questions: the names stay on screen. If a question needs a figure, type its slide
+      number and press Enter to jump to it, then press End to come back here.</p>
+      <p>Likely question: how sure are the numbers? Answer with the source line on the chart slide, and say plainly
+      which shapes are illustrative.</p>
+    </aside>
+  </section>
+
+</main>
+<script>
+/* ---- slide 1: the hero, in clay. A block and three beads are a NEUTRAL placeholder: replace them with the real
+   subject's own parts (LOOK-BASE 4.0, 4.1 - real counts, real proportions). ---- */
+Aura.scene('s1-hero', (ctx) => {
+  const { THREE } = ctx;
+  // subject on the right of the frame (shift), the left ~45 % kept calm for the title
+  const S = CP3D.studio(ctx, { target: [0, 1.4, 0], distance: 13, azimuth: -26, elevation: 14, shift: -0.2 });
+  const body = S.add(CP3D.block(THREE, 2.4, 1.8, 1.6, { color: 'clay' }));   body.position.y = 0.9;
+  const cap  = S.add(CP3D.puck(THREE, 0.42, 0.3, { color: 'black' }));       cap.position.set(-0.5, 1.95, 0.1);
+  S.contact(body, 1.9);
+  [[-1.6, 2.5, 0.7, 0.26], [-0.5, 2.9, 0.3, 0.2], [0.8, 2.7, -0.1, 0.15]].forEach(([x, y, z, r], i) => {
+    const b = S.add(CP3D.ball(THREE, r, { color: i === 1 ? 'grey' : 'clay' })); b.position.set(x, y, z);
+    S.float(b, { amp: 0.1, phase: i * 1.7 });                                    // satellites: they drift, never land
+  });
+  return S.api({ update(t) { S.sway(t, { deg: 4 }); } });
+}, { period: 12 });
+</script>
+</body>
+</html>

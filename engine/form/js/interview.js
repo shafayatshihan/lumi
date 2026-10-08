@@ -66,7 +66,7 @@ export function interviewScene(host, { sfx = () => {}, onAsk, onStart, onRetry }
   function update(p) {
     const st = p.interviewState, iv = p.interview || null, running = !!p.running;
     const round = Math.max(1, (iv && iv.round) || 1);
-    roundLine.textContent = `round ${round} · claude keeps asking until it understands your talk`;
+    roundLine.textContent = `round ${round}`;
     roundLine.hidden = st === 'error';
     const list = settledChips(iv);
     chipsWrap.hidden = !list.length;
@@ -86,7 +86,7 @@ export function interviewScene(host, { sfx = () => {}, onAsk, onStart, onRetry }
       const sig = JSON.stringify([round, qs.map(q => [q.key, q.kind, q.question, q.options])]);
       if (sig !== cardSig) {
         cardSig = sig;
-        card = choiceCard(qs, { sfx, sendLabel: 'send my answers', freeLabel: 'anything else you want claude to know? (optional)',
+        card = choiceCard(qs, { sfx, sendLabel: 'send my answers', freeLabel: 'anything else? (optional)',
           onSend: t => { if (card) card.lock(t); if (onAsk) onAsk(t); } });
         slot.replaceChildren(card.el);
       }
@@ -96,12 +96,12 @@ export function interviewScene(host, { sfx = () => {}, onAsk, onStart, onRetry }
     dropCard();
     if (running) {
       slot.replaceChildren(busyCard(round > 1 ? 'claude is thinking about your answers' : 'claude is reading your files',
-        round > 1 ? 'the next question is on its way.' : 'it reads everything once, then asks only what your files cannot tell it.'));
+        round > 1 ? 'the next question is on its way.' : 'it only asks what your files don’t say.'));
       return;
     }
     if (st === 'ready') { slot.replaceChildren(busyCard('claude has what it needs', 'moving on to your plan.')); return; }
     slot.replaceChildren(h('div', { class: 'iv-wait' }, h('h2', { class: 'iv-wait-h' }, 'ready when you are'),
-      h('p', { class: 'iv-wait-p' }, 'claude will read your files, then ask you a few things about your talk.'),
+      h('p', { class: 'iv-wait-p' }, 'claude reads your files, then asks a few things.'),
       h('div', { class: 'pl-bigs' }, bigBtn('start', () => onStart && onStart()))));
   }
   return { el, update, destroy() { dropCard(); host.replaceChildren(); } };

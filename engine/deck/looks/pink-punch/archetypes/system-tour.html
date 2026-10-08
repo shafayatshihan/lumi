@@ -1,0 +1,66 @@
+<!-- archetype: system-tour | the view visits each part of a system in turn; one label follows it, a small parts list lights up | main visual: 3D | companions: one following label + the map -->
+<section class="slide" data-kind="content" data-minutes="2" data-title="The whole system">
+  <div class="safe">
+    <div class="pp-main stack">
+      <div class="pp-head">
+        <p class="kicker" data-edit="s{{N}}-1">06 · The whole thing</p>
+        <h2 class="headline wide" data-edit="s{{N}}-2">Three parts, <span class="em">one path</span></h2>
+      </div>
+      <div class="pp-stage">
+        <div class="aura-3d pp-3d" data-scene="s{{N}}-scene" data-period="21" aria-hidden="true">
+          <div class="pp-tag pink" data-follow="here" data-align="center" data-dy="-150"><b id="s{{N}}-lbl" data-edit="s{{N}}-3">The inlet</b><span id="s{{N}}-sub" data-edit="s{{N}}-4">where it starts</span></div>
+        </div>
+        <div class="pp-map" style="position:absolute; left:44px; bottom:36px; width:440px; z-index:2">
+          <span class="node root" data-edit="s{{N}}-5">The system</span>
+          <ul>
+            <li><span class="node" data-node="0" data-edit="s{{N}}-6">Inlet</span></li>
+            <li><span class="node" data-node="1" data-edit="s{{N}}-7">Core</span></li>
+            <li><span class="node" data-node="2" data-edit="s{{N}}-8">Outlet</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <footer class="pp-foot"><span class="pp-mark" data-edit="s{{N}}-9">Deck mark</span><span class="pp-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Follow the label.</strong> One part is named at a time and the list on the left lights up with it. Say
+    what each part does in one clause - the tour supplies the "where".</p>
+    <p><strong>End on the whole.</strong> When the view comes back out, say the one sentence that makes three parts a
+    system rather than a list.</p>
+    <p><strong>Say the scale.</strong> Give the real size of the thing once, early. If asked about a part the tour does
+    not visit, name it and say it is outside this talk.</p>
+  </aside>
+</section>
+<script>
+/* The poster's tour: the view STEPS from part to part rather than flying. Replace the three placeholder parts with the
+   system's own, and the three names with the real ones. Only the part being visited is pink. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const P = ctx.period;
+  const NAMES = [['The inlet', 'where it starts'], ['The core', 'where the work happens'], ['The outlet', 'where it leaves']];
+  const S = PP3D.bed(ctx, { target: [0, 1.0, 0], size: 2.3, turn: -16, tilt: 14, sway: 0, shift: 1.1 });
+  const rail = S.add(PP3D.block(THREE, 6.2, 1.4, 0.4, { fill: 'peri' }));
+  const parts = [-2.1, 0, 2.1].map((x) => {
+    const p = S.add(PP3D.coin(THREE, 0.68, 0.8, { fill: 'paper' }));
+    p.position.set(x, 0.8, 0); return p;
+  });
+  S.add(PP3D.arrow(THREE, [-1.35, 0.8, 0], [-0.75, 0.8, 0]));
+  S.add(PP3D.arrow(THREE, [0.75, 0.8, 0], [1.35, 0.8, 0]));
+  const lbl = document.getElementById('s{{N}}-lbl'), sub = document.getElementById('s{{N}}-sub');
+  const nodes = ctx.el.closest('.pp-stage').querySelectorAll('.pp-map .node[data-node]');
+  let shown = -1, hereIdx = 0;
+  PP3D.pins(S, ctx.el, { here: () => parts[hereIdx].position.toArray() });   // the label follows the part being visited
+  return S.api({ update(t) {
+    const s = PP3D.beats(t, P, 3);
+    hereIdx = s.i;
+    S.target.lerpVectors(parts[s.i].position, parts[s.next].position, s.k).setY(1.0);
+    S.turn(t, { sway: 4 });
+    if (s.i !== shown) {
+      shown = s.i;
+      lbl.textContent = NAMES[s.i][0]; sub.textContent = NAMES[s.i][1];
+      parts.forEach((p, k) => PP3D.fill(p, k === s.i ? 'pink' : 'paper'));
+      nodes.forEach((n, k) => n.classList.toggle('on', k === s.i));
+    }
+  } });
+}, { period: 21 });
+</script>

@@ -12,10 +12,10 @@ import { h } from './dom.js';
 
 // ---------------------------------------------------------------- wording (pure)
 export const ENGINE = {
-  blender: { name: 'studio render', tool: 'blender', note: 'ray-traced, photoreal', fixed: 'still ≈ 1–2 min, animation 10–60 min',
-    why: 'traced light, like a photo studio: the most real look. you approve a quick preview first.' },
+  blender: { name: 'studio render', tool: 'blender', note: 'photo-real', fixed: 'still ≈ 1–2 min, animation 10–60 min',
+    why: 'a photo-real picture, made with Blender. you approve a quick preview first.' },
   threejs: { name: 'live 3D', tool: 'three.js', note: 'instant, animated, editable',
-    why: 'drawn live in the browser: there at once, it can move and turn, and it is easy to change.' },
+    why: 'drawn live on the slide. it can move and turn.' },
 };
 export function fmtDur(s) {
   if (s == null || !isFinite(s)) return '';
@@ -27,48 +27,50 @@ export function fmtDur(s) {
   return r ? `${hh} h ${r} min` : `${hh} h`;
 }
 export const fmtLeft = s => (s == null || !isFinite(s) ? '' : s < 45 ? 'under a minute left' : `about ${fmtDur(s)} left`);
-export const fmtTokens = n => (!n ? '0 tokens' : n >= 1000 ? `${Math.round(n / 1000)}k tokens` : `${Math.round(n)} tokens`);
 export const fmtCost = usd => (typeof usd === 'number' && usd > 0 ? (usd < 0.01 ? 'under $0.01' : '$' + usd.toFixed(2)) : '');
 // seconds of the full render for this kind / resolution (+ the wait for a render that is ahead of it)
 export function fullSeconds(est, kind, res) {
   const f = (est && est.full) || {};
-  const one = kind === 'still' ? f.still : f[String(res || 720)];
+  const one = kind === 'still' ? f.still : f.baked || f[String(res || 720)];     // a baked slide has one time, no resolution
   if (!one || one.seconds == null) return null;
   return one.seconds + ((est.queue && est.queue.waitS) || 0);
 }
 export function fullLine(est, kind, res) {
   const s = fullSeconds(est, kind, res);
-  return `full render ≈ ${s == null ? 'a few min' : fmtDur(s)} · 0 tokens, it runs on this computer`;
+  return `full render ≈ ${s == null ? 'a few min' : fmtDur(s)} · runs on this computer`;
 }
 export function iterLine(est) {
   const it = (est && est.iteration) || {}, pv = (est && est.preview) || {};
-  // post-mortem problem 6: both halves of this line are now per-RUN (the `...Run` names). The old `costUsd` beside `tokens`
-  // was the session running total, so the line could say "one more preview ≈ 679 K tokens (≈ $1.82)" where $1.82 was what
-  // the whole slide had cost. An older server sends only the old names: its per-run `tokens` is still right, and its
-  // cumulative cost is deliberately dropped rather than shown as a per-run price.
+  // post-mortem problem 6: the cost is per-RUN (`costUsdRun`). The old `costUsd` was the session running total, so the
+  // line could say "one more preview ≈ $1.82" where $1.82 was what the whole slide had cost. An older server sends only
+  // the old name, and its cumulative cost is deliberately dropped rather than shown as a per-run price. No token count:
+  // the reader is not technical (copy pass kill list, 2026-10-08).
   const secs = it.seconds || ((pv.seconds || 20) + 90), cost = fmtCost(it.costUsdRun);
-  return `one more preview ≈ ${fmtDur(secs)} · ≈ ${fmtTokens(it.tokensRun || it.tokens || 60000)}${cost ? ` (≈ ${cost})` : ''}`;
+  return `one more preview ≈ ${fmtDur(secs)}${cost ? ` · ≈ ${cost}` : ''}`;
 }
 // the plan page's two named options (contract section 2); est = plan payload blender.estimates[sid]
 export function engineNotes(kind, est) {
   const b = ENGINE.blender;
   let time = b.fixed;
-  if (est) time = kind === 'still' ? `still ≈ ${fmtDur(est.still)}` : `720p ≈ ${fmtDur(est['720'])}, 1080p ≈ ${fmtDur(est['1080'])}`;
+  if (est) time = kind === 'still' ? `still ≈ ${fmtDur(est.still)}` : est.baked ? `≈ ${fmtDur(est['1080'])}`
+    : `720p ≈ ${fmtDur(est['720'])}, 1080p ≈ ${fmtDur(est['1080'])}`;
   return { blender: `${b.note}; ${time}`, threejs: ENGINE.threejs.note };
 }
-// the effective engine, exactly as the server decides it (form_server.slide_engine)
-export function effEngine(visual, look, available) {
+// the effective engine, exactly as the server decides it (form_server.slide_engine, LOOK_3D). bakes: a deck from batch 6 on,
+// where a moving figure on a Blender look is a baked studio render too (B.2)
+const BLENDER_LOOKS = ['bold blue', 'clay pop'];
+export function effEngine(visual, look, available, bakes = false) {
   const v = visual || {};
   if (v.main !== '3d') return null;
   if (v.engine === 'blender') return available ? 'blender' : 'threejs';
   if (v.engine === 'threejs') return 'threejs';
-  return available && String(look || '').trim().toLowerCase() === 'bold blue' && v.motion === 'still' ? 'blender' : 'threejs';
+  return available && BLENDER_LOOKS.includes(String(look || '').trim().toLowerCase()) && (v.motion === 'still' || bakes) ? 'blender' : 'threejs';
 }
 const ACTIVE = ['previewing', 'rendering', 'changing', 'writing'];
 const isBl = v => !!v && (v.engine === 'blender' || !!(v.previews && v.previews.length) || !!v.final);
 // "make next slide" waits for every built Blender slide: rendered, or kept as a preview on purpose ("skip for now")
 export function nextGate(views, built) {
-  const list = Object.values(views || {}).filter(v => isBl(v) && v.engine === 'blender' && v.n && v.n <= built).sort((a, b) => a.n - b.n);
+  const list = Object.values(views || {}).filter(v => isBl(v) && v.engine === 'blender' && !v.baked && v.n && v.n <= built).sort((a, b) => a.n - b.n);
   const r = list.find(v => v.status === 'rendering');
   if (r) return { ok: false, n: r.n, why: 'rendering', text: `lumi is rendering slide ${r.n}. the next slide can start when it is done (or cancel the render).` };
   const w = list.find(v => v.status !== 'rendered' && !v.deferred);
@@ -167,7 +169,7 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
       act(async () => {
         if (mode === 'approve') { const a = await api.blender.approve(deckId, v.id); if (a && a.ok === false) return a; }
         return api.blender.render(deckId, v.id, kindOf(v) === 'still' ? null : resFor(v));
-      }, 'approved. lumi is rendering the full picture now.');
+      }, 'approved. rendering now.');
     }
   });
   function cancelRender() {
@@ -178,7 +180,7 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
       return;
     }
     armed = false; clearTimeout(armT); sfx('deselect');
-    act(() => api.blender.cancel(deckId, v.id, 'full'), 'render cancelled. your approved design is kept, so you can render it later.');
+    act(() => api.blender.cancel(deckId, v.id, 'full'), 'render cancelled. the design is kept.');
   }
   barX.addEventListener('click', cancelRender);
   chgIn.addEventListener('input', () => { const v = view(); if (v) drafts.set(v.id, chgIn.value); send.disabled = busy || !chgIn.value.trim(); });
@@ -191,7 +193,7 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
       const r = await api.blender.change(deckId, v.id, text);
       if (r && r.ok !== false) { drafts.delete(v.id); chgIn.value = ''; editing.delete(v.id); shownN.delete(v.id); }
       return r;
-    }).then(r => { if (r && r.queued) say('claude is busy right now. your change starts as soon as it is free.'); });
+    }).then(r => { if (r && r.queued) say('claude is busy. your change starts when it’s free.'); });
   });
   skip.addEventListener('click', () => {
     const v = view(); if (!v) return;
@@ -274,17 +276,17 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
     paintPic(v, mode);
 
     // the slim bar
-    barProg.hidden = st !== 'rendering'; barX.hidden = st !== 'rendering';
+    barProg.hidden = st !== 'rendering'; barX.hidden = st !== 'rendering' || !!v.baked;     // B.5: a bake is a minute or two, no cancel
     if (st === 'rendering') {
       const queued = job && job.state === 'queued';
       const res = (job && job.res) || (v.final && v.final.res);
-      barT.textContent = queued ? `slide ${v.n} waits for another render to finish` : `rendering slide ${v.n}${kind === 'animation' && res ? ` · ${res}p` : ''} · ${Math.round(frac * 100)}%${job && job.etaS != null ? ' · ' + fmtLeft(job.etaS) : ''}`;
+      barT.textContent = queued ? `slide ${v.n} waits for another render to finish` : `rendering slide ${v.n}${kind === 'animation' && res && !v.baked ? ` · ${res}p` : ''} · ${Math.round(frac * 100)}%${job && job.etaS != null ? ' · ' + fmtLeft(job.etaS) : ''}`;
       setProg(barProg, frac);
       barX.textContent = armed ? 'tap again to cancel' : 'cancel';
       barX.classList.toggle('is-armed', armed);
       barB.hidden = true;
     } else if (st === 'rendered') {
-      barT.textContent = v.final && v.final.stale ? 'the studio render is older than the design' : `studio render ready${kind === 'animation' && v.final ? ` · ${v.final.res}p loop` : ''}`;
+      barT.textContent = v.final && v.final.stale ? 'the studio render is older than the design' : `studio render ready${kind === 'animation' && v.final && v.final.res ? ` · ${v.final.res}p loop` : ''}`;
       barB.textContent = 'change the design'; barB.hidden = false;
     } else if (v.deferred) {
       barT.textContent = 'preview kept for now · render it before you finalize';
@@ -298,11 +300,11 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
     // the full card
     fold.querySelector('.lbl').textContent = ed ? 'done' : 'hide';
     let H = '', M = '', G = null, showChg = true, showProg = false, P = '';
-    goRow.hidden = false; resRow.hidden = true; skip.hidden = !build || !!v.deferred || st === 'rendered' || st === 'rendering' || st === 'changing';
+    goRow.hidden = false; resRow.hidden = true; skip.hidden = !build || !!v.baked || !!v.deferred || st === 'rendered' || st === 'rendering' || st === 'changing';
     const stale = v.final && v.final.stale ? ' the slide keeps the older render until this one is rendered.' : '';
     if (st === 'previewing') {
       H = sp ? 'making a new preview…' : 'making the first preview…';
-      M = `a quick, rough render so you can judge the design. ≈ ${fmtDur((est.preview || {}).seconds || 20)}.`;
+      M = `a quick, rough look at the design. ≈ ${fmtDur((est.preview || {}).seconds || 20)}.`;
       showProg = true; P = job && job.etaS != null ? fmtLeft(job.etaS) : 'starting…'; showChg = false; goRow.hidden = true;
     } else if (st === 'changing') {
       const last = ((v.changes || []).slice(-1)[0] || {}).text;
@@ -311,12 +313,13 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
       showProg = true; P = ''; showChg = false; goRow.hidden = true;
     } else if (st === 'rendering') {
       H = 'rendering the full picture';
-      M = `${Math.round(frac * 100)}%${job && job.frames > 1 ? ` · frame ${job.frame || 0} of ${job.frames}` : ''}${job && job.etaS != null ? ' · ' + fmtLeft(job.etaS) : ''}. it runs on this computer and uses no claude tokens.`;
+      M = `${Math.round(frac * 100)}%${job && job.frames > 1 ? ` · frame ${job.frame || 0} of ${job.frames}` : ''}${job && job.etaS != null ? ' · ' + fmtLeft(job.etaS) : ''}`;
       showProg = true; showChg = false;
-      G = { act: 'cancel', label: armed ? 'tap again to cancel' : 'cancel the render', est: '' };
+      G = v.baked ? null : { act: 'cancel', label: armed ? 'tap again to cancel' : 'cancel the render', est: '' };
+      if (v.baked) goRow.hidden = true;
     } else if (st === 'rendered') {
       H = 'the studio render is in your slide';
-      M = 'want something different? describe it below. claude changes the design and you see a new preview before anything is rendered again.';
+      M = 'want something different? describe it below.';
       goRow.hidden = true;
     } else if (st === 'failed') {
       const e = v.error || {};
@@ -326,7 +329,7 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
       else if (e.code === 'no-scene') G = null;
       else if (e.job === 'full' && v.approved) G = { act: 'render', label: 'try again', est: fullLine(est, kind, resFor(v)) };
       else G = { act: 'repreview', label: 'try again', est: `≈ ${fmtDur((est.preview || {}).seconds || 20)}` };
-      if (G && G.act === 'render' && kind === 'animation') resRow.hidden = false;
+      if (G && G.act === 'render' && kind === 'animation' && !v.baked) resRow.hidden = false;
       chgIn.placeholder = 'or tell claude what to fix…';
     } else if (old) {
       H = 'an older preview';
@@ -335,17 +338,17 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
     } else if (!v.sceneCurrent && v.sceneExists) {
       H = 'the design changed after this preview';
       M = 'make a new preview to see it before the full render.';
-      G = { act: 'repreview', label: 'make a new preview', est: `≈ ${fmtDur((est.preview || {}).seconds || 20)} · 0 tokens` };
+      G = { act: 'repreview', label: 'make a new preview', est: `≈ ${fmtDur((est.preview || {}).seconds || 20)}` };
     } else if (st === 'approved') {
       H = 'design approved';
       M = 'ready for the full render.' + stale;
       G = { act: 'render', label: 'render it', est: fullLine(est, kind, resFor(v)) };
-      if (kind === 'animation') resRow.hidden = false;
+      if (kind === 'animation' && !v.baked) resRow.hidden = false;
     } else {
       H = 'do you like the design?';
       M = stale.trim();
       G = { act: 'approve', label: 'yes, render it', est: fullLine(est, kind, resFor(v)) };
-      if (kind === 'animation') resRow.hidden = false;
+      if (kind === 'animation' && !v.baked) resRow.hidden = false;
     }
     if (st !== 'failed') chgIn.placeholder = st === 'rendered' ? 'what should change in the design?' : 'or tell claude what to change…';
     head.textContent = H; msg.textContent = M; msg.hidden = !M;

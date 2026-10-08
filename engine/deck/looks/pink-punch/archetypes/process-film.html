@@ -1,0 +1,65 @@
+<!-- archetype: process-film | one print through N states, a cycling card and a step rail | main visual: 3D | companions: the cycling card + the rail only -->
+<section class="slide" data-kind="content" data-minutes="2" data-title="How it works">
+  <div class="safe">
+    <div class="pp-main stack">
+      <div class="pp-head">
+        <p class="kicker" data-edit="s{{N}}-1">03 · How it works</p>
+        <h2 class="headline wide" data-edit="s{{N}}-2">Three moves, <span class="em">in order</span></h2>
+      </div>
+      <div class="pp-stage">
+        <div class="aura-3d pp-3d" data-scene="s{{N}}-scene" data-period="21" aria-hidden="true"></div>
+        <div class="pp-cyc" id="s{{N}}-card">
+          <span class="step">Step <b id="s{{N}}-no">1</b> of 3</span>
+          <span class="name" id="s{{N}}-name" data-edit="s{{N}}-3">Seat it</span>
+          <p class="desc" id="s{{N}}-desc" data-edit="s{{N}}-4">One short line saying what happens in this step.</p>
+        </div>
+        <div class="pp-rail">
+          <div class="tr"><b class="on">1</b><b>2</b><b>3</b></div>
+        </div>
+      </div>
+    </div>
+    <footer class="pp-foot"><span class="pp-mark" data-edit="s{{N}}-5">Deck mark</span><span class="pp-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Let one step land before you talk.</strong> The card names the step; say the step's one consequence, not
+    its description. The print already shows what moves.</p>
+    <p><strong>Count out loud.</strong> "One. Two. Three." tracks the rail for people at the back of the room, and it
+    keeps you on the loop rather than ahead of it.</p>
+    <p><strong>Name what is schematic.</strong> The timing on screen is the slide's rhythm, not the real duration - say
+    the real one. If asked what happens between two steps, answer from the method, never from the animation.</p>
+  </aside>
+</section>
+<script>
+/* The poster's film: the parts pop into place one step at a time, each step still, then one move. Replace the parts
+   with the subject's own and the three card texts with the real steps. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const P = ctx.period, STEPS = [
+    { name: 'Seat it', desc: 'The base goes down first and sets every other position.' },
+    { name: 'Drop the core', desc: 'The working part lands in the seat and finds its axis.' },
+    { name: 'Close it', desc: 'The cover locks the stack and the assembly is one object.' },
+  ];
+  const S = PP3D.bed(ctx, { target: [0, 1.5, 0], size: 3.4, turn: -18, tilt: 15, sway: 3, shift: -1.2 });
+  const base = S.add(PP3D.block(THREE, 3.2, 2.2, 0.6, { fill: 'peri' }));
+  const core = S.add(PP3D.coin(THREE, 0.95, 0.7, { fill: 'pink' }));
+  const lid  = S.add(PP3D.block(THREE, 2.7, 1.9, 0.4, { fill: 'yellow' }));
+  const noEl = document.getElementById('s{{N}}-no');
+  const nameEl = document.getElementById('s{{N}}-name'), descEl = document.getElementById('s{{N}}-desc');
+  const dots = ctx.el.closest('.pp-stage').querySelectorAll('.pp-rail .tr b');
+  let shown = -1;
+  return S.api({ update(t) {
+    S.turn(t);
+    const s = PP3D.beats(t, P, 3);                     // i = the step on screen, k = 0..1 across the pop into the next
+    const down = (from) => 1 - Math.min(1, (s.i >= from ? 1 : 0) + (s.i === from - 1 ? s.k : 0));
+    core.position.y = 0.6 + 2.4 * down(1);
+    lid.position.y  = 1.4 + 2.4 * down(2);
+    if (s.i !== shown) {
+      shown = s.i;
+      noEl.textContent = String(s.i + 1);
+      nameEl.textContent = STEPS[s.i].name;
+      descEl.textContent = STEPS[s.i].desc;
+      dots.forEach((d, n) => d.classList.toggle('on', n === s.i));
+    }
+  } });
+}, { period: 21 });
+</script>

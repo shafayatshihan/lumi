@@ -1,0 +1,250 @@
+/* Aura theme 5 - Clay Pop. The claymation / vinyl-toy studio, built from the owner's reference
+   (workspace/.claude/skills/aura-slide/brands/clay-pop/brand-style.md).
+   One cool near-white studio, ONE vibrant clay orange doing almost all the work, ink and grey as punctuation only.
+   Every surface is a lit object: a card is a soft clay tile, a bar is a clay pill in a pressed groove, the emphasis
+   phrase is an orange clay KEY with ink letters. Light comes from the upper left; shadows are soft, low and short.
+   Spec: .claude/skills/aura-slide/looks/_shared/LOOK-BASE.md then .../looks/clay-pop/LOOK.md.
+   Checker thresholds: engine/rules/hard-rules.json -> looks.clay-pop.
+   Two typefaces: Plus Jakarta Sans (800 display / 700 labels / 500 text) and DM Mono (the small retro-terminal labels).
+   Sizes: 24 / 30 / 40 / 56 / 80 / 120 / 168. */
+@font-face { font-family: "Plus Jakarta Sans"; src: url("../../fonts/PlusJakartaSans-200-800.woff2") format("woff2"); font-weight: 200 800; font-display: block; }
+@font-face { font-family: "DM Mono"; src: url("../../fonts/DMMono-400.woff2") format("woff2"); font-weight: 400; font-display: block; }
+@font-face { font-family: "DM Mono"; src: url("../../fonts/DMMono-500.woff2") format("woff2"); font-weight: 500; font-display: block; }
+
+:root {
+  --aura-look: clay-pop;                        /* the checker reads this to apply the Clay Pop thresholds */
+  /* the studio: one cool near-white (measured on the reference, #F0F0F6), white tiles, nothing else */
+  --bg: #F0F0F5;
+  --surface: #FFFFFF;
+  --groove: #E3E3EB;                            /* a pressed channel in the clay: bar tracks, the rail */
+  /* ink: cool near-black, and greys that are punctuation only */
+  --ink: #15151C; --ink-2: #2B2B33; --muted: #5A5A66; --label: #6C6C78; --hairline: #DCDCE4;
+  /* THE primary. Light side goes yellow, shadow side goes red (measured), never white or brown. */
+  --clay: #FF6A13; --clay-hi: #FF9A3D; --clay-top: #FDB23B; --clay-lo: #C93A05;
+  --clay-ink: #B93D07;                          /* orange as TEXT, any size (4.95:1 on the studio) - rare */
+  --clay-grey: #B9B6B3; --clay-black: #2A2724;  /* punctuation clays: a key, a screen, a cable */
+  --font-display: "Plus Jakarta Sans", "Segoe UI", sans-serif; --font-text: "Plus Jakarta Sans", "Segoe UI", sans-serif;
+  --font-mono: "DM Mono", Consolas, monospace;
+  --t-micro: 24px; --t-body: 30px; --t-lead: 40px; --t-sub: 56px; --t-head: 80px; --t-title: 120px; --t-close: 168px;
+  --radius: 28px; --radius-s: 16px;
+  /* the lit-clay surfaces, as tokens so every part is lit from the same upper-left key */
+  --clay-face: linear-gradient(180deg, var(--clay-hi) 0%, var(--clay) 48%, #F25A08 100%);
+  --clay-edge: inset 0 3px 0 rgba(255, 214, 160, .75), inset 0 -5px 0 rgba(150, 38, 0, .32);
+  --tile-shadow: 0 1px 0 rgba(21, 21, 28, .04), 0 22px 44px -22px rgba(40, 30, 60, .28), 0 6px 14px -8px rgba(40, 30, 60, .14);
+  --key-shadow: 0 5px 0 var(--clay-lo), 0 12px 18px -6px rgba(140, 40, 0, .38);
+  --cp-pop: cubic-bezier(.34, 1.56, .64, 1);   /* clay lands: a little overshoot, then it sits */
+  --cp-ease: cubic-bezier(.22, .9, .3, 1);
+  --aura-progress: #FF6A13;
+  --aura-letterbox: #15151C;
+}
+
+/* ---------------------------------------------------------------- slide + type */
+.slide { font: 500 30px/1.45 var(--font-text); color: var(--ink); background: var(--bg); }
+.slide > .safe { display: flex; flex-direction: column; z-index: 1; }
+.slide h1, .slide h2, .slide h3, .slide .title, .slide .headline { font-family: var(--font-display); font-weight: 800; margin: 0; color: var(--ink); }
+.slide .title { font-size: 120px; line-height: 1.0; letter-spacing: -.045em; max-width: 12ch; }
+.slide .headline { font-size: 80px; line-height: 1.04; letter-spacing: -.04em; max-width: 13ch; }
+.slide .headline.wide { max-width: 100%; }
+.slide .sub { font-size: 40px; line-height: 1.25; font-weight: 700; letter-spacing: -.02em; color: var(--ink-2); max-width: 24ch; }
+.slide p { margin: 0; }
+.slide .lede { margin-top: 36px; font-size: 30px; line-height: 1.5; color: var(--muted); max-width: 30ch; }
+.slide .close-line { margin-top: 40px; font-size: 30px; line-height: 1.4; color: var(--ink); max-width: 28ch; }
+.slide .close-line b, .slide .close-line strong { color: var(--clay-ink); font-weight: 800; }
+.slide .label { font: 700 30px/1.25 var(--font-text); }
+.slide .cap, .slide .source { font: 400 24px/1.4 var(--font-mono); color: var(--muted); }
+.slide .big-num { font: 800 80px/1 var(--font-display); letter-spacing: -.05em; color: var(--ink); }
+
+/* kicker: a small orange clay bead + a mono label, "02 · THE PROBLEM". The retro-terminal voice of the look. */
+.slide .kicker { display: inline-flex; align-items: center; gap: 16px; margin: 0 0 36px;
+  font: 500 24px/1.2 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
+.slide .kicker::before { content: ""; flex: none; width: 22px; height: 22px; border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, var(--clay-top) 0 18%, var(--clay) 52%, var(--clay-lo) 100%);
+  box-shadow: 0 4px 6px -2px rgba(140, 40, 0, .45); }
+.slide .kicker.prompt::before { content: ">"; width: auto; height: auto; border-radius: 0; background: none; box-shadow: none; color: var(--clay-ink); font-weight: 500; }
+
+/* the ONE emphasis phrase: an orange clay KEY with ink letters. Lit from above, pressed into the line. Ink on clay is
+   6.3:1; white on clay would fail, so the letters are never white. */
+.slide .em { position: relative; display: inline-block; white-space: nowrap; color: var(--ink); font-weight: 800;
+  padding: 0 .16em .02em; margin: 0 .02em; border-radius: .2em; background: var(--clay-face);
+  box-shadow: var(--clay-edge), var(--key-shadow); transform: translateY(-.04em); }
+.slide .em.wrap { white-space: normal; display: inline; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.slide .em.text { background: none; box-shadow: none; padding: 0; color: var(--clay-ink); transform: none; }   /* orange words, no key */
+
+/* ---------------------------------------------------------------- layout: 12 columns, 40 px gutters */
+.cp-main { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(12, 1fr); gap: 40px; position: relative; }
+.cp-main.stack { display: flex; flex-direction: column; gap: 36px; }
+.cp-l { grid-column: span 5; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.cp-r { grid-column: span 7; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+.cp-l.w4 { grid-column: span 4; } .cp-r.w8 { grid-column: span 8; }
+.cp-l.w6 { grid-column: span 6; } .cp-r.w6 { grid-column: span 6; }
+.cp-l.w7 { grid-column: span 7; } .cp-r.w5 { grid-column: span 5; }
+
+/* footer: an orange bead + the deck mark in mono, and the page number as "03/12". 24 px is allowed here. */
+.cp-foot { flex: none; height: 32px; margin-top: 48px; display: flex; align-items: center; justify-content: space-between;
+  position: relative; z-index: 2; }
+.cp-mark { display: flex; align-items: center; gap: 12px; font: 500 24px/1.4 var(--font-mono); letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-2); }
+.cp-mark::before { content: ""; width: 16px; height: 16px; border-radius: 50%; background: var(--clay);
+  box-shadow: inset 0 -3px 0 rgba(150, 38, 0, .35), inset 0 2px 0 rgba(255, 214, 160, .7); }
+.cp-pageno { font: 500 24px/1.3 var(--font-mono); letter-spacing: .08em; color: var(--ink-2); }
+
+/* ---------------------------------------------------------------- the stat stack: big ink numbers, clay pill bars */
+.cp-stats { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; gap: 36px; }
+.cp-stats > li { position: relative; }
+.cp-stat { font: 800 80px/1 var(--font-display); letter-spacing: -.05em; color: var(--ink); }
+.cp-stat.md { font-size: 56px; letter-spacing: -.04em; }
+.cp-stat small { font-size: 40px; font-weight: 700; margin-left: 10px; letter-spacing: -.02em; color: var(--muted); }
+.cp-stats p { margin: 8px 0 0; font-size: 30px; line-height: 1.3; color: var(--muted); }
+.cp-stats p b { color: var(--ink); font-weight: 700; }
+/* a bar: a clay pill lying in a pressed groove. The fill length is the value; the light is decoration only. */
+.cp-bar { margin-top: 14px; height: 26px; max-width: 520px; border-radius: 999px; background: var(--groove);
+  box-shadow: inset 0 3px 5px rgba(40, 30, 60, .16), inset 0 -1px 0 rgba(255, 255, 255, .9); }
+.cp-bar > i { display: block; height: 100%; width: var(--v, 50%); border-radius: 999px; background: var(--clay-face);
+  box-shadow: var(--clay-edge), 0 4px 8px -3px rgba(140, 40, 0, .45); transform-origin: left center; }
+.cp-bar.grey > i { background: linear-gradient(180deg, #D6D3D0, var(--clay-grey) 55%, #A29E9A); box-shadow: inset 0 3px 0 rgba(255, 255, 255, .6), inset 0 -4px 0 rgba(60, 50, 40, .22); }
+
+/* numbered steps: clay beads */
+.cp-steps { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; gap: 32px; }
+.cp-steps > li { display: grid; grid-template-columns: 68px 1fr; column-gap: 26px; align-items: start; }
+.cp-n { width: 68px; height: 68px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font: 800 30px/1 var(--font-display); color: var(--ink); background: radial-gradient(circle at 36% 30%, #FFFFFF 0 20%, #F1F1F5 60%, #D9D9E2 100%);
+  box-shadow: inset 0 -5px 0 rgba(40, 30, 60, .12), 0 8px 14px -6px rgba(40, 30, 60, .35); }
+.cp-n.on { background: radial-gradient(circle at 36% 30%, var(--clay-top) 0 16%, var(--clay) 55%, var(--clay-lo) 100%); box-shadow: inset 0 -5px 0 rgba(150, 38, 0, .3), 0 8px 14px -6px rgba(140, 40, 0, .5); }
+.cp-steps strong { display: block; font: 800 40px/1.1 var(--font-display); letter-spacing: -.02em; color: var(--ink); }
+.cp-steps p { margin: 6px 0 0; font-size: 30px; line-height: 1.3; color: var(--muted); }
+
+/* zone list (photo slides): a numbered bead, the name, one line */
+.cp-zones { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; gap: 36px; }
+.cp-zones > li { display: grid; grid-template-columns: 56px 1fr; column-gap: 22px; align-items: start; }
+.cp-zones .z { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font: 800 30px/1 var(--font-display); color: var(--ink); background: radial-gradient(circle at 36% 30%, var(--clay-top) 0 16%, var(--clay) 55%, var(--clay-lo) 100%);
+  box-shadow: inset 0 -4px 0 rgba(150, 38, 0, .3), 0 6px 10px -4px rgba(140, 40, 0, .5); }
+.cp-zones .n { display: block; font: 800 40px/1.1 var(--font-display); letter-spacing: -.02em; color: var(--ink); }
+.cp-zones .d { display: block; font: 500 30px/1.35 var(--font-text); color: var(--muted); margin-top: 4px; }
+
+/* chips beside a chart: white clay pills; .key is the orange one */
+.cp-chips { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
+.cp-chip { font: 700 30px/1.2 var(--font-text); color: var(--ink); background: var(--surface); border-radius: 999px;
+  padding: 16px 30px; box-shadow: var(--tile-shadow), inset 0 -4px 0 rgba(40, 30, 60, .06); }
+.cp-chip.key { background: var(--clay-face); box-shadow: var(--clay-edge), var(--key-shadow); }
+
+/* checklist: each row a clay button - pressed (orange, ticked), half-pressed (grey), or not yet (an empty socket) */
+.cp-goals { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; gap: 26px; }
+.cp-goal { display: grid; grid-template-columns: 64px 1fr; column-gap: 24px; align-items: center; }
+.cp-goal .ic { width: 64px; height: 64px; padding: 14px; box-sizing: border-box; border-radius: 22px; color: var(--label);
+  background: var(--groove); box-shadow: inset 0 4px 6px rgba(40, 30, 60, .16); }
+.cp-goal.on .ic { color: var(--ink); background: var(--clay-face); box-shadow: var(--clay-edge), 0 6px 0 var(--clay-lo), 0 12px 16px -6px rgba(140, 40, 0, .4); }
+.cp-goal.wip .ic { color: var(--ink); background: linear-gradient(180deg, #E4E2DF, var(--clay-grey)); box-shadow: inset 0 3px 0 rgba(255, 255, 255, .7), 0 5px 0 #8F8B87; }
+.cp-goal.no .ic { color: var(--clay-ink); }
+.cp-goal strong { display: block; font: 800 40px/1.1 var(--font-display); letter-spacing: -.02em; color: var(--ink); }
+.cp-goal span.d { display: block; margin-top: 2px; font: 500 30px/1.3 var(--font-text); color: var(--muted); }
+.cp-goal.no strong { color: var(--muted); }
+.cp-goal.is-here strong { color: var(--clay-ink); }  /* the row the tour is visiting */
+
+/* ---------------------------------------------------------------- surfaces: soft clay tiles, lit from the upper left */
+.cp-card { background: var(--surface); border-radius: var(--radius); padding: 40px; box-shadow: var(--tile-shadow); }
+.cp-photo { margin: 0; border-radius: var(--radius); overflow: hidden; background: var(--surface); box-shadow: var(--tile-shadow); }
+.cp-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cp-inset { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.cp-inset img { display: block; border-radius: var(--radius-s); object-fit: cover; box-shadow: var(--tile-shadow); }
+.cp-inset figcaption { font: 400 24px/1.35 var(--font-mono); color: var(--muted); }
+
+/* labels over a figure: a white clay pill with a soft shadow, and a short leader to the part. Never on the figure itself. */
+.cp-tag { position: absolute; padding: 12px 22px 14px; background: var(--surface); border-radius: 20px; white-space: nowrap;
+  pointer-events: none; z-index: 2; box-shadow: var(--tile-shadow); }
+.cp-tag b { display: block; font: 800 30px/1.15 var(--font-display); letter-spacing: -.01em; color: var(--ink); }
+.cp-tag span { display: block; margin-top: 2px; font: 400 24px/1.3 var(--font-mono); color: var(--muted); }
+.cp-tag.key { background: var(--clay-face); box-shadow: var(--clay-edge), var(--key-shadow); }
+.cp-tag.key span { color: var(--ink); }   /* ink-2 on orange measured 4.48:1 */
+.cp-pin { position: absolute; width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font: 800 30px/1 var(--font-display); color: var(--ink); pointer-events: none; z-index: 3;
+  background: radial-gradient(circle at 36% 30%, #FFFFFF 0 22%, #F1F1F5 62%, #D9D9E2 100%); box-shadow: 0 8px 14px -6px rgba(40, 30, 60, .45); }
+.cp-pill { position: absolute; padding: 12px 26px; border-radius: 999px; white-space: nowrap; pointer-events: none; z-index: 2;
+  font: 800 30px/1.2 var(--font-display); color: var(--ink); background: var(--clay-face); box-shadow: var(--clay-edge), var(--key-shadow); }
+.cp-pill.plain { background: var(--surface); box-shadow: var(--tile-shadow); }   /* the 'other one' in a comparison */
+
+/* the cycling card for a process film, and the bead rail under it */
+.cp-cyc { position: absolute; right: 40px; top: 40px; width: 600px; padding: 28px 34px 32px; z-index: 2;
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--tile-shadow); }
+.cp-cyc .step { display: block; font: 500 24px/1.3 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.cp-cyc .name { display: block; margin-top: 6px; font: 800 56px/1.02 var(--font-display); letter-spacing: -.035em; color: var(--ink); }
+.cp-cyc .desc { margin: 14px 0 0; font: 500 30px/1.3 var(--font-text); color: var(--muted); }
+.cp-rail { position: absolute; left: 40px; bottom: 36px; width: 520px; z-index: 2; display: flex; align-items: center; }
+.cp-rail .tr { position: relative; flex: 1; height: 14px; border-radius: 999px; background: var(--groove);
+  box-shadow: inset 0 3px 4px rgba(40, 30, 60, .16); display: flex; justify-content: space-between; align-items: center; }
+.cp-rail .tr b { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font: 500 24px/1 var(--font-mono); color: var(--ink); background: radial-gradient(circle at 36% 30%, #FFFFFF 0 22%, #F1F1F5 62%, #D9D9E2 100%);
+  box-shadow: 0 6px 10px -4px rgba(40, 30, 60, .4); transition: width .3s var(--cp-pop), height .3s var(--cp-pop), margin .3s var(--cp-pop); }
+.cp-rail .tr b.on { width: 60px; height: 60px; margin: -4px; background: radial-gradient(circle at 36% 30%, var(--clay-top) 0 16%, var(--clay) 55%, var(--clay-lo) 100%); }   /* grown by size, not scale: the checker reads a scaled bead as off-scale type */
+
+/* the small system map: a tile with clay keys for the parts */
+.cp-map { display: flex; flex-direction: column; gap: 14px; padding: 26px 30px; border-radius: var(--radius);
+  background: var(--surface); box-shadow: var(--tile-shadow); }
+.cp-map .node { display: inline-flex; align-items: center; gap: 12px; padding: 8px 18px; border-radius: 14px;
+  font: 700 30px/1.25 var(--font-text); color: var(--ink); background: var(--bg);
+  box-shadow: inset 0 -3px 0 rgba(40, 30, 60, .08); transition: background .3s var(--cp-ease), transform .3s var(--cp-pop); }
+.cp-map .node.on { background: var(--clay-face); box-shadow: var(--clay-edge), 0 4px 0 var(--clay-lo); transform: translateY(-2px); }
+.cp-map ul { list-style: none; margin: 0; padding: 0 0 0 30px; display: flex; flex-direction: column; gap: 10px; }
+
+/* ---------------------------------------------------------------- figure holders: live three.js (.aura-3d) or a
+   Blender render (.bb-blender, filled by Lumi's packer). Both sit straight on the studio colour - never in a card,
+   because a Blender render is composited onto exactly #F0F0F5 and a card would show its edge. */
+.slide .aura-3d.cp-3d, .slide .bb-blender.cp-3d { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.slide .aura-3d.cp-full, .slide .bb-blender.cp-full { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; z-index: 0; }
+.cp-stage { position: relative; flex: 1; min-height: 0; }
+.cp-hero { position: relative; z-index: 1; width: 720px; flex: 1; display: flex; flex-direction: column; justify-content: center; }
+/* the title column ends at x 0.425 of the stage: lumi_bpy camera(frame_right=True) fits the subject into x 0.42-0.97, so
+   a wider column collides with a full-bleed render (measured on the first Clay Pop render) */
+.cp-head { flex: none; }
+.cp-head .headline { max-width: 100%; }
+.cp-chart { position: relative; flex: 1; min-height: 0; background: var(--surface); border-radius: var(--radius);
+  padding: 40px 44px 28px 48px; box-shadow: var(--tile-shadow); }
+
+/* ---------------------------------------------------------------- closing */
+.cp-thanks { margin: 0; font: 800 168px/.92 var(--font-display); letter-spacing: -.06em; color: var(--ink); white-space: nowrap; }
+.cp-thanks.cp-msg { white-space: normal; font-size: 120px; line-height: 1.0; letter-spacing: -.045em; max-width: 1060px; }
+.cp-q { margin: 40px 0 0; display: flex; align-items: center; gap: 18px; font: 700 40px/1.2 var(--font-display); letter-spacing: -.02em; color: var(--ink); }
+.cp-q::before { content: ""; flex: none; width: 26px; height: 26px; border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, var(--clay-top) 0 18%, var(--clay) 52%, var(--clay-lo) 100%); }
+.cp-rule { height: 10px; width: 100%; max-width: 720px; margin: 56px 0 40px; border-radius: 999px; background: var(--groove);
+  box-shadow: inset 0 3px 4px rgba(40, 30, 60, .14); }
+.cp-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+.cp-people li { display: grid; grid-template-columns: 280px auto 1fr; column-gap: 26px; align-items: baseline; font-size: 30px; }
+.cp-people li.gap { margin-top: 24px; }
+.cp-people .lb { font: 500 24px/1.4 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--label); }
+.cp-people strong { font-weight: 800; color: var(--ink); white-space: nowrap; }
+.cp-people em { font-style: normal; color: var(--label); }
+.cp-meta { list-style: none; margin: 48px 0 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 32px 52px; }
+.cp-meta li { font-size: 30px; line-height: 1.4; color: var(--muted); }
+.cp-meta b { color: var(--ink); font-weight: 800; }
+.cp-meta .lb { display: block; font: 500 24px/1.3 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--label); margin-bottom: 6px; }
+
+/* ---------------------------------------------------------------- motion: clay LANDS. A short drop with one soft
+   overshoot (it squashes a little and settles), staggered. Nothing spins, nothing slides in from off-screen, nothing
+   bounces twice. */
+@keyframes cpLand { 0% { opacity: 0; transform: translateY(28px); } 70% { opacity: 1; transform: translateY(-4px); } 100% { opacity: 1; transform: none; } }
+@keyframes cpSquish { 0% { opacity: 0; transform: scale(.6, .6); } 60% { opacity: 1; transform: scale(1.06, .94); } 100% { opacity: 1; transform: none; } }
+@keyframes cpPress { 0% { transform: translateY(-.04em); } 40% { transform: translateY(.06em); box-shadow: var(--clay-edge), 0 1px 0 var(--clay-lo); } 100% { transform: translateY(-.04em); } }
+@keyframes cpFade { from { opacity: 0; } to { opacity: 1; } }
+/* labels that FOLLOW a figure are moved every frame through an inline transform, so their squish animates the separate
+   `scale` property: an animated `transform` would override the inline translate and pin them to the holder's corner */
+@keyframes cpSquishScale { 0% { opacity: 0; scale: .6; } 60% { opacity: 1; scale: 1.06 .94; } 100% { opacity: 1; scale: 1; } }
+@keyframes cpGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+html:not(.aura-still) .slide.is-entering .kicker { animation: cpLand .44s var(--cp-ease) .02s both; }
+html:not(.aura-still) .slide.is-entering :is(h1, h2, .headline) { animation: cpLand .52s var(--cp-ease) .10s both; }
+html:not(.aura-still) .slide.is-entering .em { animation: cpPress .36s var(--cp-ease) .62s both; }
+html:not(.aura-still) .slide.is-entering :is(.sub, .lede, .close-line, .cp-meta, .cp-q) { animation: cpLand .48s var(--cp-ease) .22s both; }
+html:not(.aura-still) .slide.is-entering :is(.cp-stats, .cp-steps, .cp-zones, .cp-goals) > li { animation: cpLand .46s var(--cp-ease) both; }
+html:not(.aura-still) .slide.is-entering .cp-chip { animation: cpSquish .42s var(--cp-pop) both; }
+html:not(.aura-still) .slide.is-entering :is(.cp-stats, .cp-steps, .cp-zones, .cp-goals, .cp-chips) > li:nth-child(1) { animation-delay: .26s; }
+html:not(.aura-still) .slide.is-entering :is(.cp-stats, .cp-steps, .cp-zones, .cp-goals, .cp-chips) > li:nth-child(2) { animation-delay: .36s; }
+html:not(.aura-still) .slide.is-entering :is(.cp-stats, .cp-steps, .cp-zones, .cp-goals, .cp-chips) > li:nth-child(3) { animation-delay: .46s; }
+html:not(.aura-still) .slide.is-entering :is(.cp-stats, .cp-steps, .cp-zones, .cp-goals, .cp-chips) > li:nth-child(4) { animation-delay: .56s; }
+html:not(.aura-still) .slide.is-entering :is(.cp-photo, .cp-chart, .cp-card, .cp-map, .cp-cyc) { animation: cpLand .5s var(--cp-ease) .14s both; }   /* text-holding tiles land, never scale: a scaled tile measures as off-scale type */
+html:not(.aura-still) .slide.is-entering :is(.cp-tag, .cp-pill, .cp-pin) { animation: cpSquishScale .38s var(--cp-pop) .72s both; }
+html:not(.aura-still) .slide.is-entering :is(.cp-n, .cp-zones .z, .cp-goal .ic) { animation: cpSquish .36s var(--cp-pop) both; }
+.cp-bar > i { animation: none; }
+html:not(.aura-still) .slide.is-entering .cp-bar > i { animation: cpGrow .8s var(--cp-ease) .5s both; }
+
+/* chrome: an 8 px orange progress pill */
+.aura-progress { height: 8px; border-radius: 0 999px 999px 0; }

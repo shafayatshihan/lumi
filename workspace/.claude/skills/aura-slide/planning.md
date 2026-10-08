@@ -19,7 +19,7 @@ You are planning when the message contains `[plan-mode]` (first plan, or "plan a
   with doubts but no file, their answers bring a message asking you to write the whole plan then.
 
 ## First plan (`[plan-mode]`)
-1. `[[aura:stage=read]]`. Read `.aura/brief/brief.md` and the user's files (`3 - Put your files here/`) the way
+1. `[[aura:stage=read]]`. Read `.aura/brief/brief.md` and the user's files (this deck's folder under `3 - Put your files here/`, named in the step message) the way
    SKILL.md step 1 says. Take notes for yourself in `.aura/temp/plan.md` (facts, numbers with their source, which file
    each comes from) so the build steps never need to re-read the files. Those notes are yours: the plan itself is `plan.json`.
 2. `[[aura:stage=plan]]`. Pick the story arc (`story-arcs.md`). Suggest **10–16 slides** unless the brief asks for
@@ -65,7 +65,7 @@ restores them from its own record every time it reads your file, so writing them
 | `slides[].point` | you | one sentence |
 | `slides[].bullets` | you | **2–4** short lines, the words that will really be on the slide |
 | `slides[].visual` | you | `main`, `companions`, `detail`, `motion`, `phrase`, optional `engine` (below); `phrase` is kept to 160 characters |
-| `slides[].sources` | you | paths relative to `3 - Put your files here/` (empty if none); at most 6 kept (the page shows its picker for up to 3) |
+| `slides[].sources` | you | paths relative to this deck's folder under `3 - Put your files here/` (empty if none); at most 6 kept (the page shows its picker for up to 3) |
 | `slides[].notes` | you | optional; kept so you can re-read it, never shown on the page |
 | `version`, `slides[].words` | app (derived) | `words` is counted from title + bullets; leave it out (an estimate you write is replaced). `version` is always 1 |
 | `slides[].built` | app | `true` once the slide is built. You see it; you never set or clear it |

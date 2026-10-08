@@ -1,0 +1,45 @@
+<!-- archetype: result-chart | one printed chart (PPChart.bar is this look's first answer; PPChart.line for a trend) + up to three finding chips | main visual: chart | companions: <=3 chips. Real data needs a source line; with no data draw an "illustrative" shape (no y numbers). Never invent values. -->
+<section class="slide" data-kind="content" data-minutes="2" data-title="What we found">
+  <div class="safe">
+    <div class="pp-main">
+      <div class="pp-l w4">
+        <p class="kicker" data-edit="s{{N}}-1">07 · What we found</p>
+        <h2 class="headline" data-edit="s{{N}}-2">One block <span class="em">beats the rest</span></h2>
+        <ul class="pp-chips">
+          <li class="pp-chip key" data-edit="s{{N}}-3">Third one wins by half</li>
+          <li class="pp-chip" data-edit="s{{N}}-4">Same in every run</li>
+          <li class="pp-chip" data-edit="s{{N}}-5">Costs nothing extra</li>
+        </ul>
+      </div>
+      <div class="pp-r w8">
+        <div class="pp-chart" id="s{{N}}-chart"></div>
+      </div>
+    </div>
+    <footer class="pp-foot"><span class="pp-mark" data-edit="s{{N}}-6">Deck mark</span><span class="pp-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Read the axis first.</strong> Say what is up the side before you say a single number, and say that every
+    block is measured from the same flat baseline - that is why they can be compared at all.</p>
+    <p><strong>Then read the chips in order</strong> - they are the order the eye should travel. Name the one block the
+    slide is about and say what made it different.</p>
+    <p><strong>Source every number aloud</strong> and say plainly if the shape is illustrative. If asked for a value
+    between two bars, say the data does not resolve it rather than inventing one.</p>
+  </aside>
+</section>
+<script>
+/* Replace with the user's own data. A bar chart is this look's native figure: chunky outlined blocks on a flat
+   baseline, honest because the measurement happens against that baseline and never in the print (LOOK-BASE 5.1).
+   y.min must be 0. For a trend over time use PPChart.line with the same spec shape as the other looks.
+   Colours: pink #FF90E8, teal #23A094, yellow #FFC900, white. Real data carries a source line; with no data set
+   illustrative: true and say so in the notes. */
+PPChart.bar('#s{{N}}-chart', {
+  y: { min: 0, max: 100, ticks: [0, 25, 50, 75, 100], title: 'load held, kg' },
+  bars: [
+    { name: 'before', value: 48, color: '#FFFFFF' },
+    { name: 'interim', value: 62, color: '#23A094' },
+    { name: 'after', value: 91, color: '#FF90E8' },
+  ],
+  unit: 'kg',
+  illustrative: true,          // replace with real values + source: 'Source: ...'
+});
+</script>

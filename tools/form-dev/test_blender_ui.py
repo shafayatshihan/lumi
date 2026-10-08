@@ -39,12 +39,13 @@ def run(T):
         s1, s2, s3 = ids[:3]
         est = (pj.get('blender') or {}).get('estimates') or {}
         e1 = est.get(s1) or {}
-        check('plan payload: blender.estimates for every 3D slide (still, 720, 1080 seconds + basis + iteration tokens), none for a chart',
-              s1 in est and s2 in est and s3 not in est and e1.get('still', 0) > 0 and 0 < e1.get('720', 0) < e1.get('1080', 0)
+        e2 = est.get(s2) or {}
+        check('plan payload: blender.estimates for every 3D slide (still seconds + basis + iteration tokens; a moving one is ONE baked time), none for a chart',
+              s1 in est and s2 in est and s3 not in est and e1.get('still', 0) > 0 and e2.get('baked') is True and 0 < e2.get('720', 0) == e2.get('1080', 0)
               and e1.get('basis') in ('default', 'benchmark', 'slide') and (e1.get('iteration') or {}).get('tokensRun', 0) > 0, est)
         eng = pj.get('engines') or {}
-        check('engine chips default: Bold Blue still 3D -> blender (not chosen), turning 3D -> three.js', eng[s1]['engine'] == 'blender' and not eng[s1]['chosen']
-              and eng[s2]['engine'] == 'threejs', eng)
+        check('engine chips default (batch 6 B.2): Bold Blue 3D -> blender, still and turning alike (not chosen)', eng[s1]['engine'] == 'blender' and not eng[s1]['chosen']
+              and eng[s2]['engine'] == 'blender' and not eng[s2]['chosen'], eng)
         # the chips: the page saves the whole plan strictly
         plan = json.loads(json.dumps(pj['plan']))
         plan['slides'][0]['visual']['engine'] = 'threejs'

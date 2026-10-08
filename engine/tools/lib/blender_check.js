@@ -19,6 +19,39 @@ async function collectBlender() {
     const m = (getComputedStyle(s).backgroundColor || '').match(/rgba?\(([^)]+)\)/);
     const bg = m ? m[1].split(/[ ,/]+/).filter(Boolean).slice(0, 3).map(parseFloat) : [249, 244, 242];
     for (const h of s.querySelectorAll('.bb-blender')) {
+      if (h.hasAttribute('data-baked')) {
+        // batch 6 B.7: a baked studio render is a live model. In all-slides mode the runtime has drawn it once and left the
+        // frame as a plain <img>; that frame is measured, over the slide colour (it has alpha), like a still render is.
+        const po = h.querySelector('img.bb-bake-poster');
+        const fr = Array.from(h.querySelectorAll(':scope > img')).filter(i => !i.classList.contains('bb-blender-img')).pop() || null;
+        const it = { n: si + 1, sid: h.dataset.blender || '', kind: 'animation', baked: true, draft: h.hasAttribute('data-draft'), stale: h.hasAttribute('data-stale'),
+          filled: h.hasAttribute('data-filled'), period: parseFloat(h.dataset.period) || 0, failed: h.hasAttribute('data-fallback'), bg,
+          labels: Array.from(h.querySelectorAll('[data-anchor]')).map(e => e.dataset.anchor), anchors: (h.dataset.anchorNames || '').split(',').filter(Boolean),
+          hasPoster: false, drawn: false, w: 0, h: 0, px: null };
+        if (po) { try { await po.decode(); } catch (e) { /* reported */ } it.hasPoster = po.naturalWidth > 0; }
+        if (fr) {
+          try { await fr.decode(); } catch (e) { /* reported */ }
+          it.w = fr.naturalWidth; it.h = fr.naturalHeight; it.drawn = it.w > 0 && it.h > 0;
+          if (it.drawn) {
+            const c = document.createElement('canvas'); c.width = it.w; c.height = it.h;
+            const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = `rgb(${bg.join(',')})`; x.fillRect(0, 0, it.w, it.h); x.drawImage(fr, 0, 0);
+            const d = x.getImageData(0, 0, it.w, it.h).data, W = it.w, H = it.h, P = Math.max(4, Math.min(24, Math.round(W / 80)));
+            const patch = (x0, y0) => { let r = 0, g = 0, b = 0, n = 0;
+              for (let y = y0; y < Math.min(H, y0 + P); y++) for (let xx = x0; xx < Math.min(W, x0 + P); xx++) { const k = (y * W + xx) * 4; r += d[k]; g += d[k + 1]; b += d[k + 2]; n++; }
+              return [r / n, g / n, b / n]; };
+            let non = 0, black = 0, luma = 0, cnt = 0;
+            for (let y = 0; y < H; y += 3) for (let xx = 0; xx < W; xx += 3) {
+              const k = (y * W + xx) * 4, r = d[k], g = d[k + 1], b = d[k + 2], l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+              if (Math.max(Math.abs(r - bg[0]), Math.abs(g - bg[1]), Math.abs(b - bg[2])) > 8) non++;
+              if (l < 14) black++;
+              luma += l; cnt++;
+            }
+            it.px = { patches: { tl: patch(0, 0), tr: patch(W - P, 0), bl: patch(0, H - P), br: patch(W - P, H - P) }, nonBg: non / cnt, black: black / cnt, luma: luma / cnt };
+          }
+        }
+        out.push(it);
+        continue;
+      }
       const im = h.querySelector('img.bb-blender-img'), v = h.querySelector('video.bb-blender-video');
       const it = { n: si + 1, sid: h.dataset.blender || '', kind: h.dataset.kind || '', draft: h.hasAttribute('data-draft'), stale: h.hasAttribute('data-stale'),
         filled: h.hasAttribute('data-filled'), hasImg: !!im, hasVideo: !!v, imgSrc: im ? (im.getAttribute('src') || '') : '', videoSrc: v ? (v.getAttribute('src') || '') : '',
@@ -101,6 +134,19 @@ const hex = c => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).j
 // holder whose id is not in it is an ORPHAN - the slide's engine is three.js, so no render is ever made for it and the holder
 // stays empty for ever. That is an error at once, while the person is still on that slide, not a finalize that dies at the end.
 // returns { errors: [{slide, msg}], warnings: [{slide, msg}], notes: [string] }
+// batch 6 B.7: the baked path. The loop is recorded later by finalize.js with the capture contract (its seam is exact by
+// construction: the player seeks the glTF animation absolutely), so what is checked here is the model as it draws.
+function judgeBaked(it, who, R, err) {
+  if (!(it.period > 0)) err(it.n, `${who} has no loop period: the bake did not record how long the motion is (L.loop in scene.py)`);
+  if (!it.hasPoster) err(it.n, `${who} has no poster frame: it is the picture shown when the model cannot draw, and the bake writes it (bake/<mode>/poster.png)`);
+  if (it.failed || !it.drawn) { err(it.n, `${who} did not draw: the baked model could not be shown in the browser (look at the console of the deck)`); return; }
+  const px = it.px;
+  if (px.black > R.blackFracAbove || px.luma < R.meanLumaBelow) err(it.n, `${who} looks black (mean brightness ${px.luma.toFixed(0)}): a metal with no environment, or the camera is inside the model`);
+  else if (px.nonBg < R.nonBgBelow) err(it.n, `${who} is blank: only ${(px.nonBg * 100).toFixed(2)}% of it is anything but the background, so the model is missing or out of frame`);
+  const bad = Object.entries(px.patches).map(([k, c]) => [k, c, Math.max(...c.map((v, i) => Math.abs(v - it.bg[i])))]).filter(p => p[2] > R.edgeTolerance);
+  if (bad.length) err(it.n, `${who} background is not the slide colour at its edges: ${bad.slice(0, 3).map(p => `${p[0]} ${hex(p[1])}`).join(', ')} against the slide's ${hex(it.bg)}. The model must sit on a transparent background, or on the slide's own colour (L.studio(bg=...)).`);
+}
+
 function judge(items, opts) {
   const R = opts.rules, errors = [], warnings = [], notes = [];
   const err = (n, m) => errors.push({ slide: n, msg: m }), warn = (n, m) => warnings.push({ slide: n, msg: m });
@@ -118,6 +164,7 @@ function judge(items, opts) {
       if (it.stale && opts.finalize) warn(it.n, `${who} is older than the scene: the scene changed after the last full render`);
       const lost = it.labels.filter(l => !it.anchors.includes(l));
       if (lost.length) warn(it.n, `${who} has label(s) with no anchor point in the render (${lost.join(', ')}): call L.anchor('<name>', object) in scene.py so the label can follow it, or the label stays hidden`);
+      if (it.baked) { judgeBaked(it, who, R, err); continue; }
       const animation = it.kind === 'animation';
       if (animation && !it.hasVideo && !it.draft) { err(it.n, `${who} could not be read: the slide says it is an animation but the loop video is missing`); continue; }
       if (!animation && it.hasVideo) { err(it.n, `${who} could not be read: the slide says it is a still but a video is inside it`); continue; }

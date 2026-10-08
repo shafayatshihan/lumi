@@ -9,8 +9,8 @@ Nothing here is in progress unless marked. The in-flight batch is tracked in `RE
 
 ## P0 — a promise the product does not keep
 
-### B1. Four of the five looks do not exist
-`engine/form/js/looks.js:9-14` offers **Bold Blue, Pink Punch, Flat-Pack, Happy Headspace, Yellow Frame**.
+### B1. Two of the four looks do not exist
+`engine/form/js/looks.js:8-13` offers **Bold Blue, Pink Punch, Flat-Pack, Happy Headspace**. (Yellow Frame was a fifth; the owner cut it on 2026-10-07 and it is deleted — `docs/STOP-yellow-frame.md`.)
 `engine/deck/looks/` contains **`bold-blue` only**, and `skills/aura-slide/looks/` has **one** `LOOK.md`.
 
 A person who picks Flat-Pack gets a name, a one-line description and an icon — then Claude improvises with no
@@ -21,7 +21,7 @@ Consequences already observed:
   deck leaves 3D slides without an engine** — the root cause of the slide-14 finalize failure;
 - preference rule S4 had no home, because there is no Flat-Pack `LOOK.md`
   (`docs/owner-preferences-proposal.md` section 4);
-- nothing enforces word budgets, type scale or composition for four of five looks.
+- nothing enforces word budgets, type scale or composition for two of the four looks.
 
 **Owner's rule (2026-10-06): every look follows the same structural rules as Bold Blue; only brand style and
 aesthetics differ.** So the work is: factor the look-neutral rules out of `looks/bold-blue/LOOK.md` into a

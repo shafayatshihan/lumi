@@ -11,7 +11,7 @@ job**: you are expected to stop and wait.
 
 **Ask only what would change a slide. Never ask what the files already answer.**
 
-Read the extracted text first (`.aura/temp/text/`, index `manifest.json`). Most of what a form would have demanded is
+Read the extracted text first (this deck's own corpus, the folder the message names, index `manifest.json`). Most of what a form would have demanded is
 already in there: the title, the field, the results, often the names. What is left is what you ask about — the gaps, the
 contradictions between two files, and the things no document can tell you, like who is in the room.
 

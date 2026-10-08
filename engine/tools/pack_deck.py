@@ -169,6 +169,8 @@ class Packer:
             if not re.fullmatch(r'[A-Za-z0-9_.-]+', sid): return tag
             try: meta = json.loads((adir / f'{sid}.json').read_text(encoding='utf-8'))
             except (OSError, ValueError): meta = None
+            if meta and meta.get('baked'):
+                return self.baked_fill(tag, sid, meta, adir)
             png, mp4, poster = adir / f'{sid}.png', adir / f'{sid}.mp4', adir / f'{sid}-poster.png'
             still = poster if mp4.is_file() else png
             if not (meta and still.is_file()):
@@ -189,10 +191,99 @@ class Packer:
             return tag[:-1] + attrs + '>' + inner
         return re.sub(r'<div\b[^>]*\bclass\s*=\s*["\'][^"\']*\bbb-blender\b[^"\']*["\'][^>]*>', one, html)
 
+    def baked_fill(self, tag, sid, meta, adir):
+        """Batch 6 Part B: a baked studio render is not a picture but a model. The holder BECOMES a live three.js scene
+        (class aura-3d + data-scene) that lib/bake-player.js plays from the inlined model.glb, so finalize records it with
+        the seek-based capture like any other scene. data-baked keeps it out of the runtime's list of already-recorded
+        Blender holders; the [data-anchor] labels inside it are moved by the player."""
+        glb = adir / f'{sid}.glb'
+        man = meta.get('bake') or {}
+        if not glb.is_file() or not man:
+            return tag[:-1] + ' data-pending="1">'
+        esc = lambda v: htmllib.escape(str(v), quote=True)
+        scene_id = f'lumi-bake-{sid}'
+        period = float(man.get('period') or 0) or 1.0
+        attrs = (f' data-filled="1" data-baked="1" data-scene="{esc(scene_id)}" data-period="{period:g}"'
+                 + (' data-draft="1"' if meta.get('draft') else '') + (' data-stale="1"' if meta.get('stale') else ''))
+        if not re.search(r'\sdata-kind\s*=', tag): attrs += ' data-kind="animation"'
+        names = sorted((man.get('anchors') or {}).keys())
+        if names: attrs += f' data-anchor-names="{esc(",".join(names))}"'
+        tag = re.sub(r'(\bclass\s*=\s*["\'])', r'\1aura-3d ', tag, count=1)
+        glb_uri = 'data:model/gltf-binary;base64,' + base64.b64encode(glb.read_bytes()).decode('ascii')
+        opts = json.dumps({'manifest': man, 'glb': glb_uri, 'period': period}, separators=(',', ':'))
+        self.baked.append(f'Aura.scene({json.dumps(scene_id)}, (ctx) => LumiBake.scene(ctx, {opts}), {{ period: {period:g} }});')
+        # the poster (one Cycles frame of the baked materials): hidden while the model draws, the picture when it cannot
+        poster = adir / f'{sid}-poster.png'
+        inner = (f'<img class="bb-blender-img bb-bake-poster" src="{self.data_uri("assets/blender/" + poster.name, self.base, f"the poster of slide {sid}")}" '
+                 'alt="" draggable="false">' if poster.is_file() else '')
+        if meta.get('draft'): inner += '<span class="bb-blender-tag" data-edit="no" data-aura-ui>preview</span>'
+        self.stats['blender'] = self.stats.get('blender', 0) + 1
+        return tag[:-1] + attrs + '>' + inner
+
+    def baked_scripts(self, html):
+        """The player and one registration per baked holder, before </body> (runtime.js reads registrations on load)."""
+        if not self.baked:
+            return html
+        player = (ENGINE / 'deck' / 'lib' / 'bake-player.js')
+        if not player.is_file():
+            raise PackError('lib/bake-player.js is missing from .aura/engine. Run "Update Lumi".')
+        safe = lambda js: js.replace('</script', '<\\/script')      # the player's own doc comment shows a <script> example
+        # ids: finalize.js drops both once every baked slide is a recorded loop (the models are most of the file's bytes)
+        tag = ('<script id="lumi-bake-player">\n' + safe(player.read_text(encoding='utf-8')) + '\n</script>\n<script id="lumi-bake-scenes">\n'
+               + safe('\n'.join(self.baked)) + '\n</script>\n')
+        m = None
+        for m in re.finditer(r'</body\s*>', html, re.I):
+            pass
+        return html[:m.start()] + tag + html[m.start():] if m else html + tag
+
+    # ---------- the measured-values record (B-05 -> the post-processing honesty gate) ----------
+    # engine/deck/lib/post-policy.js refuses bloom and depth of field on a slide whose figure carries traced numbers:
+    # bloom blows out an error bar, depth of field hides the region a number was read from. The gate needs to know
+    # WHICH slides those are, and guessing from the DOM is exactly the kind of inference B-05 exists to replace, so the
+    # answer is taken from provenance.json - the same file deck_check.js judges against.
+    # A claim of kind figure / source / published / computed is a measured value. `illustrative` is not: it is declared
+    # as not-a-measurement on the slide itself, so it does not close the gate.
+    # The tag is written on EVERY pack, empty list included: its presence is what tells the policy "I know the answer",
+    # and its absence is what tells an unpacked build folder "you do not".
+    MEASURED_KINDS = ('figure', 'source', 'published', 'computed')
+
+    def measured_record(self, html):
+        slides, source = [], 'provenance.json'
+        prov = self.html_path.parent / 'provenance.json'
+        if prov.is_file():
+            try:
+                j = json.loads(prov.read_text(encoding='utf-8').lstrip('﻿'))
+                claims = j if isinstance(j, list) else (j.get('claims') or [])
+                for c in claims:
+                    if not isinstance(c, dict):
+                        continue
+                    if str(c.get('kind', '')).strip().lower() not in self.MEASURED_KINDS:
+                        continue
+                    try:
+                        n = int(c.get('slide'))
+                    except (TypeError, ValueError):
+                        continue
+                    if n > 0 and n not in slides:
+                        slides.append(n)
+            except (OSError, ValueError):
+                self.problems.append('provenance.json could not be read, so the post-processing honesty gate cannot be built. Fix the JSON, or remove the file.')
+                return html
+        else:
+            source = 'no provenance.json: every number on this deck traces to the user\'s own files'
+        tag = ('<script id="lumi-measured" type="application/json">'
+               + json.dumps({'slides': sorted(slides), 'source': source}, separators=(',', ':'))
+               + '</script>\n')
+        html = re.sub(r'<script\b[^>]*\bid\s*=\s*["\']lumi-measured["\'][^>]*>.*?</script>\s*', '', html, flags=re.S | re.I)
+        m = re.search(r'</head\s*>', html, re.I)
+        return html[:m.start()] + tag + html[m.start():] if m else tag + html
+
     # ---------- HTML ----------
     def pack(self):
         html = self.html_path.read_text(encoding='utf-8')
+        self.baked = []
         html = self.blender_fill(html)
+        html = self.baked_scripts(html)
+        html = self.measured_record(html)
         html = self.strip_dead_examples(html)
         uses_three = self.needs_three(html)
         # import maps are rebuilt below
@@ -321,8 +412,23 @@ class Packer:
         imports['three'] = 'data:text/javascript;base64,' + b64(mod_src)
         return self.insert_importmap(html, imports)
 
+    def addons(self, imports):
+        """GLTFLoader for the baked-slide player, inlined like three itself. Its two relative imports cannot be reached
+        from a data URL, so they become bare names the import map resolves too."""
+        b64 = lambda s: base64.b64encode(s.encode('utf-8')).decode('ascii')
+        jsm = THREE_DIR.parent / 'examples' / 'jsm'
+        for rel in ('loaders/GLTFLoader.js', 'utils/BufferGeometryUtils.js', 'utils/SkeletonUtils.js'):
+            p = jsm / rel
+            if not p.is_file():
+                raise PackError('three.js\'s GLTFLoader is missing from .aura/engine. Run "Update Lumi".')
+            src = re.sub(r'([\'"])\.\./(utils/[A-Za-z]+\.js)\1', r'\1three/addons/\2\1', p.read_text(encoding='utf-8'))
+            imports['three/addons/' + rel] = 'data:text/javascript;base64,' + b64(src)
+        return imports
+
     def insert_importmap(self, html, imports):
         import json
+        if getattr(self, 'baked', None):
+            imports = self.addons(imports)
         tag = '<script type="importmap">' + json.dumps({'imports': imports}) + '</script>\n'
         m = re.search(r'<script\b', html, re.I)
         return html[:m.start()] + tag + html[m.start():] if m else html.replace('</head>', tag + '</head>', 1)

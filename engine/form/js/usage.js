@@ -27,7 +27,7 @@ export function initUsage(el) {
     asof.textContent = cap && !isNaN(cap) ? `as of ${tfmt(cap)}` : '';
     bar.style.transform = `scaleX(${Math.max(0.03, Math.min(1, (pct || 0) / 100))})`;
     el.dataset.level = rejected ? 'red' : pct != null && pct > 80 ? 'amber' : 'ok';
-    el.title = 'how much of your claude plan’s current window is used. it updates while claude works.';
+    el.title = 'how much of your claude plan is used right now';
   }
   async function refresh() {
     if (busy) return;

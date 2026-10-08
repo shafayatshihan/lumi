@@ -152,6 +152,126 @@
       "safeZonePx": 96,
       "bodyMinIsError": true,
       "bodyMinExemptNote": "24 px is allowed only for the footer mark, the page number, captions / source lines, the \"6x\" part counts and the chart's step labels and event badge. Everything else is at least 32 px."
+    },
+    "pink-punch": {
+      "name": "Pink Punch",
+      "source": "Built from the Gumroad brand DNA (workspace/.claude/skills/aura-slide/brands/gumroad/brand-style.md, Firecrawl 2026-10-01) and the screen-print language: body 36 px, kicker 36 px, stat 48/64 px, headline 84 px, title 112 px, closing word 160 px; footer mark, page number, captions, count tags ('6x') and chart step labels 28 px. Two typefaces (Anton display, Work Sans text). Type scale 28/36/48/64/84/112/160. Measured at 1920x1080 on a ten-slide render, 2026-10-07.",
+      "minFontPx": 28,
+      "svgTolerancePx": 0.3,
+      "bodyMinPx": 36,
+      "bodyMinExempt": ".pp-foot, .pp-mark, .pp-pageno, .cap, .source, figcaption, .pp-count, .pp-cap, .pp-steplbl, .pp-cyc .step, .pp-rail .tr b, .pp-meta .lb, .pp-people .lb",
+      "typeScale": [
+        28,
+        36,
+        48,
+        64,
+        84,
+        112,
+        160
+      ],
+      "wordBudget": {
+        "title": 30,
+        "section": 8,
+        "content": 30,
+        "quote": 22,
+        "closing": 22,
+        "references": 140,
+        "document": 65
+      },
+      "whitespace": {
+        "title": 0.5,
+        "section": 0.7,
+        "quote": 0.7,
+        "closing": 0.6,
+        "content": 0.4,
+        "references": 0.3
+      },
+      "maxTypefaces": 2,
+      "maxSizesPerSlide": 5,
+      "maxSizesPerDeck": 7,
+      "safeZonePx": 96,
+      "bodyMinIsError": true,
+      "bodyMinExemptNote": "28 px is allowed only for the footer mark, the page number, captions / source lines, the \"6x\" count tags, the process card's step line, the step rail digits, the .lb labels and the chart's step labels, bar names and event badge. Everything else is at least 36 px."
+    },
+    "happy-headspace": {
+      "name": "Happy Headspace",
+      "source": "Built from the Headspace brand DNA (workspace/.claude/skills/aura-slide/brands/headspace/brand-style.md, Firecrawl 2026-10-01) and the soft-volume language: body 36 px, stat 48/64 px, headline 88 px, title 116 px, closing word 168 px; kicker, footer mark, page number, captions, count tags and chart step labels 28 px in Reno Mono. Three typefaces (Quicksand display, DM Sans text, Reno Mono labels). Type scale 28/36/48/64/88/116/168. Measured at 1920x1080 on a ten-slide render, 2026-10-07.",
+      "minFontPx": 28,
+      "svgTolerancePx": 0.3,
+      "bodyMinPx": 36,
+      "bodyMinExempt": ".hs-foot, .hs-mark, .hs-pageno, .kicker, .cap, .source, figcaption, .hs-count, .hs-cap, .hs-steplbl, .hs-cyc .step, .hs-rail .tr b, .hs-meta .lb, .hs-people .lb",
+      "typeScale": [
+        28,
+        36,
+        48,
+        64,
+        88,
+        116,
+        168
+      ],
+      "wordBudget": {
+        "title": 34,
+        "section": 10,
+        "content": 32,
+        "quote": 26,
+        "closing": 22,
+        "references": 140,
+        "document": 70
+      },
+      "whitespace": {
+        "title": 0.6,
+        "section": 0.72,
+        "quote": 0.72,
+        "closing": 0.65,
+        "content": 0.5,
+        "references": 0.3
+      },
+      "maxTypefaces": 3,
+      "maxSizesPerSlide": 5,
+      "maxSizesPerDeck": 7,
+      "safeZonePx": 96,
+      "bodyMinIsError": true,
+      "bodyMinExemptNote": "28 px is allowed only for the kicker (which is mono small caps in this look), the footer mark, the page number, captions / source lines, the count tags, the process card's step line, the step rail digits, the .lb labels and the chart's step labels and moment pill. Everything else is at least 36 px."
+    },
+    "clay-pop": {
+      "name": "Clay Pop",
+      "source": "Built from the owner's claymation / vinyl-toy reference (workspace/.claude/skills/aura-slide/brands/clay-pop/brand-style.md, measured 2026-10-07): body 30 px, sub-lines, step and goal names 40 px, medium stats and the process card's step name 56 px, headline and big stats 80 px, title 120 px, closing word 168 px; kicker, footer mark, page number, captions, source lines, label-tag descriptions, chart ticks and axis titles 24 px DM Mono. Two typefaces (Plus Jakarta Sans, DM Mono). Type scale 24/30/40/56/80/120/168.",
+      "minFontPx": 24,
+      "svgTolerancePx": 0.3,
+      "bodyMinPx": 30,
+      "bodyMinExempt": ".cp-foot, .cp-mark, .cp-pageno, .kicker, .cap, .source, figcaption, .cp-tag span, .cp-tick, .cp-cap, .cp-cyc .step, .cp-rail .tr b, .cp-meta .lb, .cp-people .lb",
+      "typeScale": [
+        24,
+        30,
+        40,
+        56,
+        80,
+        120,
+        168
+      ],
+      "wordBudget": {
+        "title": 32,
+        "section": 10,
+        "content": 40,
+        "quote": 24,
+        "closing": 30,
+        "references": 140,
+        "document": 80
+      },
+      "whitespace": {
+        "title": 0.45,
+        "section": 0.65,
+        "quote": 0.65,
+        "closing": 0.6,
+        "content": 0.4,
+        "references": 0.3
+      },
+      "maxTypefaces": 2,
+      "maxSizesPerSlide": 5,
+      "maxSizesPerDeck": 7,
+      "safeZonePx": 96,
+      "bodyMinIsError": true,
+      "bodyMinExemptNote": "24 px (DM Mono) is allowed only for the kicker, the footer mark, the page number, captions / source lines, the description line of a label tag, chart ticks and axis titles, the process card's step counter and rail beads, and the small uppercase labels on the title and closing slides. Everything else is at least 30 px."
     }
   },
   "blender": {

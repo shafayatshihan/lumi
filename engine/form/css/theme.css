@@ -294,6 +294,12 @@ button.hm-upd:hover{color:var(--ink)}
 .pl-score{font-family:var(--head);font-weight:900;font-size:26px;color:var(--accent);min-width:22px;text-align:center}
 .pl-play.is-big .pl-score{font-size:46px}
 .pl-best{font-size:14px;color:var(--faint)}
+.pl-score.is-pop{animation:plyPop .3s var(--ease-io)}
+.pl-score.is-mile{animation:plyMile .9s var(--ease-io)}
+@keyframes plyPop{40%{transform:scale(1.18)}}
+@keyframes plyMile{25%{transform:scale(1.55) rotate(-4deg)}55%{transform:scale(.94)}80%{transform:scale(1.06)}}
+.pl-arena.is-night .pl-score{color:#fff}
+.pl-arena.is-night .pl-best,.pl-arena.is-night .pl-hint{color:rgba(255,255,255,.8)}
 .pl-hint{position:absolute;left:0;right:0;bottom:11px;text-align:center;font-size:16px;color:var(--mute);pointer-events:none;transition:opacity .25s}
 .pl-hint.is-off{opacity:0}
 .pl-pause{position:absolute;left:10px;top:8px;height:26px;padding:0 14px;border-radius:100px;background:rgba(255,255,255,.72);font-size:14px;color:var(--mute);transition:background .2s}
@@ -311,7 +317,7 @@ button.hm-upd:hover{color:var(--ink)}
 .pl-step-s{margin-top:5px;font-size:16px;line-height:1.3;color:var(--mute);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 .pl-show{flex:none;height:40px;padding:0 20px;border-radius:100px;background:var(--btn-soft);box-shadow:var(--sh-soft);font-size:15px;white-space:nowrap}
 .pl-show[hidden]{display:none}
-@media (prefers-reduced-motion:reduce){.pl-step-i i{animation:none}.ws-pop{animation:none}}
+@media (prefers-reduced-motion:reduce){.pl-step-i i{animation:none}.ws-pop{animation:none}.pl-score.is-pop,.pl-score.is-mile{animation:none}}
 #build.has-ask .ed-chat.is-quiet::before{content:'answer claude’s questions first'}
 .qx-nothumb{display:grid;place-items:center;width:100%;aspect-ratio:16/9;border-radius:10px;border:2px dashed var(--lav-deep);font-size:14px;color:var(--faint);text-align:center;padding:0 10px}
 .pl-badge-nav{align-self:flex-start;margin:-2px 0 2px}

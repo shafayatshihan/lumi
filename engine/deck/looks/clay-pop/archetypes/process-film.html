@@ -1,0 +1,70 @@
+<!-- archetype: process-film | one clay model through N states, each part LANDING in turn; a cycling card and a bead rail | main visual: 3D (live: it drives the card) | companions: the cycling card + the rail only -->
+<section class="slide" data-kind="content" data-minutes="2" data-title="How it works">
+  <div class="safe">
+    <div class="cp-main stack">
+      <div class="cp-head">
+        <p class="kicker" data-edit="s{{N}}-1">03 · How it works</p>
+        <h2 class="headline wide" data-edit="s{{N}}-2">Three moves, <span class="em">in order</span></h2>
+      </div>
+      <div class="cp-stage">
+        <div class="aura-3d cp-3d" data-scene="s{{N}}-scene" data-period="18" aria-hidden="true"></div>
+        <div class="cp-cyc" id="s{{N}}-card">
+          <span class="step">Step <b id="s{{N}}-no">1</b> of 3</span>
+          <span class="name" id="s{{N}}-name" data-edit="s{{N}}-3">Set the base</span>
+          <p class="desc" id="s{{N}}-desc" data-edit="s{{N}}-4">One short line saying what happens in this step.</p>
+        </div>
+        <div class="cp-rail">
+          <div class="tr"><b class="on">1</b><b>2</b><b>3</b></div>
+        </div>
+      </div>
+    </div>
+    <footer class="cp-foot" data-nonclaim><span class="cp-mark" data-edit="s{{N}}-5">Deck mark</span><span class="cp-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Let one step land before you talk.</strong> The card names the step; say its one consequence, not its
+    description. The model already shows what moves.</p>
+    <p><strong>Count out loud.</strong> "One. Two. Three." tracks the bead rail for people at the back of the room,
+    and it keeps you on the loop rather than ahead of it.</p>
+    <p><strong>Name what is schematic.</strong> The timing on screen is the slide's rhythm, not the real duration -
+    say the real one. If asked what happens between two steps, answer from the method, never from the animation.</p>
+  </aside>
+</section>
+<script>
+/* Clay's film: each step is still, then ONE part drops in and squashes as it lands (CP3D.land). Replace the parts with
+   the subject's own and the three card texts with the real steps. Live three.js on purpose: it drives the card. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const P = ctx.period, STEPS = [
+    { name: 'Set the base', desc: 'The base goes down first and sets every other position.' },
+    { name: 'Drop the core', desc: 'The working part lands in the seat and finds its axis.' },
+    { name: 'Close it', desc: 'The cap locks the stack and the assembly is one object.' },
+  ];
+  const S = CP3D.studio(ctx, { target: [0.6, 1.0, 0], distance: 10, azimuth: -28, elevation: 20, shift: 0.12 });
+  const base = S.add(CP3D.block(THREE, 3.2, 0.5, 2.2, { color: 'white' }));  base.position.y = 0.25;
+  const core = S.add(CP3D.puck(THREE, 0.8, 0.9, { color: 'clay' }));
+  const cap  = S.add(CP3D.block(THREE, 2.4, 0.4, 1.8, { color: 'grey' }));
+  S.contact(base, 2.0);
+  const H = 2.4;                                         // the drop height
+  const nameEl = document.getElementById('s{{N}}-name'), descEl = document.getElementById('s{{N}}-desc');
+  const noEl = document.getElementById('s{{N}}-no');
+  const dots = ctx.el.closest('.cp-stage').querySelectorAll('.cp-rail .tr b');
+  const placeAt = (obj, rest, k) => { const l = CP3D.land(k); obj.position.y = rest + H * l.y; obj.scale.set(l.sx, l.sy, l.sx); obj.visible = k > 0; };
+  let shown = -1;
+  return S.api({ update(t) {
+    S.sway(t, { deg: 3 });
+    const s = CP3D.steps(t, P, 3, 0.35);                 // i = the step on screen, k = 0..1 across the move into the next
+    placeAt(core, 0.95, s.i >= 1 ? 1 : s.i === 0 ? s.k : 0);
+    placeAt(cap, 1.6, s.i >= 2 ? 1 : s.i === 1 ? s.k : 0);
+    if (s.i === 2 && s.k > 0) {                          // the last move: the stack squishes away and the loop restarts
+      const q = 1 - CP3D.easeStep(s.k);
+      [core, cap].forEach(o => { o.scale.multiplyScalar(q); o.visible = q > 0.01; });
+    }
+    if (s.i !== shown) {
+      shown = s.i;
+      noEl.textContent = String(s.i + 1);
+      nameEl.textContent = STEPS[s.i].name; descEl.textContent = STEPS[s.i].desc;
+      dots.forEach((d, n) => d.classList.toggle('on', n === s.i));
+    }
+  } });
+}, { period: 18 });
+</script>

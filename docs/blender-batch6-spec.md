@@ -40,14 +40,13 @@ ffmpeg — scenes are pure functions of `t`, which is why loops close seamlessly
 ## Part A — prerequisites — **DONE 2026-10-05 (uncommitted)**
 
 Built in one pass together with the first real Blender install on this machine. What the measurements changed is
-recorded under each item; the rest of this part is as specified. Files: `engine/deck/looks/bold-blue/blender/
-lumi_bpy.py`, the new `engine/deck/looks/bold-blue/blender/lumi_mech.py`, `BLENDER.md` sections 1/4/6/7/8, the
+recorded under each item; the rest of this part is as specified. Files: `engine/deck/blender/lumi_bpy.py`, the new `engine/deck/blender/lumi_mech.py`, `BLENDER.md` sections 1/4/6/7/8, the
 `LOOK.md` 4.11 line, the new `tools/form-dev/blender_parta_probe.py`, and `parta_suite` + `caps_suite` in
 `tools/form-dev/test_blender.py`.
 
 ### Item 1 — cavity dirt and edge wear in the materials (PREREQUISITE) — **DONE, with one design change**
 
-**Today.** `engine/deck/looks/bold-blue/blender/lumi_bpy.py`: `_noise_to()` (~line 252) drives Roughness from noise,
+**Today.** `engine/deck/blender/lumi_bpy.py`: `_noise_to()` (~line 252) drives Roughness from noise,
 `_bump()` (~270) adds a cast bump, `PRESETS` (~283) gives each kind one recipe. Nothing varies a material by its
 **geometry**, so every crevice is as bright as every face.
 
@@ -142,7 +141,7 @@ question** rather than inventing a plausible one. Also: name every moving part a
 
 ### Item 4 — a mechanical parts library — **DONE**
 
-`engine/deck/looks/bold-blue/blender/lumi_mech.py`, imported the same self-locating way as `lumi_bpy`:
+`engine/deck/blender/lumi_mech.py`, imported the same self-locating way as `lumi_bpy`:
 `gear(teeth, module, width, helix=0)` with a true involute profile; `bevel_gear(...)`; `spring(coils, wire_d,
 free_length)`; `bolt(size, length)` / `nut(size)`; `blade_ring(count, profile, curve, radius)`; `shaft(spline_teeth)`;
 `bearing(bore, od, balls)`; `oring(bore, section)`. Each returns a named object with its origin at the real pivot,
@@ -195,6 +194,53 @@ anyone treats these as the answer: this scene has **two** objects and bake time 
 object gets its own atlas and its own bake call), and AO at 64 spp is the larger half of the 1024 px bake, so B.8's
 per-slide 2048 px escalation is the expensive one, not the default.
 
+### B.1a The real pipeline, measured on a real slide (2026-10-07, `engine/deck/blender/lumi_bake.py`)
+
+The probe above is a two-object test scene. The pipeline now exists and was run on a **real deck slide**: the gear
+reducer `df41e681539e` slide 2 (`blender/s2/scene.py`) - an 11T pinion on a 41T wheel, two shafts, four 6205
+bearings with nine balls each, 48 objects over 4 materials, a 100-frame 5 s loop. Same reference laptop, same
+bundled Blender 5.2.2, OptiX, the cavity node on, smart-UV at 55 degrees, one atlas per **material group**.
+
+| | draft 256 px | final 1024 px |
+|---|---|---|
+| one atlas per object, 16 bake calls | 160.4 s | 406.9 s |
+| 4 bake calls instead of 16 | 168.5 s | — |
+| **statics joined first (12 objects), 4 calls — SHIPPED** | **50.1 s** | **103-111 s** |
+
+**The cost model in the spec is wrong, and the correction is the whole optimisation.** Bake time is not paid per
+texel and not per bake call - 16x the texels cost 2.5x the time, and cutting the calls from 16 to 4 changed nothing
+at all. It is paid **per object per map**, about 0.85 s each at 256 px. Nine identical bearing balls on one static
+empty cost nine times that for one picture of a ball. `lumi_bake._join_static()` merges the meshes that share a
+material, share a parent and carry no animation of their own - 48 objects become 12 - and that single change is
+3.2x. Atlas size is the cheap dimension here, not the expensive one.
+
+**Against the real baseline.** The same slide's Cycles record in `timing/timing.json`: **5873.7 s for 100 frames**,
+58.7 s a frame. Baked: ~110 s plus the three.js capture of 100 frames (~15 s at the rates `finalize.js` already
+records). **About 47x**, measured end to end on real work rather than on a test scene - and B.3's free re-time is on
+top of it.
+
+**Three bugs found building it, each of which silently produced a wrong picture rather than an error.** They are
+written into the code comments at the lines that fix them, and anyone re-implementing this will hit all three:
+1. **Base colour cannot use the DIFFUSE pass.** Blender's diffuse colour is `base x (1 - metallic)`, which is
+   exactly **zero** for steel or chrome; glTF's baseColorFactor for a metal is its reflectance tint. Every base
+   atlas baked solid black until it went through an EMIT rewire instead.
+2. **AO bakes solid black** unless the studio is hidden for that pass and the reach is finite. `L.studio()` puts a
+   30x-subject floor and a cove around the part; an AO bake at the default unlimited distance sees them in nearly
+   every direction and calls the whole subject occluded.
+3. **Finding the material output by taking the first `OUTPUT_MATERIAL` node finds the wrong one** - a Lumi material
+   carries more than one - so the EMIT rewire could not be undone, and every pass after the first baked an Emission
+   shader. Roughness and metallic both came back as 1.0 and the first render was a black silhouette.
+
+And one on the three.js side: **a metal with no environment map is black**, because it has no diffuse to light and
+nothing to reflect. `bake-player.js` builds one from the same ramp stops as `lumi_bpy.studio()`'s world. The first
+attempt made it 8 x 128 - structurally a vertical gradient, but PMREM reads an equirectangular panorama, so it
+packed an 8-pixel cube and everything stayed black. It is 256 x 128 now.
+
+**Verified by looking at it**, as the rules require: the baked GLB loads in three.js and renders the reducer with
+ground-steel gears, chrome races and blued shafts (`X:\aura-dev-partc\bake-t1.25.png`); 3.58 % of pixels change
+between t = 0 and t = 1.25; and **t = 0 and t = period differ by zero pixels**, which is the seamless loop the
+capture contract needs.
+
 **Why not a flat unbaked GLB for the draft:** glTF carries texture maps and PBR scalars, not Blender node trees. Every
 procedural material in `lumi_bpy` — including item 1's AO and bevel nodes — exists only as a node graph and vanishes
 on export. An unbaked GLB previews a different slide.
@@ -230,6 +276,42 @@ This is the real prize. The headline 13x is nice; "a change request costs nothin
 texture it glues to the surface and rotates with the part. Reimplement it as a **screen-space shader pass in three.js**
 applied per captured frame: a 45-degree line pattern masked to section faces. If it fights, cutaway slides stay on
 Cycles. Do **not** bake the hatch — a rotating hatch reads as a texture, not a section.
+
+**DECIDED 2026-10-07 (Package A): a per-material injection in three.js. Not a post pass, and cutaways do not go
+back to Cycles.** Read `lumi_bpy.section()` (line 537) before arguing with this — the answer is in what the node
+graph actually does.
+
+*Why it is tractable.* The hatch carries **no lighting**. `section()` sets the fill flat and matte (rough 0.9,
+metal 0) and then does one thing on top: `ShaderNodeTexCoord.Window` -> `u = (x * ±16/9 + y) * spacing` ->
+`fract(u) < width` -> mix two constant colours into Base Color. Window coordinates are normalised screen position,
+which is exactly `gl_FragCoord.xy / resolution`. So the material splits cleanly in two: the **fill bakes** like
+every other surface, and the **stripe is a four-line screen-space function** reproduced in GLSL with no inputs the
+bake could have destroyed. That is the whole reason this works; it would not if the hatch were lit.
+
+*Where it goes.* `material.onBeforeCompile`, injected into the diffuse term of the section material only. The
+section faces need no mask buffer: `cutaway()` already assigns them their own material, so they arrive in the glTF
+as their own material and the injection is scoped by construction.
+
+*Why not a full-screen post pass.* It needs a section mask the renderer does not have — an extra MRT or a second
+depth-only pass, more machinery and more VRAM on a 2 GB MX350 — and it must composite **before** bloom and DOF or
+the drafting hatch blooms. Material injection lands at the right point in the pipeline for free.
+
+*Why not route cutaways to Cycles.* That exempts the most common animated mechanical slide from the entire batch.
+Section decision 4 says to prefer a cutaway over a transparent vessel wherever the slide allows, so cutaways are
+the house style for mechanical explanation, not a rare case. At 89-130 s **per frame**, a 10-second cutaway loop is
+5-7 hours. If anything is worth baking it is this one.
+
+*Two things to get right, both improvements on the Cycles version.*
+- **Spacing is "lines across the frame width", and the captured region is the holder rect, not the window.** Scale
+  the GLSL `spacing` by `slideWidth / rect.w` (B.1 keeps the rect; `finalize.js` already reads it) or the hatch
+  comes out finer than the still it is matched against. This is the one number to check against a Cycles render.
+- **Use `fwidth` and `smoothstep`, not a hard step.** The Blender graph uses `LESS_THAN`, a hard edge that 128 spp
+  of Cycles AA happens to soften. A hard step in a fragment shader crawls badly on a rotating face. A
+  screen-space-derivative-width edge is deterministic under `seek(t)` (it depends on position, never on a clock)
+  and is cleaner than what Cycles produces.
+
+Not built — this is the decision Part B's first commit depends on, recorded before any bake code exists, as the
+handoff asked.
 
 ### B.5 What gets deleted, and what survives
 
@@ -270,7 +352,13 @@ New decks only. Pin fps and engine per deck at creation so an existing deck — 
 
 ---
 
-## Part C — the risk that could sink this
+## Part C — the risk that could sink this — **PRECONDITIONS DONE 2026-10-07 (uncommitted)**
+
+All three preconditions are met; what each one became is recorded under it, and one claim in this part turned out
+to be wrong — see **What the measurement changed** at the end. Files: `engine/deck/runtime.js` (capture contract
+section 5, `healthOf()`, `LumiCapture.health()`, `data-aura-still-3d`), `engine/tools/finalize.js` (the health gate,
+the software-GL retry, the loud stop), `engine/tools/lib/deckpage.js` (`SOFT_GL_ARGS`, `launch({args})`), and the
+new `tools/form-dev/test_blender_softgl.py` (15 checks, all passing).
 
 **Browser capture has already failed once, in production, and its failure is now silent.**
 
@@ -289,9 +377,45 @@ rule that errors must never reach clients raw.
 
 **Preconditions before any of Part B ships:**
 1. Run and pass a real software-GL (swiftshader) finalize end to end. This is the test that was skipped.
+   **DONE.** SwiftShader confirmed active (`ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader
+   driver)`), a two-scene three.js deck finalized in **9.2 s** — 2 loops, 40 + 20 frames, 346 KB HTML, 126 KB PDF,
+   exit 0 — and a frame pulled back out of the embedded MP4 carries the lit mesh. Software GL is not the cliff it
+   was assumed to be: on this fixture it is within noise of the Intel Iris Xe (loop 1: 4.0 s capture software,
+   ~4 s hardware). A heavy scene will differ; the path works.
 2. Give the baked path a fallback — either Cycles automatically on a capture failure, or one Cycles poster frame per
    baked slide so something always exists.
+   **DONE at the browser level, which is the cheaper half.** `finalize.js` draws one frame of every loop slide and
+   asks `LumiCapture.health()` what drew *before* it records anything; if a slide's 3D did not draw it closes the
+   browser, relaunches on SwiftShader (`SOFT_GL_ARGS` in `deckpage.js`) and starts the deck again. A GPU-less or
+   driver-broken machine now produces a deck instead of a blank one. **Still open for Part B:** the Cycles poster
+   per baked slide, which is the fallback for a scene that no renderer can draw. The hook is there — the gate knows
+   exactly which slides are blank — and it belongs with the bake artifacts (B.6), not here.
 3. Make the capture failure loud again for baked slides. A `warn` is not enough when there is no second source.
+   **DONE.** With no second source finalize now **stops**: exit 1, no HTML, no PDF, nothing half-written, and one
+   plain sentence naming the slides ("the 3D pictures on slides 1 and 2 did not draw, even with Lumi's software
+   renderer. Nothing was written. Check those slides, then finalize again."). The technical cause goes to a
+   `{t:'detail',scope:'capture'}` stdout line, never into the sentence. The PDF still path keeps D-04's behaviour —
+   one slow slide must not lose every recorded loop — but now warns on the truth (`data-aura-still-3d`) instead of
+   on a timeout that never fires.
+
+### What the measurement changed
+
+**The mechanism described above is wrong, and it matters.** This part says fix D-04 made the still timeout stop
+throwing, so a dead scene "ships blank with a warning in a log". Measured on a deck with two real `Aura.scene()`
+holders and three.js made unreachable: the 180 s wait is **never reached**. `showStill()` set
+`data-aura-still-ready="1"` unconditionally, because `renderSlideAt()` does `if (!rec || rec.failed) continue` — a
+holder whose scene threw is skipped and the page then reports ready in milliseconds. The run came back **exit 0,
+`{"t":"done"}`, `stillWarnings: 0`, and not one `warn` line**, with both loops encoded blank (27 KB and 22 KB
+against 232 KB and 25 KB for the same deck working) and both PDF pages blank. So it was never "a `warn` is not
+enough" — **there was no warn**, and the loop path had no readiness check of any kind; only the still path had one,
+and that one was being lied to. Anyone who had trusted the `warn` would have shipped blank decks indefinitely.
+
+Also: **the b5 deck `df41e681539e` has no live three.js at all** — slides 1-2 are Blender holders, 3-4 are
+`.aura-canvas` 2D. A software-GL check run against it proves nothing about WebGL, which is probably why the first
+attempt was abandoned as "too slow to finish" and never replaced. `test_blender_softgl.py` carries its own fixture.
+That deck was still finalized end to end with the gate in place (4 slides, 2 loops, 0 warnings, 35.9 s, exit 0): a
+deck packed before this change has no `health()`, the gate sees `{}` and nothing is gated, so the check can only
+ever add a failure that was already there.
 
 ---
 

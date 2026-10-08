@@ -1,8 +1,8 @@
 /* Bold Blue 3D studio (classic script, no imports; uses the THREE that Aura.scene passes in). Subject-free building
    blocks for the look's photoreal "product shot" 3D: physically based materials, procedural canvas textures, shader
    injections, a soft key light with VSM shadows, a softbox environment for reflections, a shadow-only floor over the
-   slide canvas, self-contained post-processing (bloom + depth of field) with adaptive quality, and HTML labels that
-   follow 3D anchors. No three.js add-ons are needed, so a packed deck stays one offline file.
+   slide canvas, the shared post stack (engine/deck/lib/post.js, gated by engine/deck/lib/post-policy.js) with adaptive
+   quality, and HTML labels that follow 3D anchors. No three.js add-ons are needed, so a packed deck stays one offline file.
 
    Usage (load after runtime.js; see .claude/skills/aura-slide/looks/bold-blue/LOOK.md, "The 3D recipe"):
      <div class="aura-3d bb-3d" data-scene="hero" data-period="16">
@@ -305,114 +305,57 @@
     return target;
   }
 
-  /* ------------------------------------------------------------------ post-processing (no add-ons)
-     scene -> HDR target (MSAA + depth texture) -> bloom (bright pass, dual-filter mip chain) -> composite with a
-     depth-of-field gather, ACES tone mapping and sRGB output. Alpha is kept so the slide shows through. */
-  const VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
-  function makePost(THREE, renderer, scene, camera, o) {
-    const cfg = Object.assign({ bloom: true, threshold: 3.2, strength: 0.5, radius: 0.6, dof: false, focus: 10, aperture: 0.6, maxBlur: 9,
-      ao: true, aoRadius: 0.35, aoIntensity: 0.9 }, o === true ? {} : o);
-    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2)), qs = new THREE.Scene(), qc = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    qs.add(quad); quad.frustumCulled = false;
-    const rt = (w, h, msaa) => new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: msaa ? 4 : 0, depthBuffer: !!msaa });
-    let main = null, mips = [], ups = [], W = 0, H = 0;
-    const LEVELS = 5;
-    const sm = (frag, uniforms) => new THREE.ShaderMaterial({ vertexShader: VS, fragmentShader: frag, uniforms, depthTest: false, depthWrite: false, blending: THREE.NoBlending, toneMapped: false });
-    const brightM = sm(`uniform sampler2D tSrc; uniform float uTh; varying vec2 vUv;
-      void main(){ vec4 c = texture2D(tSrc, vUv); vec3 rgb = c.a > 1e-4 ? c.rgb / c.a : vec3(0.0); float l = max(rgb.r, max(rgb.g, rgb.b));
-        float k = max(l - uTh, 0.0) / max(l, 1e-4); gl_FragColor = vec4(rgb * k * c.a, 1.0); }`, { tSrc: { value: null }, uTh: { value: cfg.threshold } });
-    const downM = sm(`uniform sampler2D tSrc; uniform vec2 uPx; varying vec2 vUv;
-      void main(){ vec3 c = texture2D(tSrc, vUv).rgb * 4.0;
-        c += texture2D(tSrc, vUv + vec2(-uPx.x, -uPx.y)).rgb + texture2D(tSrc, vUv + vec2(uPx.x, -uPx.y)).rgb
-           + texture2D(tSrc, vUv + vec2(-uPx.x, uPx.y)).rgb + texture2D(tSrc, vUv + vec2(uPx.x, uPx.y)).rgb;
-        gl_FragColor = vec4(c / 8.0, 1.0); }`, { tSrc: { value: null }, uPx: { value: new THREE.Vector2() } });
-    const upM = sm(`uniform sampler2D tSrc; uniform sampler2D tAdd; uniform vec2 uPx; uniform float uR; varying vec2 vUv;
-      void main(){ vec3 c = vec3(0.0);
-        c += texture2D(tSrc, vUv + vec2(-2.0 * uPx.x, 0.0)).rgb + texture2D(tSrc, vUv + vec2(2.0 * uPx.x, 0.0)).rgb;
-        c += texture2D(tSrc, vUv + vec2(0.0, -2.0 * uPx.y)).rgb + texture2D(tSrc, vUv + vec2(0.0, 2.0 * uPx.y)).rgb;
-        c += (texture2D(tSrc, vUv + uPx).rgb + texture2D(tSrc, vUv - uPx).rgb + texture2D(tSrc, vUv + vec2(uPx.x, -uPx.y)).rgb + texture2D(tSrc, vUv + vec2(-uPx.x, uPx.y)).rgb) * 2.0;
-        gl_FragColor = vec4(texture2D(tAdd, vUv).rgb + c / 12.0 * uR, 1.0); }`, { tSrc: { value: null }, tAdd: { value: null }, uPx: { value: new THREE.Vector2() }, uR: { value: cfg.radius } });
-    const compM = new THREE.ShaderMaterial({ vertexShader: VS, depthTest: false, depthWrite: false, blending: THREE.NoBlending, toneMapped: true,
-      uniforms: { tScene: { value: null }, tDepth: { value: null }, tBloom: { value: null }, uBloom: { value: cfg.strength }, uUseBloom: { value: 1 },
-        uUseDof: { value: cfg.dof ? 1 : 0 }, uFocus: { value: cfg.focus }, uAperture: { value: cfg.aperture }, uMaxBlur: { value: cfg.maxBlur },
-        uNear: { value: camera.near }, uFar: { value: camera.far }, uPx: { value: new THREE.Vector2() },
-        uUseAO: { value: cfg.ao ? 1 : 0 }, uAOR: { value: cfg.aoRadius }, uAOK: { value: cfg.aoIntensity }, uProj: { value: 1000 } },
-      fragmentShader: `#include <packing>
-        uniform sampler2D tScene; uniform sampler2D tDepth; uniform sampler2D tBloom; uniform float uBloom, uUseBloom, uUseDof, uFocus, uAperture, uMaxBlur, uNear, uFar; uniform vec2 uPx; varying vec2 vUv;
-        uniform float uUseAO, uAOR, uAOK, uProj;
-        float vz(vec2 uv){ return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, uNear, uFar); }
-        float coc(vec2 uv){ return clamp(abs(vz(uv) - uFocus) * uAperture, 0.0, uMaxBlur); }
-        // crease ambient occlusion from depth alone: two opposite samples BOTH in front of the pixel mean a concave corner
-        // (object meets floor, part meets part); a flat or tilted plane never triggers it
-        float creaseAO(){
-          if (texture2D(tDepth, vUv).x >= 0.99999) return 0.0;
-          float z0 = vz(vUv), rpx = clamp(uAOR * uProj / max(z0, 0.1), 3.0, 72.0), occ = 0.0;
-          for (int i = 0; i < 12; i++) {
-            float fi = float(i), a = fi * 2.39996 + 0.7, rr = rpx * (0.25 + 0.75 * fract(fi * 0.618));
-            vec2 o = vec2(cos(a), sin(a)) * rr * uPx;
-            float d1 = z0 - vz(vUv + o), d2 = z0 - vz(vUv - o), m = min(d1, d2);
-            if (m > 0.0) occ += clamp(m / uAOR, 0.0, 1.0) * (1.0 - smoothstep(uAOR, 3.0 * uAOR, max(d1, d2)));
-          }
-          return clamp(occ / 12.0 * 2.0, 0.0, 1.0);
-        }
-        void main(){
-          vec4 c = texture2D(tScene, vUv);
-          if (uUseAO > 0.5) { float o = creaseAO() * uAOK; c.rgb *= 1.0 - o; c.a = c.a + o * 0.55 * (1.0 - c.a); }
-          if (uUseDof > 0.5) {
-            float r = coc(vUv);
-            if (r > 0.5) { vec4 acc = c; float n = 1.0;
-              for (int i = 0; i < 24; i++) { float fi = float(i); float a = fi * 2.39996; float rr = sqrt((fi + 0.5) / 24.0) * r;
-                vec2 uv = vUv + vec2(cos(a), sin(a)) * rr * uPx; float w = clamp(coc(uv) / max(r, 1e-3) + 0.25, 0.0, 1.0);
-                acc += texture2D(tScene, uv) * w; n += w; }
-              c = acc / n; }
-          }
-          vec3 rgb = c.a > 1e-4 ? c.rgb / c.a : vec3(0.0); float a = c.a;
-          if (uUseBloom > 0.5) { vec3 b = texture2D(tBloom, vUv).rgb * uBloom; float bl = clamp(max(b.r, max(b.g, b.b)), 0.0, 1.0);
-            float na = max(a, bl); rgb = (rgb * a + b) / max(na, 1e-4); a = na; }
-          gl_FragColor = vec4(rgb, a);
-          #include <tonemapping_fragment>
-          #include <colorspace_fragment>
-          gl_FragColor.rgb *= gl_FragColor.a;
-        }` });
-    const size = new THREE.Vector2();
-    function resize() {
-      renderer.getDrawingBufferSize(size);
-      const w = Math.max(2, size.x | 0), h = Math.max(2, size.y | 0);
-      if (w === W && h === H) return;
-      W = w; H = h;
-      [main, ...mips, ...ups].forEach(x => x && x.dispose());
-      main = rt(w, h, true);
-      main.depthTexture = new THREE.DepthTexture(w, h); main.depthTexture.type = THREE.UnsignedIntType;
-      mips = []; ups = [];
-      let mw = w >> 1, mh = h >> 1;
-      for (let i = 0; i < LEVELS; i++) { mips.push(rt(Math.max(2, mw), Math.max(2, mh))); ups.push(rt(Math.max(2, mw), Math.max(2, mh))); mw >>= 1; mh >>= 1; }
-      compM.uniforms.uPx.value.set(1 / w, 1 / h);
+  /* ------------------------------------------------------------------ post-processing
+     MOVED. The bloom / depth-of-field / crease-AO / FXAA chain that used to live here is now the one shared stack in
+     engine/deck/lib/post.js (LumiPost), and whether a slide gets it is engine/deck/lib/post-policy.js (LumiPostPolicy).
+     Bold Blue's default is unchanged: the `clinical` preset is pixel-for-pixel the configuration that shipped here.
+     A deck that wants more says so on the slide - <section class="slide" data-post="showpiece"> - or in the scene -
+     BB3D.studio(ctx, { post: 'cinematic' }).
+     A build folder made before v0.5.6 does not load those two files; such a deck renders without post and says so once
+     in the console rather than failing. Repack it, or add the two <script src> lines its <head> is missing. */
+  let warnedNoPost = false;
+  function makePost(ctx, THREE, renderer, scene, camera, scenePost, focusTarget, lightAt) {
+    if (!window.LumiPost || !window.LumiPostPolicy) {
+      if (!warnedNoPost) { warnedNoPost = true; console.warn('Bold Blue: engine/deck/lib/post.js and post-policy.js are not loaded, so 3D slides render without post-processing. Repack the deck (or re-create it with new_deck.js) to get them.'); }
+      return null;
     }
-    const pass = (m, target) => { quad.material = m; renderer.setRenderTarget(target); renderer.render(qs, qc); };
-    const state = { bloom: !!cfg.bloom, dof: !!cfg.dof, ao: !!cfg.ao };
-    function render() {
-      resize();
-      renderer.setRenderTarget(main); renderer.clear(); renderer.render(scene, camera);
-      if (state.bloom) {
-        brightM.uniforms.tSrc.value = main.texture; pass(brightM, mips[0]);
-        for (let i = 1; i < LEVELS; i++) { downM.uniforms.tSrc.value = mips[i - 1].texture; downM.uniforms.uPx.value.set(1 / mips[i - 1].width, 1 / mips[i - 1].height); pass(downM, mips[i]); }
-        let src = mips[LEVELS - 1];
-        for (let i = LEVELS - 2; i >= 0; i--) {
-          upM.uniforms.tSrc.value = src.texture; upM.uniforms.tAdd.value = mips[i].texture; upM.uniforms.uPx.value.set(0.5 / src.width, 0.5 / src.height);
-          pass(upM, ups[i]); src = ups[i];
-        }
-        compM.uniforms.tBloom.value = ups[0].texture;
-      }
-      compM.uniforms.tScene.value = main.texture; compM.uniforms.tDepth.value = main.depthTexture;
-      compM.uniforms.uUseBloom.value = state.bloom ? 1 : 0; compM.uniforms.uUseDof.value = state.dof ? 1 : 0;
-      compM.uniforms.uNear.value = camera.near; compM.uniforms.uFar.value = camera.far;
-      compM.uniforms.uUseAO.value = state.ao ? 1 : 0;
-      compM.uniforms.uProj.value = H / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
-      pass(compM, null);
-    }
-    function dispose() { [main, ...mips, ...ups].forEach(x => x && x.dispose()); [brightM, downM, upM, compM].forEach(m => m.dispose()); quad.geometry.dispose(); }
-    return { render, resize, dispose, state, uniforms: compM.uniforms, cfg };
+    const decision = window.LumiPostPolicy.resolve({ el: ctx.el, scenePost: scenePost });
+    // depth of field focuses on what the camera is looking at, not on a number guessed at authoring time: the orbit
+    // changes the camera's distance to the subject every frame, so a fixed focus plane drifts off it.
+    if (decision.enabled && decision.cfg.focusTarget == null) decision.cfg.focusTarget = focusTarget;
+    // light shafts stream from the key light, the one light every studio has
+    if (decision.enabled && decision.cfg.shaftFrom == null) decision.cfg.shaftFrom = lightAt;
+    const post = window.LumiPostPolicy.make(THREE, renderer, scene, camera, decision);
+    if (post) post.decision = decision; else if (ctx.el) ctx.el.dataset.postOff = decision.reason;
+    return post;
   }
+
+  /* ------------------------------------------------------------------ camera continuation (LOOK-BASE 4.8)
+     Slide N+1's camera starts where slide N's ended, so a deck reads as one space. DECLARED, NEVER INHERITED: the pose a
+     slide starts from is read from the previous slide's MARKUP (its holder's data-camera), not from a camera that
+     happened to render before - so seek(t) stays a pure function of t, a deck opened on slide 7 shows what the video
+     shows, and reordering slides keeps it right. Runtime hand-over (slide N writes its final camera, N+1 reads it) is
+     refused for the same reason post.js refuses AfterimagePass. "Where N ended" is N's declared rest pose. */
+  function declaredPose(el) {
+    const raw = el && el.dataset ? el.dataset.camera : null;
+    if (!raw) return null;
+    const n = v => typeof v === 'number' && isFinite(v);
+    try {
+      const p = JSON.parse(raw);
+      if (!n(p.azimuth) || !n(p.elevation) || !n(p.distance)) return null;
+      const out = { azimuth: p.azimuth, elevation: p.elevation, distance: p.distance };
+      if (Array.isArray(p.target) && p.target.length === 3 && p.target.every(n)) out.target = p.target;
+      if (n(p.fov)) out.fov = p.fov;
+      return out;
+    } catch (e) { return null; }
+  }
+  function previousPose(el) {
+    const slide = el.closest ? el.closest('.slide') : null;
+    let p = slide ? slide.previousElementSibling : null;
+    while (p && !p.classList.contains('slide')) p = p.previousElementSibling;
+    return p ? declaredPose(p.querySelector('.aura-3d[data-camera]')) : null;
+  }
+  const smooth = (a, b, x) => { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
 
   /* ------------------------------------------------------------------ the studio
      Two presets, both measured from the reference renders:
@@ -431,8 +374,15 @@
            subject, opaque, no fog, no dark sky; pair it with floor: 'none'), cyc: true (a clean cyclorama - only when nothing
            in the subject's own world is better),
            flicker { at, color, intensity, distance } (a warm practical light; S.flicker(t) animates it),
-           post true (default) | false | { bloom, threshold, strength, radius, ao, aoRadius, aoIntensity, dof, focus,
-           aperture, maxBlur }, adaptive (default true) */
+           post true (default: let the look's policy and the slide's position decide, which for Bold Blue is the
+           `clinical` preset on every slide - exactly what has always shipped) | false (never) | a preset name
+           ('clinical' | 'showpiece' | 'cinematic' | 'off') | { bloom, threshold, strength, radius, ao, aoRadius,
+           aoIntensity, dof, focus, aperture, maxBlur, fxaa }. A slide can override without touching the scene:
+           <section class="slide" data-post="showpiece">. See engine/deck/lib/post-policy.js for the precedence,
+           the hero rule and the honesty gate, adaptive (default true)
+     on the holder (camera continuation, LOOK-BASE 4.8): data-camera='{"azimuth":..,"elevation":..,"distance":..,
+           "target":[x,y,z],"fov":..}' is this slide's rest pose and WINS over the same opts; data-camera-from="prev"
+           starts the loop on the previous slide's declared rest pose (see continuation below) */
   function studio(ctx, o = {}) {
     const { THREE, renderer, width, height } = ctx;
     const cyc = !!o.cyc;
@@ -441,8 +391,11 @@
           hemi: 0.45, shadowRadius: 14, shadowSamples: 20, shift: -0.25, cycColor: 0xEFEAE8, background: 0xF1EEEA, cycRadius: 5, cycBack: -5.5, cycGlow: 0.2, horizon: 0.3 }
       : { fov: 30, exposure: 1, target: [0, 1, 0], distance: 12, azimuth: -22, elevation: 14, key: [-5, 11, 8], keyIntensity: 2.3, fill: 0,
           hemi: 0.55, shadowRadius: 12, shadowSamples: 16, shift: 0 };
+    const el0 = ctx.el && ctx.el.dataset ? ctx.el : null;
+    const own = declaredPose(el0);
+    if (el0 && el0.dataset.camera && !own) console.warn('Bold Blue: data-camera on scene "' + el0.dataset.scene + '" is not {"azimuth","elevation","distance"} JSON, so it is ignored.');
     const opt = Object.assign(base, { shadows: 'vsm', shadowBox: 12, floorY: 0, floorOpacity: 0.14, envIntensity: 1, flicker: null,
-      post: true, adaptive: true }, o);
+      post: true, adaptive: true }, o, own || {});
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = opt.exposure;
     renderer.shadowMap.enabled = true;
@@ -473,6 +426,16 @@
       camera.position.set(tg.x + dist * Math.sin(a) * Math.cos(e), tg.y + dist * Math.sin(e), tg.z + dist * Math.cos(a) * Math.cos(e));
       camera.lookAt(tg);
     };
+    // continuation: the previous slide's rest pose, captured once as a position + orientation (+ lens), then the camera
+    // goes back to this slide's own pose
+    let cont = null;
+    if (el0 && el0.dataset.cameraFrom) {
+      const from = el0.dataset.cameraFrom === 'prev' ? previousPose(el0) : null;
+      if (from) {
+        place(from.azimuth, from.elevation, from.distance, from.target);
+        cont = { pos: camera.position.clone(), quat: camera.quaternion.clone(), fov: from.fov };
+      } else console.warn('Bold Blue: data-camera-from="' + el0.dataset.cameraFrom + '" on scene "' + el0.dataset.scene + '" found no data-camera on the previous slide, so this slide starts on its own pose.');
+    }
     place(opt.azimuth, opt.elevation, opt.distance);
 
     // key light (warm, upper left, soft VSM shadow) + optional cool fill from the right + hemisphere
@@ -522,7 +485,9 @@
     }
     scene.add(floor);
 
-    const post = opt.post ? makePost(THREE, renderer, scene, camera, opt.post) : null;
+    // `post` defaults to true, which the policy expands to the look's tier preset (Bold Blue: `clinical`, the
+    // configuration that has always shipped). `post: false`, `post: 'cinematic'` or a config object still win outright.
+    const post = makePost(ctx, THREE, renderer, scene, camera, opt.post === true ? undefined : opt.post, target, key.position);
     const extra = [], labelSets = [];
     // adaptive quality: only during the live talk; capture and still frames always render at full quality
     const adaptive = opt.adaptive && !ctx.capture && !ctx.still;
@@ -536,9 +501,7 @@
       const avg = acc / frames; frames = 0; acc = 0;
       if (avg < 24 || level >= 4) return;
       level++;
-      if (post && post.state.ao) post.state.ao = false;
-      else if (post && post.state.dof) post.state.dof = false;
-      else if (post && post.state.bloom) post.state.bloom = false;
+      if (post && post.degrade()) { /* LumiPost drops shafts, then dof, then ao, then bloom, then fxaa */ }
       else if (key.shadow.mapSize.x > 1024) { key.shadow.mapSize.set(1024, 1024); if (key.shadow.map) { key.shadow.map.dispose(); key.shadow.map = null; } }
       else { renderer.setPixelRatio(Math.max(0.5, renderer.getPixelRatio() * 0.75)); const s = new THREE.Vector2(); renderer.getSize(s); renderer.setSize(s.x, s.y, false); }
     }
@@ -571,8 +534,25 @@
       track(x) { extra.push(x); return x; },     // textures / targets made by hand, freed on dispose
       labels(set) { labelSets.push(set); return set; },
       api(o2 = {}) {
+        /* continuation over one loop: ease in from the previous slide's pose over the first 20 % of the period, hold
+           this slide's own camera (orbit and all) for 60 %, ease back over the last 20 %, so seek(0) == seek(period)
+           and the loop seam IS the previous slide's pose. The still frame (0.35 P) sits in the hold. The camera is
+           reset to its setup pose before every update, so a scene that never moves it cannot accumulate the blend. */
+        const basePos = camera.position.clone(), baseQuat = camera.quaternion.clone(), baseFov = camera.fov, q = new THREE.Quaternion();
+        const blend = t => {
+          const P = ctx.period || 0, u = P ? (((t % P) + P) % P) / P : 0.5, e = smooth(0, 0.2, u) * (1 - smooth(0.8, 1, u));
+          camera.position.lerpVectors(cont.pos, camera.position, e);
+          // slerpQuaternions copies its FIRST argument into `this` before reading the second, so the camera's own
+          // orientation must be copied out first or the result is always the previous slide's orientation
+          camera.quaternion.slerpQuaternions(cont.quat, q.copy(camera.quaternion), e);
+          if (cont.fov) { camera.fov = cont.fov + (baseFov - cont.fov) * e; camera.updateProjectionMatrix(); }
+        };
         return Object.assign({ scene, camera }, o2, {
-          update(t, dt) { if (o2.update) o2.update(t, dt); camera.updateMatrixWorld(); labelSets.forEach(l => { l.time(t); l.update(); }); },
+          update(t, dt) {
+            if (cont) { camera.position.copy(basePos); camera.quaternion.copy(baseQuat); }
+            if (o2.update) o2.update(t, dt);
+            if (cont) blend(t);
+            camera.updateMatrixWorld(); labelSets.forEach(l => { l.time(t); l.update(); }); },
           render(t, dt) { measure(); if (post) post.render(); else { renderer.setRenderTarget(null); renderer.render(scene, camera); } if (o2.render) o2.render(t, dt); },
           resize(w, h) { frame(w, h); camera.updateProjectionMatrix(); if (post) post.resize(); labelSets.forEach(l => l.update()); if (o2.resize) o2.resize(w, h); },
           dispose() { try { o2.dispose && o2.dispose(); } catch (e) { /* ignore */ } envRT.dispose(); if (post) post.dispose(); extra.forEach(x => x.dispose && x.dispose()); },
@@ -752,7 +732,7 @@
     return new THREE.Color(c0[0] + (c1[0] - c0[0]) * f, c0[1] + (c1[1] - c0[1]) * f, c0[2] + (c1[2] - c0[2]) * f);
   }
 
-  window.BB3D = { version: '2.0', C, rng, hash, noise3, textures, mat, materials, inject, shaders, studioEnvironment, studio, labels,
+  window.BB3D = { version: '2.1', C, rng, hash, noise3, textures, mat, materials, inject, shaders, studioEnvironment, studio, labels,
     curve, tube, path2d, roundedBox, helix, coil, lathe, blob, instanced, contactShadow, glowSprite, along, incandescent,
     bolt, ridged, wrapLabel, chamferCylinder };
 })();

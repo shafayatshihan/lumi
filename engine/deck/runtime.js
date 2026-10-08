@@ -42,6 +42,16 @@
    4. Still frames. ?still=<n> shows slide n alone, frozen at t = period x 0.35 (data-still on a holder overrides; a
       loop video is sought to the same time), no chrome, no entrance motion, and sets <html data-aura-still-ready="1">
       when the frame is drawn. ?aura=all (PDF / check) uses the same still time for every piece.
+   5. Did it draw? (batch 6 Part C.) "Ready" has never meant "the 3D is there": a scene that throws is skipped, the
+      holder keeps a soft gradient (.aura-3d[data-fallback]::after) and the page reports ready at once, so a blank
+      slide shipped silently. Beside the ready flag the still path now sets <html data-aura-still-3d="ok|failed">
+      and, when it failed, data-aura-still-failed="<scene ids>". In capture mode
+        window.LumiCapture.health() -> { <n>: { holders, drawn, failed: [{ scene, reason }] } }
+      reports the same thing per slide (and slides[n].health for one slide), after any seek. A holder counts as drawn
+      when it has a canvas with at least one non-transparent pixel (sampled at 64x36), a decoded still <img>, or a
+      recorded loop video. finalize.js checks this
+      before it records anything, retries the whole deck under a software GL, and fails loudly if it still cannot
+      draw - a baked slide has no second source, so a blank one must never reach a client.
    ==================================================================================================================
 
    Load it in <head>; slides are <section class="slide"> inside <main class="deck">.
@@ -184,9 +194,11 @@
       rec.pending = false;
       return rec;
     } catch (err) {
-      console.warn('Aura 3D scene "' + id + '" could not start:', err && err.message ? err.message : err);
+      const why = String((err && err.message) || err || '').split('\n')[0];
+      console.warn('Aura 3D scene "' + id + '" could not start:', why);
       dispose3d(rec);
       el.setAttribute('data-fallback', '');
+      el.setAttribute('data-aura-error', why.slice(0, 160));   // read back by LumiCapture.health() (section 5)
       el._aura = { el, failed: true };
       return null;
     }
@@ -281,7 +293,7 @@
         if (rec.kind === '3d') render3d(rec, t, 0); else if (rec.api.update) rec.api.update(t, 0);
         continue;
       }
-      if (!rec.t0) rec.t0 = performance.now();
+      if (!rec.t0 || el.hasAttribute('data-camera-from')) rec.t0 = performance.now();
       running.add(rec);
     }
     trimLive(); kick();
@@ -350,7 +362,7 @@
   }
 
   /* ---------------- Blender holders: a render that is already a picture or a recorded loop ---------------- */
-  function blenderHolders(slide) { return Array.from(slide.querySelectorAll('.bb-blender[data-filled]')); }
+  function blenderHolders(slide) { return Array.from(slide.querySelectorAll('.bb-blender[data-filled]:not([data-baked])')); }
   function blenderAnchors(h) {
     if (h._anchors !== undefined) return h._anchors;
     try { h._anchors = JSON.parse(h.dataset.anchors || 'null'); } catch (e) { h._anchors = null; }
@@ -396,6 +408,44 @@
 
   /* ---------------- capture (?capture) and still frames (?still=n) ---------------- */
   const nextFrame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  // Did a holder actually DRAW? (capture contract section 5.) renderSlideAt() skips a holder whose scene threw, so
+  // before this a dead scene was invisible to every check: the page still reported ready and finalize still recorded
+  // a loop - of the background. A holder counts as drawn when it has a canvas with real pixels, a decoded still <img>
+  // (all-slides mode swaps the canvas for one) or a recorded loop video.
+  // A canvas counts only if something on it is not transparent: a scene that sets up without throwing but draws nothing
+  // (a program that links and outputs zero alpha, a camera aimed at empty space) has the right size and no pixels.
+  // Sampled only when a tool drives the page - that is when the WebGL buffer is preserved and can be read back. A
+  // canvas that cannot be read (tainted) is taken on its size, as before.
+  let probe = null;
+  function canvasInked(c) {
+    if (!FROZEN) return true;
+    try {
+      probe = probe || Object.assign(document.createElement('canvas'), { width: 64, height: 36 });
+      const g = probe.getContext('2d', { willReadFrequently: true });
+      g.clearRect(0, 0, 64, 36);
+      g.drawImage(c, 0, 0, 64, 36);
+      const px = g.getImageData(0, 0, 64, 36).data;
+      for (let i = 3; i < px.length; i += 4) if (px[i] > 0) return true;
+      return false;
+    } catch (e) { return true; }
+  }
+  function holderDrawn(el) {
+    if (el.hasAttribute('data-fallback')) return false;
+    const c = el.querySelector('canvas');
+    if (c && c.width > 0 && c.height > 0 && canvasInked(c)) return true;
+    if (Array.from(el.querySelectorAll('img')).some(i => i.naturalWidth > 0)) return true;
+    return !!el.querySelector('video.aura-loop');
+  }
+  function healthOf(slide) {
+    const hs = Array.from(slide.querySelectorAll('.aura-3d[data-scene], .aura-canvas[data-canvas]'));
+    const failed = hs.filter(el => !holderDrawn(el)).map(el => ({
+      scene: el.dataset.scene || el.dataset.canvas || '',
+      reason: el.getAttribute('data-aura-error') || 'the scene drew nothing',
+    }));
+    return { holders: hs.length, drawn: hs.length - failed.length, failed };
+  }
+
   function poseCss(root, t) {
     if (!root.getAnimations) return;
     root.getAnimations({ subtree: true }).forEach(a => { try { a.pause(); a.currentTime = t * 1000; } catch (e) { /* ignore */ } });
@@ -423,7 +473,7 @@
   function buildCapture() {
     const out = { ready: null, slides: {}, recorded: {} };
     slides.forEach((s, i) => {
-      const bl = blenderHolders(s)[0] || s.querySelector('.bb-blender');
+      const bl = blenderHolders(s)[0] || s.querySelector('.bb-blender:not([data-baked])');   // a baked one is a live scene (Part B)
       if (bl) out.recorded[i + 1] = { kind: bl.dataset.kind || (blenderVideo(bl) ? 'animation' : 'still'), period: 0, draft: bl.hasAttribute('data-draft'), filled: bl.hasAttribute('data-filled') };
       const holder = holderOf(s);
       if (!holder) return;
@@ -441,9 +491,16 @@
           markRecording(s);
           await renderSlideAt(s, +t || 0, false);
           await nextFrame();
-        }
+        },
+        get health() { return healthOf(s); }
       };
     });
+    // every slide that has a holder at all, whether or not it is a loop: finalize reads this after seeking a frame
+    out.health = () => {
+      const r = {};
+      slides.forEach((s, i) => { const h = healthOf(s); if (h.holders) r[i + 1] = h; });
+      return r;
+    };
     return out;
   }
   async function showStill(n) {
@@ -459,6 +516,13 @@
     } else await renderSlideAt(s, 0, true);
     await readyBlender(s);
     await nextFrame();
+    // auraStillReady keeps its old meaning - the frame is drawn, so photograph it now - and auraStill3d says WHAT was
+    // drawn. Before this the flag alone was read as "the 3D is there", which it never promised: a holder whose scene
+    // threw is skipped, the page reports ready in milliseconds, and the PDF page ships without its picture.
+    const h = healthOf(s);
+    html.dataset.auraStill3d = h.failed.length ? 'failed' : 'ok';
+    if (h.failed.length) html.dataset.auraStillFailed = h.failed.map(f => f.scene).join(',');
+    else delete html.dataset.auraStillFailed;
     html.dataset.auraStillReady = '1';
   }
 

@@ -54,7 +54,7 @@ FOLDERS = ['Report', 'Images and photos', 'Data (csv, excel, graphs)', 'Logo and
 # Every deck keeps its own files: "3 - Put your files here/<deck name>/<one of FOLDERS>/...". A deck that does not exist
 # yet (the files come before the interview that makes it) fills DRAFT_FOLDER, renamed to the deck's name when it is made.
 DRAFT_FOLDER = 'New deck'
-DRAFT_TEXT = TEMP / 'draft-text'
+DRAFT_TEXT_DIR = 'draft-text'           # under TEMP, read through draft_text(): the unit tests repoint TEMP
 MAX_UPLOAD = 2 * 1024 ** 3
 MAX_JSON = 2_000_000
 CHUNK = 1024 * 1024
@@ -314,12 +314,17 @@ def files_root(rec=None):
     return FILES if rec else draft_dir()
 
 
+def draft_text():
+    """Where the draft's files are extracted to, before a deck exists to own them."""
+    return TEMP / DRAFT_TEXT_DIR
+
+
 def text_root(rec=None):
     """Where this deck's files are extracted to. One corpus per deck: this is what keeps a number from deck A's report
     out of the provenance check on deck B's slide."""
     name = (rec or {}).get('filesFolder')
     if isinstance(name, str) and name: return work_dir(rec['id']) / 'text'
-    return (TEMP / 'text') if rec else DRAFT_TEXT
+    return (TEMP / 'text') if rec else draft_text()
 
 
 def deck_arg(deck_id):
@@ -345,9 +350,14 @@ def text_rel(rec=None):
 
 def folder_name(title):
     """A deck's folder name: its title, safe on Windows and short enough to read."""
-    name = clean_name(' '.join(str(title or '').split()))
-    name = name.rstrip(' .')[:60].rstrip(' .')
-    return name or DRAFT_FOLDER
+    raw = ' '.join(str(title or '').split()).strip(' .')
+    if not raw: return DRAFT_FOLDER     # before clean_name, whose empty-name fallback is the file name "file"
+    name = clean_name(raw).rstrip(' .')[:60].rstrip(' .')
+    if not name or (name == 'file' and raw.lower() != 'file'): return DRAFT_FOLDER
+    # never one of the seven type folders: a deck folder called "Report" sitting at the root IS the Report folder a
+    # deck from before per-deck folders reads, and its files would be read as that deck's own.
+    if name.lower() in {f.lower() for f in FOLDERS}: name += ' deck'
+    return name
 
 
 def claimed_folders():
@@ -411,12 +421,12 @@ def adopt_draft(rec):
             _save_uploads()
     rec = update_deck(rec['id'], filesFolder=want) or rec
     try:                                        # the draft's extracted text is this deck's corpus now
-        if DRAFT_TEXT.is_dir():
+        if draft_text().is_dir():
             with EXTRACT_LOCK:
                 target = text_root(rec)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if target.exists(): shutil.rmtree(target, ignore_errors=True)
-                shutil.move(str(DRAFT_TEXT), str(target))
+                shutil.move(str(draft_text()), str(target))
     except OSError as e:
         log('draft text could not move', repr(e))
     return rec
@@ -592,6 +602,9 @@ LOOK_BASE_SPEC = '.claude/skills/aura-slide/looks/_shared/LOOK-BASE.md'
 LOOK_SPECS = {
     'bold-blue': '.claude/skills/aura-slide/looks/bold-blue/LOOK.md',
     'flat-pack': '.claude/skills/aura-slide/looks/flat-pack/LOOK.md',
+    'pink-punch': '.claude/skills/aura-slide/looks/pink-punch/LOOK.md',
+    'happy-headspace': '.claude/skills/aura-slide/looks/happy-headspace/LOOK.md',
+    'clay-pop': '.claude/skills/aura-slide/looks/clay-pop/LOOK.md',
 }
 BOLD_BLUE_SPEC = LOOK_SPECS['bold-blue']                        # kept: older records and tests name it
 LOOK_OVERRIDES = ('style.threeD', 'style.twoD', 'style.amount', 'style.amountLabel', 'aura-blend', 'power-design')
@@ -601,7 +614,10 @@ BOLD_BLUE_OVERRIDES = LOOK_OVERRIDES
 # studio render when Blender is installed (animations stay live three.js); 'threejs' = this look never uses Blender,
 # its 3D is live three.js whatever the motion. A look that is not listed gets LOOK_3D_DEFAULT, so a 3D slide ALWAYS
 # resolves to an engine - a 3D slide with no engine at all is the slide-14 finalize bug (BACKLOG B1).
-LOOK_3D = {'bold-blue': 'blender', 'flat-pack': 'threejs'}
+# Pink Punch is a screen print and Happy Headspace is a soft-lit form: Cycles would render the picture both looks
+# refuse, at a hundred times the cost. Clay Pop is a render look, like Bold Blue.
+LOOK_3D = {'bold-blue': 'blender', 'flat-pack': 'threejs',
+           'pink-punch': 'threejs', 'happy-headspace': 'threejs', 'clay-pop': 'blender'}
 LOOK_3D_DEFAULT = 'threejs'
 
 
@@ -822,7 +838,13 @@ def read_brief():
 
 
 def rel_root(p):
-    return str(Path(p).resolve().relative_to(ROOT.resolve())).replace('\\', '/')
+    """A path as Claude sees it, relative to the project root. A path outside the root is given whole rather than
+    raised on: this is called while building the messages of a run, and a crash there loses the whole step."""
+    p = Path(p).resolve()
+    try:
+        return str(p.relative_to(ROOT.resolve())).replace('\\', '/')
+    except ValueError:
+        return str(p).replace('\\', '/')
 
 
 # ---------------------------------------------------------------- deck library (.aura/decks/<id>.json)
@@ -925,7 +947,8 @@ def new_deck(brief=None, **fields):
     t = now_iso()
     rec = {'id': uuid.uuid4().hex[:12], 'title': str(basics.get('title') or '').strip() or 'Untitled deck', 'file': None,
            'look': look_of(brief), 'quality': quality_of(brief), 'createdAt': t, 'updatedAt': t, 'sessionId': None,
-           'brief': brief, 'build': None, 'caps': dict(DECK_CAPS), 'interviewState': 'asking'}
+           'brief': brief, 'build': None, 'caps': dict(DECK_CAPS), 'interviewState': 'asking',
+           'bake': True}                      # batch 6 B.9: animated studio renders are BAKED in this deck (pinned at creation)
     rec.update(fields)
     return save_deck(rec, touch=False)
 
@@ -1716,7 +1739,7 @@ def slide_hashes(build):
     return [hashlib.sha1(re.sub(r'\s+', ' ', x).encode('utf-8')).hexdigest() for x in parts]
 
 
-SHELL_THEMES = ('pink-punch', 'bold-blue', 'flat-pack', 'happy-headspace', 'yellow-frame')     # new_deck.js THEMES
+SHELL_THEMES = ('pink-punch', 'bold-blue', 'flat-pack', 'happy-headspace', 'clay-pop')     # new_deck.js THEMES
 
 
 def look_theme(look):
@@ -2643,8 +2666,7 @@ PY_MODULES = {'pillow': 'PIL', 'python-pptx': 'pptx', 'imageio-ffmpeg': 'imageio
               'beautifulsoup4': 'bs4', 'pyyaml': 'yaml'}
 PREMIUM_PLANS = ('pro', 'max', 'team', 'enterprise')       # no note; any plan (Free and unknown too) may use Lumi
 PLAN_NAMES = {'pro': 'Pro', 'max': 'Max', 'team': 'Team', 'enterprise': 'Enterprise', 'free': 'Free'}
-FREE_NOTE = ('Lumi works, but Claude\u2019s Free plan has very little Claude Code usage, so builds may stop early; '
-             'Pro or higher is recommended.')
+FREE_NOTE = 'the free plan may stop a build early. pro or higher works best.'
 ACCOUNT_FILE = AURA / 'account.json'                      # the account the person confirmed on this install
 SIGNIN_HELPER = ENGINE / 'tools' / 'signin-url.cmd'      # BROWSER for `claude auth login`: writes the URL to a file
 
@@ -3145,8 +3167,7 @@ def clash_reason(main, item):
     """Why `item` (another main picture or a companion) cannot sit on a slide whose main picture is `main`; '' if it can.
     The planning page (plan.js) draws the same matrix - keep the two in step."""
     if item in MAINS:
-        return '' if item == main else (f'one slide has room for one main picture, so {MAIN_NAMES[main]} and '
-                                        f'{MAIN_NAMES[item]} would fight for the space')
+        return '' if item == main else f'one main picture per slide. this one already has {MAIN_NAMES[main]}'
     home = COMPANION_HOME.get(item)
     if not home: return 'Lumi does not know that kind of extra'
     return '' if home == main else f'{COMPANION_NAMES[item]} only works with {MAIN_NAMES[home]}'
@@ -3431,7 +3452,7 @@ def plan_payload(rec):
             # Section 6: what this deck costs the person, in time and in a plain share of today's allowance. `allowance`
             # is null whenever the last reading is missing or stale, and the page then shows the time on its own.
             'cost': {'build': deck_build_estimate(rec), 'allowance': usage_share()},
-            'blender': {'available': blender_available(),
+            'blender': {'available': blender_available(), 'bakes': bool(rec.get('bake')),
                         'status': {k: v.get('status') for k, v in bl_states(rec).items() if isinstance(v, dict)},
                         'estimates': bl_plan_estimates(rec)}}
 
@@ -4569,7 +4590,7 @@ BLENDER_DEFAULTS = {'fps': 20, 'previewRes': 30, 'previewSamples': 16, 'stillHei
 BLENDER_FIND = {'at': 0.0, 'hit': None}
 BLENDER_PROBE_FAIL = {'at': 0.0, 'key': None}
 BLENDER_LOCK = threading.RLock()                   # the per-slide state in the deck records
-BLENDER_FILE_RE = re.compile(r'^(previews/preview-\d{1,4}\.png|final\.png|final\.mp4|final-poster\.png)$')
+BLENDER_FILE_RE = re.compile(r'^(previews/preview-\d{1,4}\.png|final\.png|final\.mp4|final-poster\.png|bake/(?:draft|final)/(?:poster\.png|model\.glb|bake\.json))$')
 BLENDER_ROUTE = re.compile(r'^/api/decks/([A-Za-z0-9_-]{1,64})/blender(?:/([a-z0-9][a-z0-9-]{0,23})(?:/(preview|change|approve|render|cancel|defer|'
                            r'files/(.+)))?)?$')
 BLENDER_STATUSES = ('writing', 'previewing', 'preview', 'changing', 'approved', 'rendering', 'rendered', 'failed')
@@ -4790,9 +4811,46 @@ def bl_hash(deck_id, sid):
         return None
 
 
+# batch 6 B.2: glass is the one thing a bake cannot carry (no transmission in the atlases), so a scene that uses it stays
+# on the per-frame Cycles path - detected from scene.py, never asked of the user.
+GLASS_RE = re.compile(r"""\bmat\(\s*['"]glass['"]|\btrans\s*=\s*(?:0*\.0*[1-9]|[1-9])""")
+
+
+def bl_glass(deck_id, sid):
+    try: src = (bl_dir(deck_id, sid) / 'scene.py').read_text(encoding='utf-8')
+    except OSError: return False
+    return bool(GLASS_RE.search(re.sub(r'(?m)#.*$', '', src)))
+
+
+def bl_baked(rec, sid, kind=None):
+    """True when this Blender slide takes the BAKED path (batch 6 Part B): a deck that bakes, an animation, no glass. A still
+    stays one Cycles frame - baking would cost more than it saves."""
+    if not (rec or {}).get('bake'): return False
+    if not kind:
+        _, slide = bl_slide(rec, sid)
+        kind = bl_state(rec, sid).get('kind') or slide_engine(rec, slide or {}).get('kind')
+    return kind == 'animation' and not bl_glass(rec['id'], sid)
+
+
+def bake_manifest(deck_id, sid, mode):
+    try: return json.loads((bl_dir(deck_id, sid) / 'bake' / mode / 'bake.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError): return {}
+
+
+def bake_seconds(deck_id, sid, mode):
+    """The last bake of this kind on this slide, else the measured defaults (B.1a: draft ~60 s, final ~110 s plus the poster)."""
+    m = bake_manifest(deck_id, sid, mode)
+    t = (m.get('timing') or {}).get('totalS') if not m.get('reused') else None
+    if not t and mode == 'final':
+        d = bake_manifest(deck_id, sid, 'draft')
+        if not d.get('reused') and (d.get('timing') or {}).get('totalS'): t = 2.2 * d['timing']['totalS']
+    return float(t or (75 if mode == 'draft' else 160))
+
+
 def slide_engine(rec, slide, available=None):
     """The EFFECTIVE engine of one slide (contract section 2): {engine, kind, note, chosen}. engine is None when the slide has
-    no 3D main picture. An explicit visual.engine wins; auto = Bold Blue + still 3D + Blender available -> blender."""
+    no 3D main picture. An explicit visual.engine wins; auto = a Blender look + Blender available -> blender, for a still,
+    and (batch 6 B.2) for an animation too in a deck that bakes (rec['bake'])."""
     v = (slide or {}).get('visual') or {}
     if v.get('main') != '3d': return {'engine': None, 'kind': None, 'note': None, 'chosen': False}
     kind = 'still' if v.get('motion') == 'still' else 'animation'
@@ -4806,7 +4864,7 @@ def slide_engine(rec, slide, available=None):
     # No explicit choice: the LOOK's own 3D policy decides (LOOK_3D). A look whose policy is 'threejs' never renders in
     # Blender; a 'blender' look uses it for stills only, and only when Blender is installed. Either way an engine is
     # always returned - a 3D slide must never end up with none (BACKLOG B1).
-    auto = bool(avail) and look_3d_engine(rec.get('look')) == 'blender' and kind == 'still'
+    auto = bool(avail) and look_3d_engine(rec.get('look')) == 'blender' and (kind == 'still' or bool(rec.get('bake')))
     return {'engine': 'blender' if auto else 'threejs', 'kind': kind, 'note': None, 'chosen': False}
 
 
@@ -4889,6 +4947,15 @@ def bl_estimates(rec, sid, renderer=None, kind=None, model=None):
     kind = kind or st.get('kind') or eng.get('kind') or 'still'
     m = model or bench_model()
     D = BLENDER_DEFAULTS
+    if bl_baked(rec, sid, kind):
+        # B.5: a baked slide has no resolution choice and no per-frame model - a bake costs what the last one did
+        rng = lambda s, b: {'seconds': int(round(s)), 'low': int(round(s * 0.7)), 'high': int(round(s * 1.6)), 'basis': b}
+        basis = 'slide' if bake_manifest(rec['id'], sid, 'draft') else 'default'
+        pv = rng(bake_seconds(rec['id'], sid, 'draft'), basis)
+        q = (renderer or BLENDER).queue_info(rec['id'], sid) if (renderer or BLENDER) and model is None else {'ahead': 0, 'waitS': 0}
+        return {'baked': True, 'preview': pv, 'full': {'baked': rng(bake_seconds(rec['id'], sid, 'final'), basis)},
+                'iteration': {'tokensRun': DEFAULT_ITER_TOKENS, 'costUsdRun': None, 'basis': 'default', 'seconds': 90 + pv['seconds']},
+                'queue': q, 'model': {k: m.get(k) for k in ('c', 'a', 'k', 'startup_s', 'basis')}}
     per = lambda mp, spp: m['c'] + m.get('a', 0) * mp + m['k'] * mp * spp
     prevs = [p for p in st.get('previews') or [] if isinstance(p, dict) and p.get('render_s')]
     if prevs:
@@ -4931,6 +4998,11 @@ def bl_plan_estimates(rec):
     for s in plan_slides(rec):
         if ((s.get('visual') or {}).get('main')) != '3d': continue
         a, b = bl_estimates(rec, s['id'], kind='still', model=m), bl_estimates(rec, s['id'], kind='animation', model=m)
+        if b.get('baked'):      # B.5: one number - the draft and the final bake together - wherever a resolution used to go
+            t = b['preview']['seconds'] + b['full']['baked']['seconds']
+            out[s['id']] = {'still': a['full']['still']['seconds'], '720': t, '1080': t, 'baked': True,
+                            'basis': a['full']['still']['basis'], 'iteration': a['iteration']}
+            continue
         out[s['id']] = {'still': a['full']['still']['seconds'], '720': b['full']['720']['seconds'], '1080': b['full']['1080']['seconds'],
                         'basis': a['full']['still']['basis'], 'iteration': a['iteration']}
     return out
@@ -4974,13 +5046,18 @@ def bl_view(rec, sid):
         if isinstance(p, dict) and p.get('png'): p['url'] = bl_url(rec['id'], sid, 'previews/' + Path(p['png']).name) + f"?n={p.get('n')}"
     fin = st.get('final')
     if isinstance(fin, dict) and fin.get('file'):
-        fin['url'] = bl_url(rec['id'], sid, Path(fin['file']).name) + '?t=' + re.sub(r'[^0-9]', '', str(fin.get('at') or ''))
-        if fin.get('poster'): fin['posterUrl'] = bl_url(rec['id'], sid, 'final-poster.png')
+        stamp = '?t=' + re.sub(r'[^0-9]', '', str(fin.get('at') or ''))
+        if fin.get('baked'):
+            fin['url'] = bl_url(rec['id'], sid, 'bake/final/model.glb') + stamp
+            fin['posterUrl'] = bl_url(rec['id'], sid, 'bake/final/poster.png') + stamp
+        else:
+            fin['url'] = bl_url(rec['id'], sid, Path(fin['file']).name) + stamp
+            if fin.get('poster'): fin['posterUrl'] = bl_url(rec['id'], sid, 'final-poster.png')
     sh = bl_hash(rec['id'], sid)
     st.update(id=sid, n=n, engine=eng.get('engine'), kind=st.get('kind') or eng.get('kind'), chosen=eng.get('chosen'),
               note=eng.get('note'), status=st.get('status') or ('none' if not sh else 'preview'), sceneExists=bool(sh),
               sceneCurrent=bool(sh) and bool(st.get('previews')) and (st.get('previews') or [{}])[-1].get('sceneHash') == sh,
-              estimates=bl_estimates(rec, sid))
+              estimates=bl_estimates(rec, sid), baked=bl_baked(rec, sid, st.get('kind') or eng.get('kind')))
     return st
 
 
@@ -5115,7 +5192,7 @@ class BlenderRenderer:
         """A newly queued still asks a running animation to stop at its next frame boundary. True when it was asked."""
         if still.lane != 'full' or still.kind != 'full' or still.meta.get('kind') == 'animation': return False
         run = self.running.get('full')
-        if not (run and run.kind == 'full' and run.meta.get('kind') == 'animation'): return False
+        if not (run and run.kind == 'full' and run.meta.get('kind') == 'animation') or run.meta.get('baked'): return False
         if run.yielding or run.cancelled or run.yields >= self.MAX_YIELDS: return False
         if run.done_frames < 1 or run.done_frames >= (run.frames or 0): return False    # nothing saved yet, or nearly done
         if (still.est or 0) >= (run.est or 0): return False                             # never swap a long job for a longer one
@@ -5187,14 +5264,20 @@ class BlenderRenderer:
         nn = max([p.get('n') or 0 for p in st.get('previews') or [] if isinstance(p, dict)] + [0]) + 1
         D = BLENDER_DEFAULTS
         out = bl_dir(deck_id, sid) / 'previews' / f'preview-{nn}.png'
-        job = BlenderJob(deck_id, sid, 'preview', ['--preview', '--res', str(D['previewRes']), '--samples', str(D['previewSamples'])], out,
+        baked = bl_baked(rec, sid, st.get('kind') or slide_engine(rec, slide).get('kind'))
+        if baked:
+            out = bl_dir(deck_id, sid) / 'bake' / 'draft'
+            args = ['--bake', 'draft']
+        else:
+            args = ['--preview', '--res', str(D['previewRes']), '--samples', str(D['previewSamples'])]
+        job = BlenderJob(deck_id, sid, 'preview', args, out,
                          {'n': nn, 'res': D['previewRes'], 'height': 1080, 'samples': D['previewSamples'], 'change': change,
-                          'tokensRun': tokens, 'costUsdRun': cost, 'prev': st.get('status')})
+                          'tokensRun': tokens, 'costUsdRun': cost, 'prev': st.get('status'), 'baked': baked})
         _e = bl_estimates(rec, sid, self)['preview']
         job.est, job.est_basis = _e['seconds'], _e.get('basis')      # problem 12: kept, so the prediction can be scored later
         eng = slide_engine(rec, slide)
         set_bl(deck_id, sid, status='previewing', error=None, engine='blender', kind=st.get('kind') or eng.get('kind') or 'still',
-               scene=f'{bl_rel(deck_id, sid)}/scene.py')
+               scene=f'{bl_rel(deck_id, sid)}/scene.py', path='baked' if baked else 'cycles')
         bl_event(deck_id, sid, 'preview-requested', f'Lumi is rendering a preview of slide {n}.', job=job.id, estimate=job.est)
         self.submit(job)
         return 200, {'ok': True, 'job': job.info(), 'queued': True}
@@ -5206,6 +5289,8 @@ class BlenderRenderer:
         if not n: return 404, {'ok': False, 'error': 'no-slide'}
         if not find_blender(): return 503, {'ok': False, 'error': 'no-blender', 'reason': bl_reason('no-blender')}
         st = bl_state(rec, sid)
+        if bl_baked(rec, sid, st.get('kind') or slide_engine(rec, slide).get('kind')):
+            return self.full_bake(deck_id, sid, n, st)
         ap = st.get('approved') if isinstance(st.get('approved'), dict) else None
         if not ap: return 409, {'ok': False, 'error': 'not-approved', 'reason': 'Approve a preview first.'}
         if ap.get('sceneHash') and ap['sceneHash'] != bl_hash(deck_id, sid):
@@ -5240,6 +5325,22 @@ class BlenderRenderer:
                  + (f' {qi["ahead"]} render ahead of it, about {max(1, qi["waitS"] // 60)} min.' if qi['ahead'] == 1 and qi['waitS']
                     else f' {qi["ahead"]} renders ahead of it, about {max(1, qi["waitS"] // 60)} min.' if qi['ahead'] > 1 and qi['waitS'] else ''),
                  job=job.id, estimate=job.est, res=res, renderKind=kind, ahead=qi['ahead'], waitS=qi['waitS'])
+        self.submit(job)
+        return 200, {'ok': True, 'job': job.info()}
+
+    def full_bake(self, deck_id, sid, n, st):
+        """The final bake (1024 px atlases). Not gated on approval: it costs a minute or two of this computer, nothing else,
+        so it follows the draft by itself and the approval card asks only the design question (B.5)."""
+        if any(j.deck_id == deck_id and j.sid == sid and j.kind == 'full' for j in self.jobs()):
+            return 409, {'ok': False, 'error': 'rendering', 'reason': 'This slide is already rendering.'}
+        out = bl_dir(deck_id, sid) / 'bake' / 'final'
+        job = BlenderJob(deck_id, sid, 'full', ['--bake', 'final'], out, {'kind': 'animation', 'baked': True, 'res': None,
+                         'prev': st.get('status'), 'sceneHash': bl_hash(deck_id, sid)})
+        job.est = job.est_first = bake_seconds(deck_id, sid, 'final')
+        job.est_basis = 'slide' if bake_manifest(deck_id, sid, 'draft') else 'default'
+        set_bl(deck_id, sid, status='rendering', error=None)
+        bl_event(deck_id, sid, 'render-started' if not self.running['full'] else 'render-queued',
+                 f'Lumi is making the full-quality studio render of slide {n}.', job=job.id, estimate=job.est, renderKind='animation')
         self.submit(job)
         return 200, {'ok': True, 'job': job.info()}
 
@@ -5317,6 +5418,9 @@ class BlenderRenderer:
         logf.flush()
         return p.returncode, list(tail), why
 
+    BAKE_RE = re.compile(r'\[lumi\] bake: (?:(base|rough|metal|ao) done|geometry and materials unchanged)')
+    BAKE_STEPS = {'base': 0.2, 'rough': 0.4, 'metal': 0.55, 'ao': 0.75, 'reuse': 0.75}
+
     def _parse(self, job, s):
         m = self.DEVICE_RE.search(s)
         if m: job.device = m.group(1) + (f' {m.group(2)}' if m.group(2) else '')
@@ -5332,7 +5436,10 @@ class BlenderRenderer:
             job.done_frames, job.frames = int(m.group(1)), int(m.group(2))
             job.frame_s.append(float(m.group(3)))
             job.sample = 0
-        if job.frames:
+        m = self.BAKE_RE.search(s)
+        if m and job.meta.get('baked'):
+            job.progress = max(job.progress, self.BAKE_STEPS.get(m.group(1) or 'reuse', job.progress))
+        elif job.frames:
             part = (job.sample / job.samples) if job.samples and job.done_frames < job.frames else 0
             job.progress = min(1.0, (job.done_frames + part) / job.frames)
         if job.kind != 'bench' and job.deck_id:
@@ -5381,7 +5488,7 @@ class BlenderRenderer:
                  job=job.id, estimate=job.est)
         set_bl(job.deck_id, job.sid, job=dict(job.info(), state='running'))
         out = Path(job.out)
-        if job.kind == 'full' and job.meta.get('kind') == 'animation' and not job.meta.get('resume'):
+        if job.kind == 'full' and job.meta.get('kind') == 'animation' and not job.meta.get('resume') and not job.meta.get('baked'):
             shutil.rmtree(out, ignore_errors=True)   # a resumed render keeps the frames it already has (problem 9)
         out.parent.mkdir(parents=True, exist_ok=True)
         with self._open_log(job, f'{job.kind}-{job.meta.get("n") or job.meta.get("res") or 1}') as logf:
@@ -5398,12 +5505,17 @@ class BlenderRenderer:
         wall = time.time() - job.started
         if job.cancelled: return self._cancelled(job)
         if job.yielding or why == 'yielded': return self._yielded(job, n)
-        produced = out.is_file() if out.suffix.lower() == '.png' else (out.is_dir() and any(out.glob('frame_*.png')))
+        if job.meta.get('baked'):       # the bake folder keeps its atlases between runs (B.3), so its files are checked by name
+            produced = all((out / f).is_file() for f in ('bake.json', 'model.glb', 'poster.png'))
+        else:
+            produced = out.is_file() if out.suffix.lower() == '.png' else (out.is_dir() and any(out.glob('frame_*.png')))
         if why or rc != 0 or not produced:
             code, detail = self._classify(tail, rc, why) if (why or rc != 0) else ('no-output', '')
             return self._fail(job, code, detail)
         render_s = round(sum(job.frame_s), 2) if job.frame_s else round(wall, 2)
         frame_times = frame_time_list(job)                 # Part D: the per-frame Cycles times, not only their sum
+        if job.meta.get('baked'):
+            return self._baked_done(job, n, out, sh, wall)
         if job.kind == 'preview':
             prev = {'n': job.meta['n'], 'png': rel_root(out), 'at': now_iso(), 'res': job.meta['res'], 'height': job.meta['height'],
                     'samples': job.meta['samples'], 'render_s': render_s, 'wall_s': round(wall, 2), 'device': job.device or ('CPU' if job.cpu else None),
@@ -5483,6 +5595,49 @@ class BlenderRenderer:
         if final_of(load_deck(job.deck_id) or {}): update_deck(job.deck_id, changedSinceFinalize=True)
         bl_event(job.deck_id, job.sid, 'render-done', f'Slide {n} is rendered' + (' (on the processor after the graphics card failed).' if job.fallback else '.'),
                  job=job.id, file=bl_url(job.deck_id, job.sid, final_file.name), render_s=render_s, fallback=bool(job.fallback))
+        bl_embed_async(job.deck_id, job.sid)
+
+    def _baked_done(self, job, n, out, sh, wall):
+        """A bake finished (batch 6 Part B). The draft becomes a preview like any other - its poster is copied into
+        previews/ so the history keeps its own picture - and the final bake is queued straight after it. The final is the
+        slide's render: model.glb + bake.json + poster.png in bake/final, kept for the next re-time (B.3, B.6)."""
+        man = bake_manifest(job.deck_id, job.sid, 'final' if job.kind == 'full' else 'draft')
+        took = round(wall, 2)
+        if job.kind == 'preview':
+            png = bl_dir(job.deck_id, job.sid) / 'previews' / f'preview-{job.meta["n"]}.png'
+            try:
+                png.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(out / 'poster.png', png)
+            except OSError as e:
+                return self._fail(job, 'no-output', e.__class__.__name__)
+            prev = {'n': job.meta['n'], 'png': rel_root(png), 'at': now_iso(), 'baked': True, 'bake': rel_root(out),
+                    'render_s': took, 'wall_s': took, 'device': job.device or ('CPU' if job.cpu else None),
+                    'frames': man.get('frames') or 1, 'fps': man.get('fps') or BLENDER_DEFAULTS['fps'], 'sceneHash': sh,
+                    'reused': bool(man.get('reused')), 'change': job.meta.get('change'), 'tokensRun': job.meta.get('tokensRun'),
+                    'costUsdRun': job.meta.get('costUsdRun'), 'est_s': _num(getattr(job, 'est', None)),
+                    'est_basis': getattr(job, 'est_basis', None)}
+            with BLENDER_LOCK:
+                cur = bl_state(load_deck(job.deck_id) or {}, job.sid)
+                prevs = [p for p in cur.get('previews') or [] if isinstance(p, dict)] + [prev]
+                set_bl(job.deck_id, job.sid, previews=prevs[-40:], status='preview', job=None, error=None)
+            bl_event(job.deck_id, job.sid, 'preview-done', f'The preview of slide {n} is ready. Do you like the design?', job=job.id,
+                     png=bl_url(job.deck_id, job.sid, 'previews/' + png.name), n=prev['n'], render_s=took, tokens=prev['tokensRun'])
+            bl_embed_async(job.deck_id, job.sid)
+            threading.Thread(target=self.full, args=(job.deck_id, job.sid), daemon=True).start()
+            return
+        fin = {'kind': 'animation', 'baked': True, 'res': None, 'fps': man.get('fps') or BLENDER_DEFAULTS['fps'],
+               'frames': man.get('frames'), 'period': man.get('period'), 'file': rel_root(out / 'model.glb'),
+               'poster': rel_root(out / 'poster.png'), 'render_s': took, 'wall_s': took, 'at': now_iso(),
+               'device': job.device or ('CPU' if job.cpu else None), 'fallback': bool(job.fallback),
+               'sceneHash': job.meta.get('sceneHash'), 'stale': False, 'reused': bool(man.get('reused')),
+               'bytes': file_bytes(out / 'model.glb'), 'atlas': man.get('atlas'),
+               'est_s': _num(getattr(job, 'est_first', None) or getattr(job, 'est', None)), 'est_basis': getattr(job, 'est_basis', None)}
+        set_bl(job.deck_id, job.sid, final={k: v for k, v in fin.items() if v is not None}, status='rendered', job=None, error=None,
+               deferred=None)
+        timing_touch(job.deck_id, 'render-done')
+        if final_of(load_deck(job.deck_id) or {}): update_deck(job.deck_id, changedSinceFinalize=True)
+        bl_event(job.deck_id, job.sid, 'render-done', f'Slide {n} is rendered' + (' (on the processor after the graphics card failed).' if job.fallback else '.'),
+                 job=job.id, file=bl_url(job.deck_id, job.sid, 'bake/final/poster.png'), render_s=took, fallback=bool(job.fallback))
         bl_embed_async(job.deck_id, job.sid)
 
     def _fail(self, job, code, detail=''):
@@ -5607,7 +5762,9 @@ def bl_build_block(rec, slide, eng):
         f'BLENDER SLIDE: this slide\'s 3D figure is a STUDIO RENDER made in Blender (engine blender, {"a seamless 20 fps animation" if anim else "a 1080p still"}). '
         'Follow `.claude/skills/aura-slide/looks/bold-blue/BLENDER.md` (the Blender recipe; it is look-neutral).',
         f'- Write the scene to `{r}/scene.py`: copy the template in BLENDER.md section 2 exactly (its first lines find lumi_bpy by '
-        'themselves) and change only the SUBJECT block' + ('; add `L.loop(4.0)` and spin/wave/turntable keys for a 3-6 s loop (section 2b)' if anim else '') + '.',
+        'themselves) and change only the SUBJECT block' + ('; add `L.loop(4.0)` and spin/wave/turntable keys for a 3-6 s loop (section 2b)' if anim else '') + '.'
+        + (' This animation is BAKED (a minute or two): no glass and no `trans=` in it, or every frame must be path-traced instead '
+           '(20-60 minutes) - use a cutaway to show the inside.' if anim and rec.get('bake') else ''),
         f'- At most two check renders, each as ONE plain command, exactly: `{bl_check_cmd(rec["id"], sid)}`, then Read the PNG. '
         'Type `blender` itself: no full path, no pipes, no redirection, no `&`, no `$(...)`, nothing before or after it.',
         '- Do NOT render the full-quality image or animation. Lumi renders the preview the user sees as soon as you finish, asks '
@@ -5618,7 +5775,12 @@ def bl_build_block(rec, slide, eng):
         '- The render is composited onto ONE flat colour that must equal the slide\'s own colour (BLENDER.md section 9): `L.studio(bg=...)` '
         'canvas for a plain slide, stage for bb-stage-bg, blueprint, title, close. Labels over the picture: `L.anchor(name, part)` in the scene and '
         '`<div class="bb-tag" data-anchor="name">` inside the holder.',
-    ])
+    ] + ([
+        '- CLAY POP: follow `.claude/skills/aura-slide/looks/clay-pop/LOOK.md` section 3.3 where it differs from BLENDER.md: '
+        '`L.cycles(a.samples, view=\'Standard\')`, every part `L.mat(\'clay\', color=...)` with a generous `L.bevel`, '
+        '`L.studio(fit=parts, bg=\'#F0F0F5\', wear=0)`. The holder is `<div class="bb-blender cp-3d" ...>` inside `.cp-stage` '
+        '(`cp-full` for the title); labels are `<div class="cp-tag" data-anchor="name">`. Exactly one wink of personality per figure.'
+    ] if look_slug(rec.get('look')) == 'clay-pop' else []))
 
 
 def bl_live_block(slide, eng):
@@ -5775,7 +5937,7 @@ def bl_change(deck_id, sid, body):
         st = bl_state(rec, sid)
         pend = (str(st.get('pendingChange') or '') + '\n' + text).strip()[:4000]
         set_bl(deck_id, sid, pendingChange=pend, status='changing')
-        bl_event(deck_id, sid, 'change-queued', 'Claude is busy; your change starts as soon as it is free.', change=text[:200])
+        bl_event(deck_id, sid, 'change-queued', 'claude is busy. your change starts when it\u2019s free.', change=text[:200])
         return 200, {'ok': True, 'queued': True}
     code, res = bl_launch_change(deck_id, sid, text)
     return (code, dict(res, queued=False)) if code == 200 else (code, res)
@@ -5857,7 +6019,12 @@ def bl_pick(deck_id, sid):
     rec = load_deck(deck_id) or {}
     st = bl_state(rec, sid)
     fin = st.get('final') if isinstance(st.get('final'), dict) else None
-    if fin and fin.get('file') and (ROOT / fin['file']).is_file():
+    if fin and fin.get('baked') and fin.get('file') and (ROOT / fin['file']).is_file():
+        f = ROOT / fin['file']
+        return {'source': 'final', 'draft': False, 'baked': True, 'kind': 'animation', 'stale': bool(fin.get('stale')),
+                'fps': fin.get('fps'), 'frames': fin.get('frames'), 'files': {'media': f, 'poster': f.with_name('poster.png'),
+                'manifest': f.with_name('bake.json')}, 'labels': None}
+    if fin and not fin.get('baked') and fin.get('file') and (ROOT / fin['file']).is_file():
         f = ROOT / fin['file']
         d = {'source': 'final', 'draft': False, 'kind': fin.get('kind') or ('animation' if f.suffix == '.mp4' else 'still'), 'stale': bool(fin.get('stale')),
              'width': fin.get('width'), 'height': fin.get('height'), 'fps': fin.get('fps'), 'frames': fin.get('frames'), 'res': fin.get('res'),
@@ -5869,6 +6036,11 @@ def bl_pick(deck_id, sid):
     prevs = [p for p in st.get('previews') or [] if isinstance(p, dict) and p.get('png') and (ROOT / p['png']).is_file()]
     if not prevs: return None
     p = prevs[-1]; f = ROOT / p['png']
+    if p.get('baked') and p.get('bake') and (ROOT / p['bake'] / 'model.glb').is_file():
+        b = ROOT / p['bake']
+        return {'source': 'preview', 'draft': True, 'baked': True, 'kind': 'animation', 'stale': False, 'fps': p.get('fps'),
+                'frames': p.get('frames'), 'n': p.get('n'), 'files': {'media': b / 'model.glb', 'poster': b / 'poster.png',
+                'manifest': b / 'bake.json'}, 'labels': None}
     w, h = png_size(f)
     return {'source': 'preview', 'draft': True, 'kind': st.get('kind') or 'still', 'stale': False, 'width': w, 'height': h, 'fps': None, 'frames': 1,
             'n': p.get('n'), 'files': {'media': f}, 'labels': f.with_suffix('.labels.json')}
@@ -5890,6 +6062,22 @@ def bl_embed(deck_id, sid):
     def put(src, name):
         tmp = d / (name + '.part')
         shutil.copyfile(src, tmp); os.replace(tmp, d / name)
+    if pick.get('baked'):
+        # the packer turns the holder into a live scene from these (pack_deck.baked_fill)
+        try: man = json.loads(pick['files']['manifest'].read_text(encoding='utf-8'))
+        except (OSError, ValueError): return None
+        put(media, f'{sid}.glb'); put(pick['files']['poster'], f'{sid}-poster.png')
+        for stale in (f'{sid}.png', f'{sid}.mp4'):
+            try: (d / stale).unlink()
+            except OSError: pass
+        meta = {'sid': sid, 'kind': 'animation', 'baked': True, 'draft': pick['draft'], 'source': pick['source'], 'stale': pick['stale'],
+                'fps': pick.get('fps'), 'frames': pick.get('frames'), 'preview': pick.get('n'), 'at': now_iso(), 'bake': man}
+        tmp = d / f'{sid}.json.part'
+        tmp.write_text(json.dumps(meta), encoding='utf-8'); os.replace(tmp, d / f'{sid}.json')
+        return meta
+    for stale in (f'{sid}.glb',):
+        try: (d / stale).unlink()
+        except OSError: pass
     if media.suffix == '.mp4':
         put(media, f'{sid}.mp4'); put(pick['files']['poster'], f'{sid}-poster.png')
         try: (d / f'{sid}.png').unlink()

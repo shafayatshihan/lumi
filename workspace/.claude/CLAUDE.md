@@ -24,15 +24,15 @@ move, rename, bypass or disable the checker, its rules file, or the hooks in `.c
 Machine copy: `.aura/engine/rules/hard-rules.json` (`generic` and `looks.<look>`), which `deck_check.js` enforces; a test
 keeps this table and that file identical. Every other document points here instead of repeating a number.
 
-| | A look with no entry of its own | Bold Blue (the default look; `looks/bold-blue/LOOK.md`) | Flat-Pack (`looks/flat-pack/LOOK.md`) |
-|---|---|---|---|
-| Text floor (error below) | 26 px | 20 px, and only for the footer mark, page number, captions / source lines and chart step labels | 24 px, and only for the footer mark, page number, captions, part counts and chart step labels |
-| Everything else | 28 px in practice (the type scale starts there) | at least 28 px (error below) | at least 32 px (error below) |
-| Type scale | 28 · 36 · 48 · 64 · 84 · 112, bigger numbers 150 · 200 | 20 · 28 · 36 · 48 · 64 · 112 · 176 | 24 · 32 · 44 · 60 · 84 · 120 · 180 |
-| Words per slide, presenter mode (error above) | title 45 · section 8 · content 25 · quote 30 · closing 20 · references 140 | title 45 · section 12 · content 55 · quote 30 · closing 40 · references 140 | title 32 · section 10 · content 34 · quote 24 · closing 24 · references 140 |
-| Words per content slide, document mode | 75 | 90 | 70 |
-| Typefaces per deck (error above) | 4 | 2 (Poppins and DM Mono) | 1 (Noto Sans) |
-| Main visuals per slide (error above 1) | 3D, chart, diagram, photo or text only; a 2D canvas loop counts as a diagram | the same | the same |
+| | A look with no entry of its own | Bold Blue (the default look; `looks/bold-blue/LOOK.md`) | Flat-Pack (`looks/flat-pack/LOOK.md`) | Pink Punch (`looks/pink-punch/LOOK.md`) | Happy Headspace (`looks/happy-headspace/LOOK.md`) | Clay Pop (`looks/clay-pop/LOOK.md`) |
+|---|---|---|---|---|---|---|
+| Text floor (error below) | 26 px | 20 px, and only for the footer mark, page number, captions / source lines and chart step labels | 24 px, and only for the footer mark, page number, captions, part counts and chart step labels | 28 px, and only for the footer mark, page number, captions, count tags and chart step labels | 28 px, and only for the kicker, footer mark, page number, captions, count tags and chart step labels | 24 px, and only in DM Mono for the kicker, footer mark, page number, captions / source lines, label-tag descriptions, chart ticks and axis titles |
+| Everything else | 28 px in practice (the type scale starts there) | at least 28 px (error below) | at least 32 px (error below) | at least 36 px (error below) | at least 36 px (error below) | at least 30 px (error below) |
+| Type scale | 28 · 36 · 48 · 64 · 84 · 112, bigger numbers 150 · 200 | 20 · 28 · 36 · 48 · 64 · 112 · 176 | 24 · 32 · 44 · 60 · 84 · 120 · 180 | 28 · 36 · 48 · 64 · 84 · 112 · 160 | 28 · 36 · 48 · 64 · 88 · 116 · 168 | 24 · 30 · 40 · 56 · 80 · 120 · 168 |
+| Words per slide, presenter mode (error above) | title 45 · section 8 · content 25 · quote 30 · closing 20 · references 140 | title 45 · section 12 · content 55 · quote 30 · closing 40 · references 140 | title 32 · section 10 · content 34 · quote 24 · closing 24 · references 140 | title 30 · section 8 · content 30 · quote 22 · closing 22 · references 140 | title 34 · section 10 · content 32 · quote 26 · closing 22 · references 140 | title 32 · section 10 · content 40 · quote 24 · closing 30 · references 140 |
+| Words per content slide, document mode | 75 | 90 | 70 | 65 | 70 | 80 |
+| Typefaces per deck (error above) | 4 | 2 (Poppins and DM Mono) | 1 (Noto Sans) | 2 (Anton and Work Sans) | 3 (Quicksand, DM Sans and Reno Mono) | 2 (Plus Jakarta Sans and DM Mono) |
+| Main visuals per slide (error above 1) | 3D, chart, diagram, photo or text only; a 2D canvas loop counts as a diagram | the same | the same | the same | the same | the same |
 
 Presenter mode is the default; use document mode only for a deck that is mainly read without a speaker. A word is a
 whitespace-separated piece of text that contains a letter ("34%" and "2025" are not words). For a look with its own
@@ -42,7 +42,7 @@ rules (`looks/_shared/LOOK-BASE.md`); only its brand differs.
 ## Folders and where you write
 | Folder | What it is | Rule |
 |---|---|---|
-| `3 - Put your files here/` | Their report, images, data, logo/template, previous reports, papers, anything else | **Read only. Never move, rename, edit or delete their files.** |
+| `3 - Put your files here/<deck>/` | Their report, images, data, logo/template, previous reports, papers, anything else. One folder per deck - read only the one the step message names | **Read only. Never move, rename, edit or delete their files.** |
 | `.aura/decks/<id>/` | The deck's **work folder**, one per deck: `plan.json` and the packed editable deck | **You write here** (see below). The app keeps its own records next to it (`.aura/decks/<id>.json`): never touch files you did not create. |
 | `4 - Your slides/` | The finished files the person opens: `<Title>.html`, PDF, backups | Written by the app's **Finalize**, not by you (see below). |
 | `.aura/brief/brief.md` and `brief.json` | Their answers from the app | Read these first. If missing, ask them to open Lumi from the desktop icon and press **make a new deck**. |
@@ -106,7 +106,7 @@ deck's folder and the step), then the skill files, then this guide's general adv
 - The brand-logo question (its rule #21) is not asked: use their logo from `Logo and university template/` on the
   title and closing slides when they gave one, otherwise no logo.
 - **Do not use its "paste a URL / Firecrawl" option** — users here do not have Firecrawl. Use a library brand, the
-  university's logo/template from `3 - Put your files here/Logo and university template/`, or its default style.
+  university's logo/template from `Logo and university template/` inside this deck's files folder, or its default style.
 - Do not ask the user whether it is a deck or a website: in Lumi it is always a deck.
 
 ## Aura Blend (the Lumi design style)
@@ -114,10 +114,10 @@ Style every deck with `.claude/skills/aura-slide/aura-blend.md`. It covers:
 - The typeface rules (public-licence fonts only, from `.aura/engine/fonts/`). How many typefaces: the numbers table above
   (this overrides power-design's "max 2 typefaces" rule, except where a look allows fewer).
 - The colour blend and one signature device per theme.
-- The five Aura themes: Pink Punch, Bold Blue, Flat-Pack, Happy Headspace, Yellow Frame. Bold Blue is the recommended
+- The five Aura themes: Pink Punch, Bold Blue, Flat-Pack, Happy Headspace, Clay Pop. Bold Blue is the recommended
   default. **Every look obeys the same structural rules** - `.claude/skills/aura-slide/looks/_shared/LOOK-BASE.md` -
-  and only its brand differs. Bold Blue and Flat-Pack each have their own brand file
-  (`.claude/skills/aura-slide/looks/<look>/LOOK.md`); read the base and then that file whenever one of them is the look.
+  and only its brand differs. Every one of the five has its own brand file
+  (`.claude/skills/aura-slide/looks/<look>/LOOK.md`); read the base and then that file for the look.
   **They override the form's visual choices, aura-blend.md and deck-toolkit.md wherever they differ.**
 
 Their brand files are in `.claude/skills/aura-slide/brands/` and in power-design's `brands/`. Aura Blend works inside

@@ -160,6 +160,7 @@ body {
 .bb-blender > img.bb-blender-img, .bb-blender > video.bb-blender-video { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }   /* contain, never cover: the render fades to the slide colour at ITS edges, a crop would cut through the floor shadow */
 .bb-blender > [data-anchor] { position: absolute; z-index: 2; }
 .bb-blender:not([data-filled]) > [data-anchor] { display: none; }      /* no render yet, so nothing to anchor to */
+.bb-blender[data-baked]:not([data-fallback]) > img.bb-bake-poster { display: none; }   /* batch 6: the poster shows only when the model cannot draw (display, not visibility: capture forces visibility) */
 html.aura-still .bb-blender > video.bb-blender-video { display: none; }
 @media print { .bb-blender > video.bb-blender-video { display: none; } }
 /* ?capture and ?still=n: a tool drives the page, nothing moves by itself */

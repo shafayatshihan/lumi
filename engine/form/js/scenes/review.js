@@ -1,12 +1,12 @@
 // "Make it" scene: a live mini title slide in the chosen look, showing the talk title, the presenters and the event.
-// Each look is drawn in its own colours, shapes and display font (Pink Punch, Bold Blue, Flat-Pack, Happy Headspace,
-// Yellow Frame); "Claude chooses" gently cycles through all five. Under the slide, the plan: either a pill saying
+// Each look is drawn in its own colours, shapes and display font (Pink Punch, Bold Blue, Flat-Pack,
+// Happy Headspace, Clay Pop); "Claude chooses" gently cycles through all five. Under the slide, the plan: either a pill saying
 // Claude plans the slides, or a strip of the slides the user listed.
 
 import { C, SPRING, h, get, clean, currentScreen, short, star, pill, makeStage, DOT, ELL } from './talk.js';
 
 const W = 440, H = 248, X0 = 110, Y0 = 34;
-const LOOKS = ['Pink Punch', 'Bold Blue', 'Flat-Pack', 'Happy Headspace', 'Yellow Frame'];
+const LOOKS = ['Pink Punch', 'Bold Blue', 'Flat-Pack', 'Happy Headspace', 'Clay Pop'];
 const FONT_CSS = `
 @font-face{font-family:AuraAnton;src:url('/fonts/Anton-400.woff2') format('woff2');font-weight:400;font-display:swap}
 @font-face{font-family:AuraJakarta;src:url('/fonts/PlusJakartaSans-200-800.woff2') format('woff2');font-weight:200 800;font-display:swap}
@@ -162,33 +162,33 @@ function headspace(d) {
     textF(24, 232, [short(d.foot, 13, 240)], { size: 13, fam: 'dm', weight: 400, fill: '#6b6766' }));
   return g;
 }
-function yellowFrame(d) {
+function clayPop(d) {
   const g = h('g');
-  const t = fitF(d.title, { sizes: [28, 25, 22, 19, 17, 15], fam: 'serif', weight: 700, width: 218, lines: 4 });
-  const ty = 84 + t.size * 0.8;
-  const kick = short(d.kicker.toUpperCase(), 13, 150);
-  const kw = tw(kick, 13, 'open', 700) + 16;
-  const clip = 'yf' + Math.random().toString(36).slice(2, 8);
+  const t = fitF(d.title, { sizes: [28, 25, 22, 19, 17, 15], fam: 'jak', weight: 800, width: 236, lines: 4 });
+  const lh = Math.round(t.size * 1.1), ty = 66 + t.size * 0.8;            // a 4-line title keeps its key clear of the names
+  const lastY = ty + lh * (t.lines.length - 1);
+  const keyW = Math.min(244, tw(t.lines[t.lines.length - 1] || '', t.size, 'jak', 800) + 12);
   g.append(
-    h('rect', { width: W, height: H, fill: C.white }),
-    h('clipPath', { id: clip }, [h('rect', { x: 262, y: 22, width: 156, height: 204 })]),
-    h('g', { 'clip-path': `url(#${clip})` }, [
-      h('rect', { x: 262, y: 22, width: 156, height: 204, fill: '#d9ecf7' }),
-      h('g', { transform: 'translate(372,72)' }, [h('g', { class: 'breathe fb' }, [h('circle', { r: 20, fill: '#ffcc00' })])]),
-      h('path', { d: 'M262,180L310,120L348,160L380,130L418,172V226H262Z', fill: '#7fa88d' }),
-      h('path', { d: 'M262,200C300,186 350,206 418,190V226H262Z', fill: '#4f7a62' }),
-      h('path', { d: 'M300,98q6,-5 12,0M322,88q5,-4 10,0', stroke: C.ink, 'stroke-width': 1.8, fill: 'none', 'stroke-linecap': 'round' })]),
-    h('rect', { x: 10, y: 10, width: W - 20, height: H - 20, fill: 'none', stroke: '#ffcc00', 'stroke-width': 10 }),
-    h('rect', { x: 28, y: 30, width: 46, height: 5, fill: C.ink }),
-    h('rect', { x: 28, y: 46, width: 12, height: 16, fill: '#ffcc00' }),
-    h('rect', { x: 46, y: 46, width: kw, height: 16, fill: C.ink }),
-    textF(54, 58.5, [kick], { size: 13, fam: 'open', weight: 700, fill: C.white, spacing: '0.04em' }),
-    textF(28, ty, t.lines, { size: t.size, fam: 'serif', weight: 700, fill: d.empty ? '#b0b0b0' : C.ink, lh: 1.14 }),
-    textF(28, 200, [short(d.names.length ? d.names.slice(0, 3).join('  |  ').toUpperCase() : 'YOUR NAME', 13, 228)], { size: 13, fam: 'open', weight: 700, fill: C.ink, spacing: '0.03em' }),
-    textF(28, 218, [short(d.foot, 13, 228)], { size: 13, fam: 'open', weight: 400, fill: '#555' }));
+    h('rect', { width: W, height: H, fill: '#f0f0f5' }),
+    h('ellipse', { cx: 352, cy: 197, rx: 66, ry: 9, fill: '#15151c', opacity: 0.12 }),            // the contact shadow
+    h('rect', { x: 296, y: 104, width: 112, height: 92, rx: 22, fill: '#c93a05' }),                 // a clay block: shadow side
+    h('rect', { x: 296, y: 98, width: 112, height: 88, rx: 22, fill: '#ff6a13' }),
+    h('rect', { x: 306, y: 104, width: 92, height: 14, rx: 7, fill: '#ff9a3d' }),                    // its lit top edge
+    h('rect', { x: 318, y: 84, width: 40, height: 18, rx: 9, fill: '#2a2724' }),
+    h('rect', { x: 368, y: 150, width: 26, height: 16, rx: 3, fill: '#f2c29a', transform: 'rotate(-18 381 158)' }),   // the one wink
+    h('g', { transform: 'translate(298,56)' }, [h('g', { class: 'bob' }, [h('circle', { r: 11, fill: '#ff6a13' })])]),
+    h('g', { transform: 'translate(392,44)' }, [h('g', { class: 'bob', style: { animationDelay: '-1.2s' } }, [h('circle', { r: 7, fill: '#b9b6b3' })])]),
+    h('circle', { cx: 30, cy: 36, r: 5, fill: '#ff6a13' }),
+    textF(42, 40.5, [short(d.kicker.toUpperCase(), 12, 220)], { size: 12, fam: 'jak', weight: 700, fill: '#2b2b33', spacing: '0.12em' }));
+  if (!d.empty && t.lines.length > 1)                                                                  // the emphasis: an orange clay key
+    g.append(h('rect', { x: 20, y: lastY - t.size * 0.82, width: keyW, height: t.size * 1.08, rx: t.size * 0.22, fill: '#ff6a13' }));
+  g.append(
+    textF(24, ty, t.lines, { size: t.size, fam: 'jak', weight: 800, fill: d.empty ? '#b9b9c4' : '#15151c', lh: 1.1 }),
+    textF(24, 212, [short(namesLine(d), 14, 240)], { size: 14, fam: 'jak', weight: 600, fill: '#15151c' }),
+    textF(24, 232, [short(d.foot, 13, 240)], { size: 13, fam: 'jak', weight: 400, fill: '#5a5a66' }));
   return g;
 }
-const DRAW = { 'Pink Punch': pinkPunch, 'Bold Blue': boldBlue, 'Flat-Pack': flatPack, 'Happy Headspace': headspace, 'Yellow Frame': yellowFrame };
+const DRAW = { 'Pink Punch': pinkPunch, 'Bold Blue': boldBlue, 'Flat-Pack': flatPack, 'Happy Headspace': headspace, 'Clay Pop': clayPop };
 
 export default {
   mount(el, ctx) {
@@ -259,7 +259,7 @@ export default {
       const auto = !LOOKS.includes(theme);
       lookP.set(auto ? `claude chooses ${DOT} ${current.toLowerCase()}` : `look: ${theme.toLowerCase()}`);
       lookP.rect.setAttribute('fill', '#5b3fa8');
-      dots.replaceChildren(...(auto ? LOOKS.map((l, i) => h('circle', { cx: (i - 2) * 14, r: 4, fill: l === current ? C.ink : C.f3 })) : []));
+      dots.replaceChildren(...(auto ? LOOKS.map((l, i) => h('circle', { cx: (i - (LOOKS.length - 1) / 2) * 14, r: 4, fill: l === current ? C.ink : C.f3 })) : []));
     }
 
     function renderPlan(auto, slides) {

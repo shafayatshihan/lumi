@@ -1,0 +1,60 @@
+<!-- archetype: objectives-tour | the goals as soft blocks that CLIMB (S4); the checklist lights up in step | main visual: 3D | companions: checklist <=4 rows -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="Objectives">
+  <div class="safe">
+    <div class="hs-main">
+      <div class="hs-l w5">
+        <p class="kicker" data-edit="s{{N}}-1">08 · Objectives</p>
+        <h2 class="headline" data-edit="s{{N}}-2">Four steps, <span class="em">three climbed</span></h2>
+        <ul class="hs-goals">
+          <li class="hs-goal on"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-3">Measure it</strong><span class="d" data-edit="s{{N}}-4">done, 120 runs</span></div></li>
+          <li class="hs-goal on"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-5">Explain it</strong><span class="d" data-edit="s{{N}}-6">done, one model</span></div></li>
+          <li class="hs-goal wip"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v6l4 2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-7">Build it</strong><span class="d" data-edit="s{{N}}-8">in progress</span></div></li>
+          <li class="hs-goal"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+            <div><strong data-edit="s{{N}}-9">Prove it</strong><span class="d" data-edit="s{{N}}-10">next</span></div></li>
+        </ul>
+      </div>
+      <div class="hs-r w7">
+        <div class="hs-stage">
+          <div class="aura-3d hs-3d" data-scene="s{{N}}-scene" data-period="24" aria-hidden="true">
+            <span class="hs-pill" data-follow="goal" data-align="center" data-dy="-140" data-edit="s{{N}}-11">The goal</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="hs-foot"><span class="hs-mark" data-edit="s{{N}}-12">Deck mark</span><span class="hs-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Climb it out loud.</strong> The blocks rise because the objectives build on each other - say what each
+    one made possible for the next, not just what it was.</p>
+    <p><strong>Be honest about where you are.</strong> Point at the block the marker is resting on and say what is
+    left. A half-finished objective said plainly is stronger than four ticks.</p>
+    <p><strong>Prepare the question</strong> "what if the last one fails?" - have the fallback ready in one sentence,
+    and say it calmly. This look makes an honest answer sound like an honest answer.</p>
+  </aside>
+</section>
+<script>
+/* S4 (LOOK-BASE 4.0): a sequence is a path that CLIMBS - soft blocks rising, the goal on the top one. Never a row of
+   equal panels, never a level line of stepping stones. A warm marker drifts up the blocks in step with the list. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx, P = ctx.period, N = 4;
+  const S = HS3D.room(ctx, { target: [0, 1.4, 0], distance: 14, turn: -20, tilt: 14 });
+  const stair = HS3D.climb(THREE, N, { tread: 1.3, rise: 0.62, depth: 1.1 });
+  S.add(stair.group);
+  const walker = S.add(HS3D.blob(THREE, 0.32, { fill: 'gold' }));
+  S.ground(3.2);
+  let at = 0;
+  HS3D.pins(S, ctx.el, { goal: stair.tops[N - 1].toArray() });
+  const rows = ctx.el.closest('.hs-main').querySelectorAll('.hs-goal');
+  return S.api({ update(t) {
+    S.breathe(t, { sway: 3 });
+    const s = HS3D.steps(t, P, N);
+    const a = stair.tops[s.i], b = stair.tops[s.next];
+    walker.position.lerpVectors(a, b, s.k);
+    walker.position.y += 0.32 + 0.4 * Math.sin(Math.PI * s.k);   // a gentle rise: zero at both ends, so the loop is seamless
+    if (s.i !== at) { at = s.i; rows.forEach((r, k) => r.classList.toggle('is-here', k === s.i)); }
+  } });
+}, { period: 24 });
+</script>

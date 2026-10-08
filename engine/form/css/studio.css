@@ -111,7 +111,10 @@
 .hm-ghost .hm-thumb{height:169px}
 .hm-empty{grid-column:1 / -1;height:600px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;
   border-radius:30px;background:rgba(247,248,250,.55);animation:wsIn .6s var(--ease) both}
+.hm-empty-art{position:relative}
 .hm-empty-art svg{width:300px;height:180px;display:block;animation:upBob 3.6s var(--ease-io) infinite}
+/* Lumi sits on the corner of the empty stack, one beat out of step with it so the pair breathes rather than slides */
+.hm-empty-lumi{position:absolute;right:-56px;bottom:-30px;width:190px;animation:upBob 4.4s var(--ease-io) infinite;animation-delay:.5s}
 .hm-empty-t{font-family:var(--head);font-weight:900;font-size:30px;letter-spacing:-.015em}
 .hm-empty-x{max-width:340px;font-size:16px;line-height:1.45;color:var(--mute)}
 .hm-foot{position:absolute;left:0;right:0;top:648px;height:44px;display:flex;align-items:center;gap:16px}
@@ -330,11 +333,14 @@
 
 /* the way out of the fullscreen window (shell.js). It sits in the screen corner, not on the stage, and it only
    exists while the window really has no title bar - a maximized or normal window keeps its own X. */
-.sh-exit-wrap{position:fixed;right:12px;top:10px;z-index:70}
+.sh-exit-wrap{position:fixed;right:12px;top:10px;z-index:70;display:flex;align-items:center;gap:8px}
 .sh-exit-wrap[hidden]{display:none}
 .sh-exit{height:30px;padding:0 14px;border-radius:100px;background:rgba(255,255,255,.55);color:var(--mute);font-size:14px;
   box-shadow:var(--sh-soft);opacity:.35;transition:opacity .2s,background .2s}
 .sh-exit:hover,.sh-exit:focus-visible{opacity:1;background:#fff;color:var(--ink)}
+/* shown only when the browser refused window.close(): the button must never be a dead control. */
+.sh-exit-tip{padding:4px 12px;border-radius:100px;background:#fff;color:var(--ink);font-size:14px;box-shadow:var(--sh-soft)}
+.sh-exit-tip[hidden]{display:none}
 
 @media (prefers-reduced-motion:reduce){
   .route *,.usage{animation:none !important;transition-duration:.01ms !important}

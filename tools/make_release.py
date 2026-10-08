@@ -18,7 +18,8 @@ n = 0
 with zipfile.ZipFile(OUT, 'w', zipfile.ZIP_DEFLATED) as z:
     for p in sorted(REPO.rglob('*')):
         rel = p.relative_to(REPO)
-        if p.is_dir() or rel.parts[0] in TOP_SKIP or SKIP_DIRS & set(rel.parts) or rel.name in SKIP_FILES:
+        if (p.is_dir() or rel.parts[0] in TOP_SKIP or rel.parts[0].startswith('aura-dev-')    # test sandboxes, gitignored
+                or SKIP_DIRS & set(rel.parts) or rel.name in SKIP_FILES):
             continue
         z.write(p, rel.as_posix()); n += 1
     if EXE.exists():

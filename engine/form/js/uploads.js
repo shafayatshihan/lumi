@@ -1,6 +1,7 @@
 // Upload panel for one "3 - Put your files here/<folder>" screen: drop zone, sequential uploads with a progress bar
 // per file, the files already in the folder, remove for files added this session, and (Report only) the main-report pick.
-// mountUploads(el, { folder, title, hint, accept, setKey, getState, bus, audio }) -> { destroy() }
+// mountUploads(el, { folder, title, hint, accept, setKey, getState, bus, audio, deck }) -> { destroy() }
+// `deck` is the deck id when the deck already exists; left out, the files go to the draft folder the new deck adopts.
 import { upload, files, removeFile } from './api.js';
 import { emit } from './bus.js';
 
@@ -8,19 +9,19 @@ import { emit } from './bus.js';
 // 40-field form (steps.js), which is gone; it belongs beside the panel that actually fills the folders.
 export const FOLDERS = [
   { name: 'Report', title: 'your report', hint: 'pdf or word', accept: '.pdf,.doc,.docx',
-    blurb: 'your thesis, report or write-up. claude reads this one first, so it matters most.' },
+    blurb: 'your thesis, report or write-up. claude reads it first.' },
   { name: 'Images and photos', title: 'photos and pictures', hint: 'jpg, png, heic, svg', accept: 'image/*,.heic',
-    blurb: 'setups, samples, prototypes, people. real photos make a talk feel real.' },
+    blurb: 'setups, samples, prototypes, people.' },
   { name: 'Data (csv, excel, graphs)', title: 'data and graphs', hint: 'csv, excel, chart images', accept: '.csv,.tsv,.xlsx,.xls,.json,.txt,.png,.jpg,.jpeg,.svg',
-    blurb: 'spreadsheets or chart images. claude can redraw your graphs nice and clean.' },
+    blurb: 'spreadsheets or chart images.' },
   { name: 'Logo and university template', title: 'logos and templates', hint: 'images, pptx or pdf', accept: 'image/*,.pptx,.potx,.pdf',
-    blurb: 'your university logo, or a template you have been asked to follow.' },
+    blurb: 'your university logo or required template.' },
   { name: 'Previous year reports', title: 'earlier examples', hint: 'pdf, word or powerpoint', accept: '.pdf,.doc,.docx,.ppt,.pptx',
-    blurb: 'past reports or slides help claude match what your department expects.' },
+    blurb: 'past reports or slides from your department.' },
   { name: 'Journal papers', title: 'journal papers', hint: 'pdf', accept: '.pdf',
-    blurb: 'the key papers you lean on. claude takes references and context from them.' },
+    blurb: 'the key papers you cite.' },
   { name: 'Anything else', title: 'anything else', hint: 'any file', accept: '',
-    blurb: 'videos, notes, odds and ends. if in doubt, drop it in.' },
+    blurb: 'videos, notes, odds and ends.' },
 ];
 
 const MAX_BYTES = 2 * 1024 ** 3;
@@ -68,7 +69,7 @@ const ZONE_ART = `<svg class="up-art" viewBox="0 0 120 92" aria-hidden="true">
 const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12.5l4 4 8-9" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const CROSS = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 6l8 8M14 6l-8 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 
-export function mountUploads(el, { folder, title = 'your files', hint = '', accept = '', setKey, getState, bus, audio } = {}) {
+export function mountUploads(el, { folder, title = 'your files', hint = '', accept = '', setKey, getState, bus, audio, deck = null } = {}) {
   const isReport = folder === 'Report';
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const sfx = n => { try { audio && audio.sfx && audio.sfx(n); } catch (e) { /* sound is optional */ } };
@@ -94,7 +95,7 @@ export function mountUploads(el, { folder, title = 'your files', hint = '', acce
   const head = h('div', { class: 'up-head' }, h('span', { class: 'up-head-l' }, 'in this folder'), count);
   const list = h('div', { class: 'up-list', role: 'list' });
   const more = h('button', { type: 'button', class: 'up-more', hidden: true, 'data-cursor-label': 'more' });
-  const empty = h('p', { class: 'up-empty' }, 'nothing here yet. that’s fine, you can skip this one.');
+  const empty = h('p', { class: 'up-empty' }, 'nothing here yet. you can skip this.');
   const toast = h('p', { class: 'up-toast', role: 'status', 'aria-live': 'polite' });
   const root = h('div', { class: 'up' + (reduced ? ' up-reduced' : '') }, zone, head, note, h('div', { class: 'up-list-wrap' }, list, empty), more, toast, input);
   el.append(root);
@@ -252,7 +253,7 @@ export function mountUploads(el, { folder, title = 'your files', hint = '', acce
       paintRow(it); layout();
       it.row.classList.add('is-active');
       const t0 = performance.now();
-      const r = await upload(it.file, folder, p => { it.target = p; kick(); });
+      const r = await upload(it.file, folder, p => { it.target = p; kick(); }, deck);
       if (!alive) break;
       if (r && r.ok) {
         // let the bar finish its run (at least ~450 ms) before the check pops in
@@ -297,7 +298,7 @@ export function mountUploads(el, { folder, title = 'your files', hint = '', acce
   async function remove(it) {
     if (it.state === 'queued' || it.state === 'error' || !it.path) return drop(it);
     it.row.classList.add('is-busy');
-    const r = await removeFile(it.path);
+    const r = await removeFile(it.path, deck);
     if (!alive) return;
     it.row.classList.remove('is-busy');
     if (r && r.ok !== false) { sfx('deselect'); drop(it); fire('files:removed', { folder, name: it.name, path: it.path }); }
@@ -317,7 +318,7 @@ export function mountUploads(el, { folder, title = 'your files', hint = '', acce
   }
 
   // ---- existing files
-  files().then(g => {
+  files(deck).then(g => {
     if (!alive) return;
     if (!Array.isArray(g)) { if (g && g.error === 'offline') say('couldn’t reach lumi to list this folder.'); return; }
     const grp = g.find(x => x && x.folder === folder);

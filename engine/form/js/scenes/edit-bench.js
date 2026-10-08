@@ -14,7 +14,7 @@ const AREA = { x0: 92, x1: 334, y: 144 };          // where the cards lie
 const LIFT = { y: 66, scale: 2.05 };
 const C = { ink: PAL.ink, pill: PAL.pill, lilac: PAL.lilac, pink: PAL.pink, rose: PAL.rose, orange: PAL.orange, f0: PAL.fur[0], f1: PAL.fur[1], f2: PAL.fur[2], f3: PAL.fur[3], f4: PAL.fur[4], plum: PAL.plum, white: '#ffffff' };
 const ACCENTS = [C.pink, C.orange, C.lilac, C.rose, C.f3];
-const LABEL = { idle: n => `ready to edit · slide ${n}`, work: n => `editing slide ${n}`, wait: () => 'a quick question for you', done: n => `slide ${n} updated!` };
+const LABEL = { idle: n => `ready to edit · slide ${n}`, work: n => `editing slide ${n}`, wait: () => 'a quick question for you', done: n => `slide ${n} updated` };
 
 function makeModel(reduced) {
   return { reduced, t: 0, rnd: rng(11), count: 5, selected: 1, target: 1, mode: 'idle', modeT: 0, cards: [], parts: [],

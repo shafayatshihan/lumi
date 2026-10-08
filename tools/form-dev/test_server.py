@@ -22,6 +22,9 @@ PORT = int(args[args.index('--port') + 1]) if '--port' in args else 8767
 SANDBOX = Path(args[args.index('--sandbox') + 1]) if '--sandbox' in args else Path(r'X:\aura-dev-server')
 AURA = SANDBOX / '.aura'
 FILES = SANDBOX / '3 - Put your files here'
+# Every deck keeps its own folder under FILES. A file uploaded with no ?deck= (no deck exists yet) goes to the draft
+# folder, which the deck adopts when the interview makes it; the returned `path` stays relative to the deck folder.
+DRAFT = FILES / 'New deck'
 HOST = f'127.0.0.1:{PORT}'
 SERVER = REPO / 'engine' / 'form_server.py'
 FAKE = REPO / 'tools' / 'form-dev' / 'fake_claude.py'
@@ -134,6 +137,8 @@ def main():
         test_batch_e.run(sys.modules[__name__])
         import test_slide_convs             # v0.5.2: one Claude conversation per slide + one for the deck (+ migration)
         test_slide_convs.run(sys.modules[__name__])
+        import test_deck_folders            # per-deck source folders: isolation, the draft, legacy decks, renames, provenance
+        test_deck_folders.run(sys.modules[__name__])
         import test_permissions_real        # v0.5.1: the PreToolUse permission gate + shipped allow rules (no Claude; --real is separate)
         test_permissions_real.run(sys.modules[__name__])
         import test_update_keep             # v0.5.1: an update keeps the user's work and replaces settings.json (real setup.ps1)
@@ -226,7 +231,7 @@ def run_main_suite():
     print('\n[MIME types and ranges]')
     for p, mime in (('/', 'text/html'), ('/js/api.js', 'text/javascript'), ('/assets/gaze-frames.json', 'application/json'),
                     ('/assets/character.mp4', 'video/mp4'), ('/fonts/DMSans-Regular.woff2', 'font/woff2'),
-                    ('/themes/1-pink-punch.jpg', 'image/jpeg'), ('/themes/2-bold-blue.mp4', 'video/mp4'),
+                    ('/themes/1-pink-punch-1.jpg', 'image/jpeg'), ('/themes/2-bold-blue-4.jpg', 'image/jpeg'),
                     ('/vendor/three/three.module.js', 'text/javascript'), ('/vendor/three/three.core.js', 'text/javascript')):
         s, h, d = req('HEAD', p)
         check(f'{p} -> {mime}', s == 200 and h.get('content-type', '').startswith(mime), (s, h.get('content-type')))
@@ -254,9 +259,9 @@ def run_main_suite():
         return s, json.loads(d or b'{}')
     s, j = up('Report', 'hello.txt')
     check('upload ok', s == 200 and j.get('path') == 'Report/hello.txt' and j.get('size') == 5 and
-          (FILES / 'Report' / 'hello.txt').read_bytes() == b'hello', j)
+          (DRAFT / 'Report' / 'hello.txt').read_bytes() == b'hello', j)
     s, j = up('Report', 'hello.txt', b'second')
-    check('duplicate gets " (2)"', j.get('path') == 'Report/hello (2).txt' and (FILES / 'Report' / 'hello.txt').read_bytes() == b'hello', j)
+    check('duplicate gets " (2)"', j.get('path') == 'Report/hello (2).txt' and (DRAFT / 'Report' / 'hello.txt').read_bytes() == b'hello', j)
     s, j = up('Report', 'hello.txt', b'third')
     check('third copy gets " (3)"', j.get('path') == 'Report/hello (3).txt', j)
     for name, want in (('../../evil.txt', 'evil.txt'), ('..\\..\\.aura\\brief\\brief.json', 'brief.json'),
@@ -266,8 +271,9 @@ def run_main_suite():
                        ('x' * 300 + '.docx', 'x' * 115 + '.docx'), ('', 'file'), ('tab\there.csv', 'tab_here.csv')):
         s, j = up('Images and photos', name)
         check(f'name {name[:30]!r} -> {want[:30]!r}', s == 200 and j.get('name') == want and
-              (FILES / 'Images and photos' / want).is_file(), j)
-    check('nothing escaped the folder', not (SANDBOX / 'evil.txt').exists() and not (FILES / 'evil.txt').exists())
+              (DRAFT / 'Images and photos' / want).is_file(), j)
+    check('nothing escaped the folder', not (SANDBOX / 'evil.txt').exists() and not (FILES / 'evil.txt').exists()
+          and not (DRAFT / 'evil.txt').exists())
     for folder in ('Secret', '../.aura', 'Report/../..', ''):
         check(f'bad folder {folder!r} rejected', up(folder, 'x.txt')[0] == 400)
     huge = 3 * 1024 ** 3
@@ -275,23 +281,23 @@ def run_main_suite():
     check('oversize rejected by Content-Length (413)', ' 413 ' in st + ' ', st)
     st = raw([f'POST /api/upload?folder=Report&name=nolen.bin HTTP/1.1', f'Host: {HOST}'])
     check('missing Content-Length rejected (411)', ' 411 ' in st + ' ', st)
-    check('no partial files left', not list(FILES.rglob('*.part')) and not (FILES / 'Report' / 'big.bin').exists())
+    check('no partial files left', not list(FILES.rglob('*.part')) and not (DRAFT / 'Report' / 'big.bin').exists())
     s, j = up('Report', 'cross.txt', b'x')
     s2, _, _ = req('POST', '/api/upload?folder=Report&name=cross2.txt', b'x', headers={'Origin': 'http://evil.example'})
-    check('upload with foreign origin rejected', s2 == 403 and not (FILES / 'Report' / 'cross2.txt').exists())
+    check('upload with foreign origin rejected', s2 == 403 and not (DRAFT / 'Report' / 'cross2.txt').exists())
     big = os.urandom(3 * 1024 * 1024 + 17)
     s, j = up('Data (csv, excel, graphs)', 'big.bin', big)
-    check('multi-chunk upload intact', s == 200 and (FILES / 'Data (csv, excel, graphs)' / 'big.bin').read_bytes() == big)
+    check('multi-chunk upload intact', s == 200 and (DRAFT / 'Data (csv, excel, graphs)' / 'big.bin').read_bytes() == big)
     files = jget('/api/files')[1]
     rep = next(g for g in files if g['folder'] == 'Report')
     check('/api/files lists uploads', 'Report/hello (2).txt' in rep['files'], rep)
 
     print('\n[remove]')
-    (FILES / 'Report' / 'mine-before.pdf').write_bytes(b'%PDF-1.4 pre-existing')
+    (DRAFT / 'Report' / 'mine-before.pdf').write_bytes(b'%PDF-1.4 pre-existing')
     check('remove session upload', jpost('/api/remove', {'path': 'Report/hello (3).txt'})[0] == 200 and
-          not (FILES / 'Report' / 'hello (3).txt').exists())
+          not (DRAFT / 'Report' / 'hello (3).txt').exists())
     s, j = jpost('/api/remove', {'path': 'Report/mine-before.pdf'})
-    check('pre-existing file protected', s == 403 and (FILES / 'Report' / 'mine-before.pdf').exists(), s)
+    check('pre-existing file protected', s == 403 and (DRAFT / 'Report' / 'mine-before.pdf').exists(), s)
     for bad in ('../.aura/brief/brief.json', 'Report/../../.aura/aura.config.json', 'C:/Windows/win.ini', '', None, 5):
         check(f'remove {bad!r} refused', jpost('/api/remove', {'path': bad})[0] in (400, 403))
     check('remove twice refused', jpost('/api/remove', {'path': 'Report/hello (3).txt'})[0] == 403)
@@ -309,8 +315,13 @@ def run_main_suite():
     check('brief saved', s == 200 and j.get('savedAt'))
     check('brief round trip', back.get('style') == brief['style'] and back.get('unknown') == {'kept': True} and back.get('_savedAt'))
     md = (AURA / 'brief' / 'brief.md').read_text(encoding='utf-8')
-    for want in ('## Look and motion', '- **Theme:** Pink Punch', '- **3D simulations:** Yes', '- **2D animations:** No',
-                 '- **Amount of illustration and animation:** 75 / 100 (Rich)', 'A. B. Doe - 1000001 - Presenter',
+    # Pink Punch has its own LOOK.md now, so the look OVERRIDES the style answers and the brief says so, keeping
+    # what the person answered on a separate "they had also answered" row. A look with no spec still reports the
+    # raw answers - that case is covered by the 'Claude chooses' post below.
+    for want in ('## Look and motion', '- **Theme:** Pink Punch', '- **3D simulations:** Pink Punch decides',
+                 '- **2D animations:** Pink Punch decides',
+                 '- **Amount of illustration and animation:** Pink Punch decides',
+                 'overridden by Pink Punch', 'A. B. Doe - 1000001 - Presenter',
                  'R_th drop - 38'):
         check(f'brief.md has {want!r}', want in md, md[:400])
     jpost('/api/brief', dict(brief, look={'theme': 'Claude chooses'}, style={'amount': 10}))
@@ -640,7 +651,9 @@ def run_v5_suite():
           sl[1]['visual']['main'] == 'chart' and sl[0]['visual']['companions'] == ['labels'] and len(rep) == 2, (sl, rep))
     check('3d gets detail + motion, others none', sl[0]['visual']['detail'] == 'detailed' and sl[0]['visual']['motion'] == 'timed' and
           sl[1]['visual']['detail'] is None, sl)
-    check('word cap from hard-rules (Bold Blue 55, others default)', fs.word_cap('Bold Blue') == 55 and fs.word_cap('Pink Punch') == fs.DEFAULT_WORD_CAP)
+    check('word cap from hard-rules (per look, and the default for a look with no entry)',
+          fs.word_cap('Bold Blue') == 55 and fs.word_cap('Pink Punch') == 30 and fs.word_cap('Clay Pop') == 40
+          and fs.word_cap('No Such Look') == fs.DEFAULT_WORD_CAP)
 
     print('\n[v0.5 planning]')
     jpost('/api/brief', {'basics': {'title': 'Plan deck'}, 'look': {'theme': 'Bold Blue'}, 'style': {'quality': 'best'}})
@@ -1150,7 +1163,7 @@ def run_health_suite():
         j = jget('/api/health')[1]
         checks = {c['id']: c for c in j.get('checks') or []}
         check('free plan is allowed with a gentle note', checks['signin']['ok'] is True and checks['signin'].get('free') is True
-              and 'Pro or higher is recommended' in checks['signin'].get('note', ''), checks['signin'])
+              and 'pro or higher works best' in checks['signin'].get('note', ''), checks['signin'])
         check('newer release -> update offered', checks['version']['ok'] is False and checks['version'].get('fix') == 'update' and
               '9.9.0' in checks['version']['label'], checks['version'])
         check('simulated failure gets its fix', checks['modules']['ok'] is False and checks['modules'].get('fix') == 'npm', checks['modules'])

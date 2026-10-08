@@ -67,12 +67,13 @@ numbers are illustrative.
 | 2 | **Bold Blue** | the owner's reference deck (measured, not a brand site) | Poppins (everything) + DM Mono (page numbers) | warm off-white `#F9F4F2` · ink `#2D2C2B` · ONE blue `#0061EF` phrase per headline · orange `#FF7E1D` identity dot | photoreal studio 3D (soft shadows, real materials, reflections) beside a stat stack; hand-drawn SVG charts. **Its own authority: `looks/bold-blue/LOOK.md`** |
 | 3 | **Flat-Pack** | IKEA | Noto Sans (one typeface: 800 display, 700 labels, 400 text) | white paper · one grey · IKEA blue `#0058A3` · IKEA yellow `#FFDB00` · no shadows, no gradients | the assembly manual: 4 px ink line drawings in orthographic view, exploded parts, numbered step discs, "6x" part counts, dashed guides, yellow price-tag kicker. **Its own authority: `looks/flat-pack/LOOK.md`** |
 | 4 | **Happy Headspace** | Headspace | Quicksand 700 (display) + DM Sans (text) + Reno Mono (label) | pure white · **orange first**, then gold, amber, purple, teal-navy; pink only as a rare small accent | soft round shapes and blobs, **no faces** (decks are often formal), gold pill kicker, orange squiggle underline |
-| 5 | **Yellow Frame** | National Geographic | Source Serif 4 (display) + Open Sans (text, uppercase label) | pure white · the yellow border · **black as the signature ink**: black label tags with white capitals, a heavy black rule above the kicker, black pipes, arrows and data marks; **never a dark background** | a bright daylight documentary illustration inside the thick yellow rectangle; yellow-rectangle mark before the kicker |
+| 5 | **Clay Pop** | the owner's claymation / vinyl-toy reference (aesthetic only, no brand) | Plus Jakarta Sans (800 display, 500 text) + DM Mono (small labels) | cool near-white `#F0F0F5` · ink `#15151C` · ONE hot clay orange `#FF6A13` doing almost all the work · black and grey as punctuation | chunky bevelled clay models rendered in Blender (soft studio light, contact shadow, the subject's own parts floating beside it, exactly one wink per figure); the emphasis phrase is an orange clay key. **Its own authority: `looks/clay-pop/LOOK.md`** |
 
 Brand files:
-- Bold Blue and Flat-Pack follow `looks/_shared/LOOK-BASE.md` plus their own `looks/<look>/LOOK.md`, which override
-  this file where they differ. Bold Blue has no brand file; Flat-Pack's DNA is `brands/ikea`, but its LOOK.md wins.
-- this skill folder: `brands/gumroad`, `brands/headspace`, `brands/ikea`, `brands/national-geographic`.
+- Every look follows `looks/_shared/LOOK-BASE.md` plus its own `looks/<look>/LOOK.md`, which override this file
+  where they differ. Bold Blue has no brand file; Flat-Pack's DNA is `brands/ikea` and Clay Pop's is `brands/clay-pop`,
+  but their LOOK.md wins.
+- this skill folder: `brands/gumroad`, `brands/headspace`, `brands/ikea`, `brands/clay-pop`.
   IKEA and National Geographic were extracted with Firecrawl.
 
 ## Font licences (engine/fonts)

@@ -133,9 +133,17 @@
   }
 
   /* ---------------------------------------------------------------- the sheet: an orthographic camera over white paper.
-     No lights exist in this scene at all - MeshBasicMaterial needs none, and that is the point. */
+     No lights exist in this scene at all - MeshBasicMaterial needs none, and that is the point.
+
+     NO POST-PROCESSING, EVER. engine/deck/lib/post-policy.js registers flat-pack with every tier off, and a sheet
+     refuses a `post` option by name rather than quietly ignoring it. This is the look, not caution: an assembly manual
+     is DRAWN, so its picture is a flat fill inside a constant-weight ink outline. Bloom spreads light out of shapes
+     that emit none; depth of field blurs a line whose whole job is to be the same 4 px everywhere; ambient occlusion
+     puts back the shading gradient the look deliberately removed. Each one makes the drawing read as a bad photograph
+     OF a drawing. A Flat-Pack slide that needs photographic impact needs a different look, not a different filter. */
   function sheet(ctx, o) {
     o = o || {};
+    if (o.post) throw new Error('FP3D.sheet: Flat-Pack has no post-processing - it is a drawing, not a photograph. Use the Bold Blue look for a photographic slide.');
     var THREE = ctx.THREE, renderer = ctx.renderer, width = ctx.width, height = ctx.height;
     var opt = Object.assign({
       target: [0, 1, 0],

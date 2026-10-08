@@ -89,12 +89,12 @@ async function until(fn, ms = 60000, every = 250) { const t0 = Date.now(); let v
     const chips = await page.evaluate(() => [...document.querySelectorAll('.pl-eng')].map(b => ({ id: b.dataset.eng, on: b.classList.contains('on'), t: b.textContent })));
     check('plan: two named options, studio render · blender suggested and on', chips.length === 2 && chips[0].id === 'blender' && chips[0].on && /studio render · blender/.test(chips[0].t) && /suggested/.test(chips[0].t)
       && /live 3D · three.js/.test(chips[1].t) && /instant, animated, editable/.test(chips[1].t), chips);
-    check('plan: the studio render note carries the server estimate (still ≈ … min)', /ray-traced, photoreal; still ≈ (\d+ min|under a minute)/.test(chips[0].t), chips[0].t);
+    check('plan: the studio render note carries the server estimate (still ≈ … min)', /photo-real; still ≈ (\d+ min|under a minute)/.test(chips[0].t), chips[0].t);
     await page.evaluate(() => document.querySelector('.pl-card .pl-pic').scrollTo(0, 9999)); await sleep(200);
     await shot('plan-engine-chips');
     await page.click('.pl-eng[data-eng=blender] .pl-chip-q'); await sleep(400);
     const why = await page.textContent('.pl-chead .pl-note');
-    check('plan: "?" explains the studio render in plain words', /studio render: traced light, like a photo studio/.test(why), why);
+    check('plan: "?" explains the studio render in plain words', /studio render: a photo-real picture, made with Blender/.test(why), why);
     await shot('plan-engine-why');
     await page.click('.pl-eng[data-eng=threejs]'); await sleep(2600);
     let e1 = (await api(`/api/decks/${D}/plan`)).engines[s1];
@@ -120,7 +120,7 @@ async function until(fn, ms = 60000, every = 250) { const t0 = Date.now(); let v
     await page.waitForFunction(() => window.__aura.route === 'build', null, { timeout: 30000 });
     let c = await waitCard(c => c.mode === 'open' && /do you like the design/.test(c.head) && c.img > 0, 90000);
     check('build: after slide 1 the card asks "do you like the design?" with the preview picture', !!c, c);
-    check('build: estimates before committing: full render time + 0 tokens, and one more preview (time + tokens)', c && c.est.some(t => /^full render ≈ .+ · 0 tokens/.test(t)) && c.est.some(t => /^one more preview ≈ .+ · ≈ \d+k tokens/.test(t)), c && c.est);
+    check('build: estimates before committing: full render time, and one more preview (time + cost)', c && c.est.some(t => /^full render ≈ .+ · runs on this computer/.test(t)) && c.est.some(t => /^one more preview ≈ /.test(t) && !/tokens/.test(t)), c && c.est);
     let sv = await slideVisible();
     check('build: the slide stays visible above the card (no overlap)', sv.ok, sv);
     check('build: no page scroll with the card open', await noScroll());

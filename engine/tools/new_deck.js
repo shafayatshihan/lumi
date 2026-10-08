@@ -18,7 +18,7 @@ const fs = require('fs'), path = require('path');
 const { ENGINE, findAuraRoot } = require('./lib/deckpage');
 
 const THEMES = { 'pink-punch': 'Pink Punch', 'bold-blue': 'Bold Blue', 'flat-pack': 'Flat-Pack',
-  'happy-headspace': 'Happy Headspace', 'yellow-frame': 'Yellow Frame' };
+  'happy-headspace': 'Happy Headspace', 'clay-pop': 'Clay Pop' };
 const args = process.argv.slice(2);
 const opt = n => { const i = args.indexOf('--' + n); return i >= 0 ? args.splice(i, 2)[1] : null; };
 const flag = n => { const i = args.indexOf('--' + n); return i >= 0 ? (args.splice(i, 1), true) : false; };
@@ -170,7 +170,7 @@ const slugArg = opt('slug'), kicker = opt('kicker') || '';
 const title = args.join(' ').trim();
 
 if (!title) {
-  console.error('usage: node new_deck.js "<Deck title>" --theme pink-punch|bold-blue|flat-pack|happy-headspace|yellow-frame\n' +
+  console.error('usage: node new_deck.js "<Deck title>" --theme pink-punch|bold-blue|flat-pack|happy-headspace|clay-pop\n' +
     '       node new_deck.js --ids <build folder> [--check]');
   process.exit(1);
 }
@@ -192,13 +192,29 @@ const engineRel = path.relative(dir, path.join(root, '.aura', 'engine')).split(p
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 // a look may bring its own helpers (Bold Blue: the 3D studio, the chart and the page-number chrome) and its own
 // starting slides; the deck is marked data-look so the checker applies that look's measured thresholds
+// ...and every look loads the shared deck libraries FIRST: the one post stack (lib/post.js) and the policy that
+// decides whether a slide may have it (lib/post-policy.js). The policy is off for any look it does not know, so
+// loading them changes nothing by itself.
+const SHARED_HEAD = '<script src="{{ENGINE}}/deck/lib/post.js"></script>\n' +
+                    '<script src="{{ENGINE}}/deck/lib/post-policy.js"></script>\n';
 const LOOK_HEAD = {
-  'bold-blue': '<script src="{{ENGINE}}/deck/looks/bold-blue/bold-blue.js"></script>\n' +
+  'bold-blue': SHARED_HEAD +
+               '<script src="{{ENGINE}}/deck/looks/bold-blue/bold-blue.js"></script>\n' +
                '<script src="{{ENGINE}}/deck/looks/bold-blue/studio3d.js"></script>\n' +
                '<script src="{{ENGINE}}/deck/looks/bold-blue/timeline.js"></script>\n' +
                '<script src="{{ENGINE}}/deck/looks/bold-blue/physics.js"></script>\n',
-  'flat-pack': '<script src="{{ENGINE}}/deck/looks/flat-pack/flat-pack.js"></script>\n' +
+  'flat-pack': SHARED_HEAD +
+               '<script src="{{ENGINE}}/deck/looks/flat-pack/flat-pack.js"></script>\n' +
                '<script src="{{ENGINE}}/deck/looks/flat-pack/fp3d.js"></script>\n',
+  'pink-punch': SHARED_HEAD +
+               '<script src="{{ENGINE}}/deck/looks/pink-punch/pink-punch.js"></script>\n' +
+               '<script src="{{ENGINE}}/deck/looks/pink-punch/pp3d.js"></script>\n',
+  'happy-headspace': SHARED_HEAD +
+               '<script src="{{ENGINE}}/deck/looks/happy-headspace/happy-headspace.js"></script>\n' +
+               '<script src="{{ENGINE}}/deck/looks/happy-headspace/hs3d.js"></script>\n',
+  'clay-pop': SHARED_HEAD +
+               '<script src="{{ENGINE}}/deck/looks/clay-pop/clay-pop.js"></script>\n' +
+               '<script src="{{ENGINE}}/deck/looks/clay-pop/cp3d.js"></script>\n',
 };
 const lookTemplate = path.join(ENGINE, 'deck', 'looks', theme, 'template.html');
 const html = fs.readFileSync(fs.existsSync(lookTemplate) ? lookTemplate : path.join(ENGINE, 'deck', 'template.html'), 'utf8')
@@ -209,7 +225,8 @@ fs.writeFileSync(file, html, 'utf8');
 console.log('New deck: ' + path.relative(root, file).split(path.sep).join('/'));
 console.log('Theme: ' + THEMES[theme] + '  (rules: .aura/engine/deck/themes/' + theme + '.css)');
 // a look with its own spec: the shared base first, then the look's own file (both override the form style choices)
-const LOOK_SPEC = { 'bold-blue': 'Bold Blue', 'flat-pack': 'Flat-Pack' };
+const LOOK_SPEC = { 'bold-blue': 'Bold Blue', 'flat-pack': 'Flat-Pack',
+                    'pink-punch': 'Pink Punch', 'happy-headspace': 'Happy Headspace', 'clay-pop': 'Clay Pop' };
 if (LOOK_SPEC[theme]) console.log(LOOK_SPEC[theme] + ': follow .claude/skills/aura-slide/looks/_shared/LOOK-BASE.md then ' +
   '.claude/skills/aura-slide/looks/' + theme + '/LOOK.md (they override the form style choices).');
 console.log('Put pictures for the deck in: ' + relDir + '/assets');

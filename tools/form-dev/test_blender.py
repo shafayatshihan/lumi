@@ -34,6 +34,66 @@ def wait_job(T, P, sid, timeout=20):
     return bl(T, P, sid)
 
 
+def pin_cycles(T, P):
+    """Make P a deck from before baking (batch 6 B.9: rec['bake'] is pinned at creation), so its animations take the
+    per-frame Cycles path these checks were written for. That path still exists: old decks, and any scene with glass."""
+    f = T.AURA / 'decks' / f'{P}.json'
+    rec = json.loads(f.read_text(encoding='utf-8'))
+    rec['bake'] = False
+    f.write_text(json.dumps(rec, indent=2), encoding='utf-8')
+
+
+def baked_suite(T, blog):
+    """Batch 6 Part B on the fake blender: a NEW deck bakes an animated studio render. Routing (B.2), the draft bake as
+    the preview, the final bake following by itself (B.5), the files (B.6), and glass staying on Cycles."""
+    import test_batch_c
+    check, jget, jpost = T.check, T.jget, T.jpost
+    print('\n[batch 6 Part B: the baked path]')
+    P = test_batch_c.make_plan_deck(T, 'Baked deck')
+    rec = json.loads((T.AURA / 'decks' / f'{P}.json').read_text(encoding='utf-8'))
+    check('B.9: a new deck is pinned to bake its animations', rec.get('bake') is True, rec.get('bake'))
+    plan = json.loads(json.dumps(T.plan_of(P)['plan']))
+    plan['slides'][0].update(title='Gear pair', visual={'main': '3d', 'companions': [], 'detail': 'detailed', 'motion': 'timed', 'phrase': 'gears'})
+    T.save(P, plan)
+    T.wait_plan_idle(P)
+    pj = T.plan_of(P)
+    sid = pj['plan']['slides'][0]['id']
+    e = (pj.get('engines') or {}).get(sid, {})
+    check('B.2: an animated 3D slide on a Blender look goes to Blender by itself (not chosen)',
+          e.get('engine') == 'blender' and e.get('kind') == 'animation' and not e.get('chosen'), e)
+    est = ((pj.get('blender') or {}).get('estimates') or {}).get(sid) or {}
+    check('B.5: the plan page gets ONE baked time, not a resolution choice', est.get('baked') is True and est.get('720') == est.get('1080'), est)
+    n0 = len(blog.read_text(encoding='utf-8').splitlines()) if blog.is_file() else 0
+    jpost(f'/api/decks/{P}/build', {'mode': 'next'})
+    T.wait_plan_idle(P)
+    v = wait_status(T, P, sid, ('rendered', 'failed'), timeout=60)
+    calls = [json.loads(x) for x in blog.read_text(encoding='utf-8').splitlines()[n0:]]
+    bakes = [c[c.index('--bake') + 1] for c in calls if '--bake' in c]
+    check('the draft bake ran, then the final bake by itself - no approval, no resolution', bakes[:2] == ['draft', 'final'], bakes)
+    pv = (v.get('previews') or [{}])[-1]
+    fin = v.get('final') or {}
+    d = T.AURA / 'decks' / P / 'blender' / sid
+    check('the preview is the draft bake, with its poster kept in previews/', pv.get('baked') and (d / 'previews' / f'preview-{pv.get("n")}.png').is_file()
+          and (d / 'bake' / 'draft' / 'model.glb').is_file(), pv)
+    check('B.6: the final is the model, kept with its manifest and poster', v.get('status') == 'rendered' and fin.get('baked')
+          and all((d / 'bake' / 'final' / f).is_file() for f in ('model.glb', 'bake.json', 'poster.png')), (v.get('status'), fin))
+    check('the view says baked, and estimates are baked', v.get('baked') is True and (v.get('estimates') or {}).get('baked') is True, v.get('estimates'))
+    s_, h_, d_ = T.req('GET', fin.get('url', '/x'))
+    check('the model is served as model/gltf-binary', s_ == 200 and h_.get('content-type', '').startswith('model/gltf-binary') and d_[:4] == b'glTF', (s_, h_.get('content-type')))
+    s_, h_, d_ = T.req('GET', fin.get('posterUrl', '/x'))
+    check('its poster is served', s_ == 200 and d_[:4] == b'\x89PNG', s_)
+    j = jget(f'/api/decks/{P}/blender')[1]
+    deck = T.AURA / 'temp' / 'build'
+    metas = list(deck.glob(f'*/assets/blender/{sid}.json'))
+    meta = json.loads(metas[0].read_text(encoding='utf-8')) if metas else {}
+    check('embedded for the packer: <sid>.glb + poster + a baked meta', meta.get('baked') and (metas[0].parent / f'{sid}.glb').is_file()
+          and (metas[0].parent / f'{sid}-poster.png').is_file() and not meta.get('draft'), meta.get('source'))
+    sc = d / 'scene.py'
+    sc.write_text(sc.read_text(encoding='utf-8') + "\nglass = L.mat('glass')\n", encoding='utf-8')
+    v = bl(T, P, sid)
+    check('B.2: a scene with glass leaves the baked path (per-frame Cycles)', v.get('baked') is False, v.get('baked'))
+
+
 def bl_events(T, n0, P, sid=None):
     return [e for e in T.events_from(n0) if e.get('kind') == 'blender' and e.get('deck') == P and (sid is None or e.get('conv') == sid)]
 
@@ -143,7 +203,7 @@ def parta_suite(T):
     check('item 1: cavity stays plumbed for the bake path', '--cavity' in bpy_src and "'lumi_cavity'" in bpy_src)
     pre = re.search(r'PRESETS = \{(.*?)\n\}', bpy_src, re.S).group(1)
     rows = [l for l in pre.splitlines() if l.strip().startswith("'")]
-    check('item 1: all 13 presets carry a cavity and a wear value', len(rows) == 13, len(rows))
+    check('item 1: all 14 presets carry a cavity and a wear value', len(rows) == 14, len(rows))
     check('item 1: glass and glow get neither', 'ior=1.5), None, 0.0, 0.0)' in bpy_src and 'emit=1.2), None, 0.0, 0.0)' in bpy_src)
     check('item 1: BLENDER.md section 7 holds MEASURED numbers, not an estimate',
           '89 s' in blender_md and '+9 %' in blender_md and 'shader-raytracing feature set' in blender_md)
@@ -251,6 +311,7 @@ def run(T):
         S[4].update(title='Nothing bl-noscene', visual={'main': '3d', 'companions': [], 'detail': 'simple', 'motion': 'still', 'phrase': 'x'})
         s, j = T.save(P, plan)
         T.wait_plan_idle(P)
+        pin_cycles(T, P)
         pj = T.plan_of(P)
         eng = pj.get('engines') or {}
         ids = [x['id'] for x in pj['plan']['slides']]
@@ -457,13 +518,14 @@ def run(T):
         jpost(f'/api/decks/{P}/blender/{s2}/approve', {})
         jpost(f'/api/decks/{P}/blender/{s2}/render', {})
         wait_job(T, P, s2)
-    finally:
         T.stop_server(srv)
-    srv = T.start_server(AURA_BLENDER=str(FAKE_BLENDER))
-    try:
+        srv = T.start_server(AURA_BLENDER=str(FAKE_BLENDER))
         v = bl(T, P, s2)
-        check('restart during a render: failed "interrupted", approval kept, frames removed', v.get('status') == 'failed'
-              and (v.get('error') or {}).get('code') == 'interrupted' and v.get('approved') and not (T.AURA / 'decks' / P / 'blender' / s2 / 'frames').exists(),
-              (v.get('status'), v.get('error'), bool(v.get('approved'))))
+        restart_ok = (v.get('status') == 'failed' and (v.get('error') or {}).get('code') == 'interrupted' and v.get('approved')
+                      and not (T.AURA / 'decks' / P / 'blender' / s2 / 'frames').exists(), (v.get('status'), v.get('error'), bool(v.get('approved'))))
+        T.stop_server(srv)
+        srv = T.start_server(AURA_BLENDER=str(FAKE_BLENDER), AURA_FAKE_BLENDER_LOG=str(blog))
+        baked_suite(T, blog)
     finally:
         T.stop_server(srv)
+    check('restart during a render: failed "interrupted", approval kept, frames removed', restart_ok[0], restart_ok[1])

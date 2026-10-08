@@ -88,14 +88,14 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   preview.append(picPop);
 
   const tip = h('div', { class: 'ed-tip' }, h('span', { class: 'ed-tip-i', html: SVG.tip }),
-    h('p', {}, h('span', { class: 'ed-tip-h' }, 'click any text'), ' on the slide to change it yourself. bigger changes? ask claude on the right.'));
+    h('p', {}, h('span', { class: 'ed-tip-h' }, 'click any text'), ' to change it. ask claude for anything bigger.'));
   const stats = h('div', { class: 'ed-stats' });
   const toast = h('p', { class: 'ed-toast', role: 'status' });
   const bench = h('div', { class: 'ed-bench' });
   const chatHost = h('div', { class: 'ed-chat' });
   // build page: the build bar, the "coming up" column and its popup
   const bdMain = h('button', { type: 'button', class: 'bd-main', 'data-nosfx': '', 'data-cursor-label': 'build' }, h('span', { class: 'lbl' }, 'build deck'), h('span', { html: ICON.right }));
-  const bdRest = h('button', { type: 'button', class: 'bd-rest', 'data-nosfx': '', 'data-cursor-label': 'build all' }, 'build the rest for me');
+  const bdRest = h('button', { type: 'button', class: 'bd-rest', 'data-nosfx': '', 'data-cursor-label': 'build all' }, 'build the rest');
   const bdStop = h('button', { type: 'button', class: 'bd-stop', 'data-nosfx': '', 'data-cursor-label': 'stop', hidden: true }, h('i'), 'stop');
   const bdSay = h('p', { class: 'bd-say', 'aria-live': 'polite' });
   // the secondary action ("build the rest for me") is tucked behind a small "more" toggle that opens in place
@@ -265,11 +265,11 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   // The engine of a 3D picture is deliberately not asked here: `slide_engine()` picks it and `pin_engine()` writes it
   // down at build time, the same way a first build does, so the plan and what was built cannot drift apart.
   const PICTURES = [
-    { id: '3d', label: 'a 3D picture', why: 'a real-looking model, lit and shaded. takes the longest to make.' },
-    { id: 'chart', label: 'a chart', why: 'numbers drawn honestly: bars, lines, points with their error bars.' },
-    { id: 'diagram', label: 'a diagram', why: 'a drawing of how something works or fits together.' },
-    { id: 'photo', label: 'a photo', why: 'one of your own pictures, cropped to the slide.' },
-    { id: 'text', label: 'words only', why: 'no picture: the words carry the slide.' },
+    { id: '3d', label: 'a 3D picture', why: 'a real-looking model, lit and shaded. slowest to make.' },
+    { id: 'chart', label: 'a chart', why: 'bars, lines or points, error bars included.' },
+    { id: 'diagram', label: 'a diagram', why: 'how something works or fits together.' },
+    { id: 'photo', label: 'a photo', why: 'one of your own pictures.' },
+    { id: 'text', label: 'words only', why: 'no picture. the words carry it.' },
   ];
   // the plan slides come from the one store (plan-store.js), never from a copy this page keeps: the picture control and
   // the counters would otherwise be reading a plan from before the last build step.
@@ -282,7 +282,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     if (!s) { picPop.hidden = true; return; }
     const now = PICTURES.find(p => p.id === ((s.visual || {}).main)) || PICTURES[PICTURES.length - 1];
     picB.lastChild.textContent = `picture: ${now.label}`;
-    picB.title = 'change this slide’s picture and make the slide again';
+    picB.title = 'change the picture';
   }
   function closePic() { picPop.hidden = true; if (modalRel) { modalRel(); modalRel = null; } }
   function openPic() {
@@ -305,9 +305,9 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
         return b;
       }));
       note.textContent = want === mine
-        ? 'this is the picture the slide already has. pick a different one to change it.'
-        : `lumi will write slide ${n} again with ${PICTURES.find(p => p.id === want).label}. the words and the plan stay; the picture is redrawn.`
-          + (want === '3d' ? ' a 3D picture can take a while to render.' : '');
+        ? 'the slide already has this one.'
+        : `slide ${n} is redrawn with ${PICTURES.find(p => p.id === want).label}. the words stay.`
+          + (want === '3d' ? ' this can take a while.' : '');
       goB.disabled = want === mine || isBusy();
     };
     paint();
@@ -525,7 +525,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     const ti = target ? slides.indexOf(target) + 1 : pay ? pay.built + 1 : 0;
     const rnd = !running && blc ? blc.rendering() : null;       // a full Blender render is a wait too (no next slide meanwhile)
     if (rnd) play.setStep({ head: rnd.queued ? `slide ${rnd.n} waits for another render` : `lumi is rendering slide ${rnd.n} · ${Math.round(rnd.progress * 100)}%`,
-      sub: `${fmtLeft(rnd.etaS) || 'starting'}. it runs on this computer and uses no claude tokens.` });
+      sub: fmtLeft(rnd.etaS) || 'starting' });
     else play.setStep({ head: nowLine || nowStage || 'getting started', sub: ti && pay ? `slide ${ti} of ${pay.count}${pay.buildRest ? ', then the rest' : ''}` : 'claude is working' });
     play.setRunning(!!running || !!rnd);
   }
@@ -566,7 +566,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     if (before < 0 && r.exists) { loadFrame(r.mtime || Date.now()); loadThumbs(); }
     else if (before >= 0 && r.built !== before && r.exists) {      // a slide was just finished: show it
       sfx('done');
-      say(r.built >= r.count ? 'every slide is built. have a last look, then finalize.' : `slide ${r.built} is ready. have a look.`);
+      say(r.built >= r.count ? 'every slide is built.' : `slide ${r.built} is ready.`);
       cur = Math.max(1, r.built); count = 0; thumbs = [];
       loadFrame(r.mtime || Date.now()); paintStrip(); loadThumbs(); loadDeck();
       if (blc) blc.setSlide(cur);
@@ -612,14 +612,14 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     const gate = blc && !allDone ? blc.gate(b) : { ok: true };
     if (!gate.ok) { bdMain.disabled = true; bdRest.disabled = true; }
     bdStop.hidden = !running;
-    homeBtn.title = running ? 'claude keeps building while you look at other decks' : '';
+    homeBtn.title = running ? 'building continues in the background' : '';
     const ti = target ? slides.indexOf(target) + 1 : b + 1;
     bdSay.textContent = running ? `claude is building slide ${ti} of ${n}${pay.buildRest ? ', then the rest' : ''}…`
-      : waiting ? 'claude has a question. answer it under the slide, one step at a time.'
+      : waiting ? 'claude has a question'
       : !gate.ok ? gate.text
-      : allDone ? `all ${n} slides are built. change anything you like, then finalize.`
-      : b === 0 ? 'claude builds slide 1 first. it also sets up the look of the whole deck.'
-      : `slide ${b} of ${n} is ready. check it, change it if you like, then make the next one.`;
+      : allDone ? `all ${n} slides are built.`
+      : b === 0 ? 'slide 1 sets the look for the whole deck.'
+      : `slide ${b} of ${n} is ready.`;
     bdSay.classList.toggle('is-busy', running);
     if (!pay.exists) { veil.hidden = false; buildVeil = true; veilTxt.textContent = running ? 'claude is building slide 1…' : 'press “build deck” to make slide 1'; }
     else if (buildVeil) { buildVeil = false; veilTxt.textContent = 'loading your slides…'; loadFrame(pay.mtime || Date.now()); }     // the file is back (a repack): show it again
@@ -693,7 +693,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     };
     const saveB = dlgBtn('save', () => write(
       () => (isNew ? store.addSlide(next) : store.saveSlide({ ...next, id: s.id })),
-      isNew ? 'added. claude will build it with the others.' : 'saved. claude will build it like that.'), true);
+      isNew ? 'added.' : 'saved.'), true);
     const buttons = [dlgBtn('cancel', closeModal), saveB];
     if (!isNew) {
       const rm = dlgBtn('remove this slide', () => {
@@ -703,7 +703,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
           return;
         }
         clearTimeout(rmT);
-        write(() => store.removeSlide(s.id), 'removed. the other slides are untouched.', true);
+        write(() => store.removeSlide(s.id), 'removed.', true);
       });
       rm.classList.add('is-danger');
       buttons.unshift(rm);
@@ -730,16 +730,14 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   });
   bdRest.addEventListener('click', () => {
     if (bdRest.disabled) return;
-    sfx('pop');
-    dialog('build the rest for me?', 'not recommended. you won’t get to check each slide as it is made, and fixing several slides afterwards takes longer. claude still stops when it has a question.',
-      [dlgBtn('no, one at a time', closeModal), dlgBtn('yes, build the rest', () => { closeModal(); sfx('launch'); act(api.build.rest, 'couldn’t start. try again?'); }, true)]);
+    sfx('launch'); act(api.build.rest, 'couldn’t start. try again?');
   });
   bdStop.addEventListener('click', () => {
     sfx('pop');
-    dialog('stop claude?', 'the slides that are finished stay as they are. the slide claude is making right now is not kept.',
+    dialog('stop claude?', 'finished slides stay. the one in progress is lost.',
       [dlgBtn('keep going', closeModal), dlgBtn('stop', async () => {
         closeModal(); await api.build.stop(deckId);
-        if (alive) { say('stopped. your finished slides are safe.'); loadPlan(); }
+        if (alive) { say('stopped.'); loadPlan(); }
       }, true)]);
   });
   offs.push(() => { if (modalRel) modalRel(false); });
@@ -778,7 +776,8 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   if (mountScene && !build) mountScene('edit-bench', bench, sceneCtx || {}).then(s => { if (!alive) { s.destroy(); return; } scene = s; paintAll(); });
   chat = mountWorkshop(null, chatHost, {
     bus, audio, deckId, mode: 'edit', getSlide: () => cur, popupHost: build ? qdock : null, slideInfo: build ? slideInfo : null,
-    onAsk: st => { el.classList.toggle('is-asking', st === 'open'); el.classList.toggle('has-ask', st !== 'none'); },
+    onAsk: st => { el.classList.toggle('is-asking', st === 'open'); el.classList.toggle('has-ask', st !== 'none');
+      if (play) play.setAsking(st === 'open'); },        // the waiting game yields on this tick, not when the observer notices
     hintsOk: () => !build || !!(pay && pay.exists && pay.built >= cur),
     onSlide: n => { if (n && n !== cur) { if (count && n > count) return; go(n); } },
     onDone: () => { if (!alive) return; say('claude’s changes are in. refreshing the preview.'); loadFrame(Date.now()); thumbs = []; paintStrip(); loadThumbs(); loadDeck(); },

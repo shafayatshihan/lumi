@@ -42,13 +42,13 @@ export function mountStart(host, { audio, setMode, onScene, onStarted, onHome } 
 
   // ---------------------------------------------------------------- step 1: what the talk is about
   const topicBox = h('textarea', { class: 'st-in', rows: '6', maxlength: String(MAX_TOPIC), 'aria-label': 'what your talk is about',
-    placeholder: 'e.g. my final-year project on a cheap soil sensor that warns farmers before the ground dries out. i have 12 minutes in front of two examiners.' });
+    placeholder: 'e.g. my final-year project on a cheap soil sensor for farmers. 12 minutes, two examiners.' });
   function showTopic() {
     step = 'topic';
     el.dataset.step = 'topic';
     panelHost.hidden = true;
     head.textContent = 'what’s your talk about?';
-    lead.textContent = 'a sentence or two in your own words. claude asks you the rest itself, one question at a time — so there is no long form to fill in.';
+    lead.textContent = 'a sentence or two. claude asks the rest.';
     onScene && onScene(null);
     body.replaceChildren(topicBox);
     actions.replaceChildren(bigBtn('next: my files', 'drop in your report, photos and data', () => {
@@ -93,7 +93,7 @@ export function mountStart(host, { audio, setMode, onScene, onStarted, onHome } 
     onScene && onScene('files');
     body.replaceChildren(folderList);
     actions.replaceChildren(
-      bigBtn('claude, read my files', 'it reads everything once, then starts asking', begin),
+      bigBtn('claude, read my files', '', begin),
       bigBtn('back', '', () => { sfx('back'); showTopic(); }, false));
     if (!FOLDERS.length) {
       const m = await import('./uploads.js').catch(() => null);

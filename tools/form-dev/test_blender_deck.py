@@ -304,6 +304,7 @@ def run(T=None, browser=True):
         S[0].update(title='Pump studio', visual={'main': '3d', 'companions': [], 'detail': 'detailed', 'motion': 'still', 'phrase': 'a pump'})
         S[1].update(title='Spinning rotor', visual={'main': '3d', 'companions': [], 'detail': 'detailed', 'motion': 'timed', 'phrase': 'a rotor', 'engine': 'blender'})
         T.save(P, plan); T.wait_plan_idle(P)
+        TB.pin_cycles(T, P)        # the per-frame loop path (a deck from before baking); the baked path is in test_blender
         s1, s2 = [x['id'] for x in T.plan_of(P)['plan']['slides'][:2]]
         T.jpost(f'/api/decks/{P}/build', {'mode': 'next'}); T.wait_plan_idle(P)
         v = TB.wait_status(T, P, s1, ('preview', 'failed'))
@@ -413,6 +414,21 @@ def run(T=None, browser=True):
           any(l.strip().startswith('ERROR slide 2') and 'NOT a studio render slide' in l for l in l4) and code4 == 1, l4)
     check('build check: the real Blender slide in the same deck still only warns that its render is not there yet',
           any(l.strip().startswith('warn') and ' slide 1 ' in l and 'is not in the deck yet' in l for l in l4), l4)
+
+    # batch 6 B.7: the baked rules, on synthetic measurements (the browser side is covered by a real bake in the sandbox walk)
+    js = ("const B = require(process.argv[1]); const R = require(process.argv[2]).blender;"
+          "const ok = { n: 1, sid: 'b', kind: 'animation', baked: true, filled: true, period: 5, hasPoster: true, drawn: true, bg: [249, 244, 242], labels: [], anchors: [],"
+          " px: { nonBg: 0.2, black: 0, luma: 200, patches: { tl: [249, 244, 242], tr: [249, 244, 242], bl: [249, 244, 242], br: [249, 244, 242] } } };"
+          "const run = x => B.judge([Object.assign({}, ok, x)], { rules: R, deckDir: '.', finalize: true }).errors.map(e => e.msg);"
+          "console.log(JSON.stringify({ good: run({}), poster: run({ hasPoster: false }), period: run({ period: 0 }), dead: run({ drawn: false, failed: true }),"
+          " blank: run({ px: Object.assign({}, ok.px, { nonBg: 0 }) }), edge: run({ px: Object.assign({}, ok.px, { patches: { tl: [0, 0, 0], tr: [249, 244, 242], bl: [249, 244, 242], br: [249, 244, 242] } }) }) }));")
+    code5, out5 = node(['-e', js, ENGINE / 'tools' / 'lib' / 'blender_check.js', ENGINE / 'rules' / 'hard-rules.json'], sandbox)
+    try: bk = json.loads(out5.strip().splitlines()[-1])
+    except (ValueError, IndexError): bk = {}
+    check('B.7 baked: a good baked holder passes', bk.get('good') == [], out5[-300:])
+    check('B.7 baked: no poster, no loop period, a model that did not draw, blank, wrong edge colour - each is an ERROR',
+          all(len(bk.get(k) or []) >= 1 for k in ('poster', 'period', 'dead', 'blank', 'edge'))
+          and 'poster' in ' '.join(bk['poster']) and 'period' in ' '.join(bk['period']) and 'did not draw' in ' '.join(bk['dead']), bk)
 
     print('\n[Blender batch 2: presenter mode, PDF still, finalize skipping the render]')
     good = scaffold(sandbox, 'bl2-run', deck_html([('g1', 'still', '', ''), ('g2', 'animation',

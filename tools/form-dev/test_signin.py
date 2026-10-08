@@ -61,7 +61,7 @@ def run(T):
             h = T.jget('/api/health')[1]
             si = {c['id']: c for c in h.get('checks') or []}['signin']
             ok = si['ok'] is True and si.get('planLabel') == label and not si.get('fix')
-            if plan == 'free': ok = ok and si.get('free') is True and 'Pro or higher is recommended' in si.get('note', '') and 'Free plan' in si['note']
+            if plan == 'free': ok = ok and si.get('free') is True and 'pro or higher works best' in si.get('note', '') and 'free plan' in si['note']
             else: ok = ok and not si.get('free') and not si.get('note')
             check(f'{plan}: signed in, allowed, label "{label}"' + (' + gentle note' if plan == 'free' else ', no note'), ok, si)
             check(f'{plan}: no "Pro, Max or Team" wording', 'Max or Team' not in json.dumps(h), si)

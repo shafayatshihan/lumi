@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>waiting game, fullscreen and the slide list</title>
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/components.css">
+<link rel="stylesheet" href="/css/theme.css">
+<link rel="stylesheet" href="/css/studio.css">
+<style>
+  /* Dev harness: the three things that are hard to see without a real 45-minute build, on one page.
+     Run:  python tools/form-dev/static_server.py 8790   then open  http://127.0.0.1:8790/dev/play.html
+     The stage is the real 1600x900 one, so every size here is the size it is in the app. */
+  html,body{height:100%;overflow:hidden;background:var(--bg)}
+  #h-stage{position:absolute;left:0;top:0;width:1600px;height:900px;transform-origin:0 0;background:var(--bg);overflow:hidden}
+  #h-bar{position:absolute;left:24px;top:14px;display:flex;gap:8px;z-index:9;flex-wrap:wrap;width:1200px;align-items:center}
+  #h-bar button{height:32px;padding:0 14px;border-radius:100px;background:var(--pill);font-size:14px;cursor:pointer}
+  #h-bar button.on{background:var(--ink);color:var(--pill)}
+  #h-bar .t{font-size:14px;color:var(--mute)}
+  #h-note{position:absolute;left:24px;top:56px;width:1240px;font-size:15px;line-height:1.5;color:var(--mute)}
+  /* the real build-page regions these live in */
+  /* .bd-playhost is NOT redefined here: theme.css places it exactly where the build page has it (810x138) */
+  .ed-strip{position:absolute;left:24px;top:132px;width:276px;height:620px;display:flex;flex-direction:column}
+  #h-fake{position:absolute;left:330px;top:132px;width:934px;height:525px;border-radius:20px;background:var(--pill);
+    display:grid;place-items:center;font-size:17px;color:var(--mute)}
+</style>
+</head>
+<body>
+<div id="h-stage">
+  <div id="h-bar"></div>
+  <p id="h-note"></p>
+  <div class="ed-strip" id="h-strip"></div>
+  <div id="h-fake">the slide preview sits here in the real page</div>
+  <div class="bd-playhost" id="h-playhost"></div>
+</div>
+<script type="module">
+import { h } from '/js/dom.js';
+import { mountPlay } from '/js/lumi-play.js';
+import { mountShellExit } from '/js/shell.js';
+import { roving, syncTab } from '/js/a11y.js';
+
+// ---- the stage scales exactly as the app's does, so 1600x900 is 1600x900 whatever the window is
+const stage = document.getElementById('h-stage');
+const fit = () => {
+  const k = Math.min(innerWidth / 1600, innerHeight / 900);
+  stage.style.transform = `scale(${k}) translate(${(innerWidth / k - 1600) / 2}px, ${(innerHeight / k - 900) / 2}px)`;
+};
+addEventListener('resize', fit); fit();
+
+// ---- 1. the waiting game -----------------------------------------------------------------------
+const play = mountPlay(document.getElementById('h-playhost'));
+let running = false, asking = false, n = 0;
+play.setRunning(false);
+const STEPS = [['lumi is writing slide 3', 'slide 3 of 13'], ['checking slide 3', 'slide 3 of 13, then the rest'],
+  ['lumi is rendering slide 4 · 38%', 'about 9 minutes left. it runs on this computer.'], ['packing the deck', 'slide 4 of 13']];
+setInterval(() => { if (running) play.setStep({ head: STEPS[n % STEPS.length][0], sub: STEPS[n++ % STEPS.length][1] }); }, 4000);
+
+// ---- 2. the way out of a fullscreen window -----------------------------------------------------
+mountShellExit();
+
+// ---- 3. the slide list -------------------------------------------------------------------------
+// the real markup from editor.js: a header, the scrolling list of .ed-th rows, and the two chevrons.
+const CHEV = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const strip = document.getElementById('h-strip');
+const list = h('div', { class: 'ed-strip-list', role: 'listbox', 'aria-label': 'slides' });
+const upB = h('button', { type: 'button', class: 'pg', 'aria-label': 'earlier slides', html: CHEV('M6 15l6-6 6 6') });
+const downB = h('button', { type: 'button', class: 'pg', 'aria-label': 'later slides', html: CHEV('M6 9l6 6 6-6') });
+const pg = h('span', { class: 'ed-strip-pg' }, '13');
+strip.append(h('div', { class: 'ed-strip-top' }, h('span', { class: 'ed-strip-t' }, 'slides'), pg, upB),
+  list, h('div', { class: 'ed-strip-bot' }, downB));
+roving(list, '.ed-th', { select: false, orientation: 'vertical' });
+
+const TOTAL = 13, PER = 6;
+let page = 0, cur = 1;
+const pages = () => Math.max(1, Math.ceil(TOTAL / PER));
+function paintStrip() {
+  page = Math.min(Math.max(0, page), pages() - 1);
+  const from = page * PER, rows = [];
+  for (let i = from; i < Math.min(TOTAL, from + PER); i++) {
+    const k = i + 1;
+    const row = h('button', { type: 'button', class: 'ed-th' + (k === cur ? ' on' : ''), role: 'option', 'data-n': String(k),
+      'aria-selected': k === cur ? 'true' : 'false' },
+      h('span', { class: 'ed-th-n' }, String(k)),
+      h('span', { class: 'ed-th-pic' }, h('span', { class: 'ed-th-ghost' })));
+    row.addEventListener('click', () => { cur = k; paintStrip(); });
+    rows.push(row);
+  }
+  list.replaceChildren(...rows);
+  syncTab(list, '.ed-th');
+  upB.disabled = page === 0; downB.disabled = page >= pages() - 1;
+  pg.textContent = `${cur}/${TOTAL}`;
+}
+upB.addEventListener('click', () => { page--; paintStrip(); });
+downB.addEventListener('click', () => { page++; paintStrip(); });
+let acc = 0, wt = 0;
+strip.addEventListener('wheel', e => {
+  if (pages() <= 1) return;
+  e.preventDefault();
+  acc += e.deltaY; clearTimeout(wt); wt = setTimeout(() => { acc = 0; }, 240);
+  const step = acc <= -40 ? -1 : acc >= 40 ? 1 : 0;
+  if (!step) return;
+  acc = 0;
+  const next = Math.min(Math.max(0, page + step), pages() - 1);
+  if (next === page) return;
+  page = next; paintStrip();
+}, { passive: false });
+paintStrip();
+
+// ---- the controls ------------------------------------------------------------------------------
+const bar = document.getElementById('h-bar'), note = document.getElementById('h-note');
+const btn = (label, fn) => { const b = h('button', { type: 'button' }, label); b.addEventListener('click', () => { fn(b); }); bar.append(b); return b; };
+// the app's sound, started on the first press exactly as app.js does; the toggle is the app's own "music" switch,
+// which the game also treats as its mute
+let audio = null;
+import('/js/audio.js').then(m => { audio = m.audio; musB.textContent = audio.state().music ? 'music on' : 'music off'; }, () => {});
+addEventListener('pointerdown', () => { if (audio) audio.start(); }, { capture: true, once: true });
+const musB = btn('music on', b => { if (!audio) return; audio.start(); const on = !audio.state().music; audio.setMusic(on); b.textContent = on ? 'music on' : 'music off'; });
+const runB = btn('claude is working', b => { running = !running; b.classList.toggle('on', running); play.setRunning(running); });
+const askB = btn('a question arrives', b => { asking = !asking; b.classList.toggle('on', asking); play.setAsking(asking); });
+bar.append(h('span', { class: 't' }, 'a text box that must keep space:'));
+const box = h('input', { type: 'text', placeholder: 'type here, then press space', style: 'height:32px;border-radius:100px;padding:0 14px;border:1px solid var(--fur1);font-size:14px;width:260px' });
+bar.append(box);
+note.textContent = 'press "claude is working" to bring the game up, then hover the arena and press space (or click it). '
+  + 'It grows to the lower half while you play and shrinks when you pause. With the caret in the text box, space types a space and never flaps. '
+  + '"a question arrives" takes the game away on the spot. The slide list on the left holds 13 slides: put the pointer over it and turn the wheel. '
+  + 'The "close lumi" pill in the top right appears only when the window really has no title bar - press F11 to see it.';
+</script>
+</body>
+</html>

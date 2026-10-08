@@ -89,7 +89,7 @@ export function mountLoading(el, { audio, onDone } = {}) {
     else if (state === 'signin') set('one step', 'first, sign in', 'to claude');
     else if (state === 'confirm') set('one check', 'is this', 'your account?');
     else if (state === 'fixing') set('one moment', 'tidying up', 'a few things');
-    else if (state === 'ok') set('all set', 'all set!', 'let’s make slides');
+    else if (state === 'ok') set('all set', 'all set', 'let’s make slides');
     else if (state === 'offline') set('can’t reach lumi', 'hmm, the studio', 'isn’t answering');
     else set(n > 1 ? `${n} things` : 'one thing', 'something', 'needs a hand');
   }
@@ -153,8 +153,8 @@ export function mountLoading(el, { audio, onDone } = {}) {
         if (!alive || run !== flowRun) return;
         if (!res || res.ok === false) { go.disabled = false; normal.disabled = false; sfx('error'); say('the sign-in window didn’t open. try again?'); return; }
         go.textContent = 'waiting for the sign-in…';
-        say(browser === 'private' ? 'sign in with your own email in the private window. this page notices by itself.'
-          : 'finish signing in in your browser. this page notices by itself.');
+        say(browser === 'private' ? 'sign in with your own email in the private window.'
+          : 'finish signing in in your browser.');
         const t0 = Date.now();
         let polls = 0;
         while (alive && run === flowRun && Date.now() - t0 < 6 * 60 * 1000) {
@@ -168,7 +168,7 @@ export function mountLoading(el, { audio, onDone } = {}) {
         say('still not signed in. press the button when you’re ready.');
       }
       showCard({ face: 'hmm', title: 'sign in to claude',
-        text: 'Claude will open in your browser. If it signs you in straight away, it is using the account already open in that browser. A private window asks for your own email, so you choose the account.',
+        text: 'a private window lets you choose the account. your normal browser uses the one already signed in there.',
         buttons: [go], extra: normal });
     });
   }
@@ -193,8 +193,8 @@ export function mountLoading(el, { audio, onDone } = {}) {
         if (r && r.ok === false) { yes.disabled = false; other.disabled = false; say(r.error === 'busy' ? 'claude is busy right now. try again when it’s done.' : 'couldn’t sign out. try again?'); return; }
         hideCard(); resolve(await waitSignin(run, { again: true }));
       }, 'switch');
-      const note = si.free ? h('p', { class: 'ld-c-note', 'data-k': 'free' }, si.note || 'Lumi works, but Claude’s Free plan has very little Claude Code usage, so builds may stop early; Pro or higher is recommended.') : null;
-      const card0 = h('p', { class: 'ld-c-who' }, h('span', {}, 'Signed in as '), h('b', {}, who), h('span', {}, ' — ' + (si.planLabel || 'Claude')));
+      const note = si.free ? h('p', { class: 'ld-c-note', 'data-k': 'free' }, si.note || 'the free plan may stop a build early. pro or higher works best.') : null;
+      const card0 = h('p', { class: 'ld-c-who' }, h('span', {}, 'signed in as '), h('b', {}, who), h('span', {}, ' — ' + (si.planLabel || 'Claude')));
       showCard({ face: si.free ? 'hmm' : 'happy', title: 'is this you?', text: '', buttons: [yes, other], extra: null });
       // the account line + optional free note go above the buttons
       const btns = card.querySelector('.ld-c-b');

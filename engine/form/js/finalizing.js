@@ -46,7 +46,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
   const line = h('p', { class: 'fz-line', 'aria-live': 'polite' }, 'getting ready…');
   const bar = h('i');
   const meter = h('div', { class: 'fz-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100' }, bar);
-  const note = h('p', { class: 'fz-note' }, 'lumi records every moving 3D slide as a smooth video and makes a pdf backup. this runs on your computer and does not use claude.');
+  const note = h('p', { class: 'fz-note' });
   const cancelB = h('button', { type: 'button', class: 'fz-b', 'data-cursor-label': 'cancel' }, 'cancel');
   const acts = h('div', { class: 'fz-acts' }, cancelB);
   const saveLine = h('p', { class: 'fz-saved', 'aria-live': 'polite' });      // N5: what was saved and where, after the one primary action
@@ -84,7 +84,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
     emit('finalize:state', { running: false });
     if (st.ok) {
       sfx('done');
-      showDone(st.final || final, 'all done!');
+      showDone(st.final || final, 'all done');
     } else {
       sfx(st.phase === 'cancelled' ? 'deselect' : 'error');
       head.textContent = st.phase === 'cancelled' ? 'finalizing stopped' : 'that didn’t work';
@@ -103,7 +103,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
     const warn = (fin && fin.warnings || []).filter(Boolean);
     note.textContent = (warn.length ? 'one thing to know: ' + warn.join(' ') + ' ' : '') +
       (fin && fin.htmlBytes > 24 * 1048576 ? 'this file is big for e-mail: “smaller file” makes a lighter copy. ' : '') +
-      'present plays this final file. before the day: open it once in microsoft edge or google chrome on the computer you will present from (firefox and old browsers may not show the 3D), and keep the pdf as your backup.';
+      'before the day, open it once in edge or chrome on the computer you will present from (firefox may not show the 3D). keep the pdf as a backup.';
     pptxLine.textContent = '';
     // N5. The files ARE saved by finalizing - that is what finalizing is - but the screen offered four peer buttons and
     // the saving was a side effect nobody was told to look for; "open the folder" sat among the others as if it were an
@@ -119,7 +119,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
       const got = names(final);
       saveLine.textContent = r && r.ok === false
         ? 'lumi could not open the folder. your files are in the lumi folder, under “4 - your slides”.'
-        : `saved: ${got.join(' and ')} — in “4 - your slides”, now open in a window. copy them anywhere you like.`;
+        : `saved: ${got.join(' and ')}, in “4 - your slides”.`;
     };
     const row = [btn('save and export', saveExport, true, 'folder'),
       btn('present it', async () => { sfx('launch'); await api.openSlides(final && final.html); }),
@@ -137,7 +137,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
   const pptxLine = h('p', { class: 'fz-note', 'aria-live': 'polite' });
   let pptxT = 0;
   async function makePptx() {
-    pptxLine.textContent = 'making the powerpoint copy… each slide becomes one picture (3d scenes become a still image) and your speaker notes go in the notes pane.';
+    pptxLine.textContent = 'making the powerpoint copy… each slide becomes a picture, 3d scenes become a still image, and your speaker notes come with them.';
     const r = await api.pptx.start(deckId);
     if (!alive) return;
     if (!r || r.ok === false) { pptxLine.textContent = (r && r.reason) || 'the powerpoint copy could not start.'; return; }
@@ -180,7 +180,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
   function reset() {
     head.textContent = 'finalizing your deck'; badge.textContent = 'finalize';
     line.textContent = 'getting ready…'; bar.style.transform = 'scaleX(.02)';
-    note.textContent = 'lumi records every moving 3D slide as a smooth video and makes a pdf backup. this runs on your computer and does not use claude.';
+    note.textContent = '';
     cancelB.disabled = false; cancelB.textContent = 'cancel'; acts.replaceChildren(cancelB); pptxLine.remove(); clearTimeout(pptxT);
   }
   async function poll() {

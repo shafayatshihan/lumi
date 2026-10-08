@@ -1,0 +1,60 @@
+<!-- archetype: problem-stats | up to three stats (one with a clay bar) + the subject in clay showing the pain | main visual: 3D (a Blender still when the plan says so) | companions: <=3 stats, one close line -->
+<!-- STILL IN BLENDER: replace the .aura-3d holder with <div class="bb-blender cp-3d" data-blender="<slide id>" data-kind="still" role="img" aria-label="...">
+     and keep the label inside it as <div class="cp-tag key" data-anchor="weak">..</div> (L.anchor('weak', part) in scene.py). -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="The problem">
+  <div class="safe">
+    <div class="cp-main">
+      <div class="cp-l w5">
+        <p class="kicker" data-edit="s{{N}}-1">01 · The problem</p>
+        <h2 class="headline" data-edit="s{{N}}-2">The old way <span class="em">runs out</span></h2>
+        <ul class="cp-stats">
+          <li>
+            <span class="cp-stat" data-edit="s{{N}}-3">3.4x</span>
+            <p data-edit="s{{N}}-4">longer than the <b>design life</b></p>
+            <div class="cp-bar" style="--v:78%"><i></i></div>
+          </li>
+          <li>
+            <span class="cp-stat md" data-edit="s{{N}}-5">11 min</span>
+            <p data-edit="s{{N}}-6">lost at every changeover</p>
+          </li>
+        </ul>
+        <p class="close-line" data-edit="s{{N}}-7">Both numbers come from <b>one bottleneck</b>.</p>
+      </div>
+      <div class="cp-r w7">
+        <div class="cp-stage">
+          <div class="aura-3d cp-3d" data-scene="s{{N}}-scene" data-period="12" aria-hidden="true">
+            <div class="cp-tag key" data-follow="weak" data-dx="90"><b data-edit="s{{N}}-8">Where it fails</b><span data-edit="s{{N}}-9">the loaded joint</span></div>
+          </div>
+        </div>
+        <p class="source" data-edit="s{{N}}-10">Source: the user's file or paper</p>
+      </div>
+    </div>
+    <footer class="cp-foot" data-nonclaim><span class="cp-mark" data-edit="s{{N}}-11">Deck mark</span><span class="cp-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Start with the model, not the numbers.</strong> Point at the orange label and say what goes wrong there
+    in one sentence. The audience needs the place before they can hold the figures.</p>
+    <p><strong>Read the stats top to bottom.</strong> Each one is the same problem counted a different way - say that
+    out loud, or they will hear two problems. Give the source of every number as you say it.</p>
+    <p><strong>Land the close line.</strong> It is the sentence the next slide answers. If asked how the figures were
+    measured, say which came from the files and which from a published source; never guess at a method.</p>
+  </aside>
+</section>
+<script>
+/* Replace the placeholder with the real subject showing the real pain (LOOK-BASE 4.0). The failing part is the ONE
+   orange thing; the rest of the subject stays white and grey clay so the eye goes straight to it. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const S = CP3D.studio(ctx, { target: [0, 1.25, 0], distance: 10.5, azimuth: -28, elevation: 16 });
+  const body = S.add(CP3D.block(THREE, 3.0, 1.0, 1.8, { color: 'white' }));   body.position.y = 0.5;
+  const weak = S.add(CP3D.puck(THREE, 0.45, 0.5, { color: 'clay' }));         weak.position.set(-0.8, 1.2, 0);   // the joint
+  const pivot = S.add(new THREE.Group());                                      pivot.position.set(-0.8, 1.45, 0);
+  const arm  = CP3D.block(THREE, 0.5, 1.6, 0.5, { color: 'grey' });           arm.position.y = 0.8; pivot.add(arm);
+  S.contact(body, 1.9);
+  CP3D.tags(S, ctx.el, { weak: weak });
+  return S.api({ update(t) {
+    S.sway(t, { deg: 4 });
+    pivot.rotation.z = 0.08 * Math.sin(CP3D.phase(t, ctx.period) * 2);         // the joint working, twice a loop
+  } });
+}, { period: 12 });
+</script>

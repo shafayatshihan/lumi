@@ -2,7 +2,7 @@
 
 After planning (`planning.md`), the person builds the deck slide by slide and checks each one before the next.
 **Every build step is self-contained.** Its message carries this slide's plan entry, the list of slides already built, the look
-and where the already-extracted source text is (`.aura/temp/text/`). So: do not open `plan.json` or run `extract_text.py` again,
+and where the already-extracted source text is (this deck's own corpus, named in the message). So: do not open `plan.json` or run `extract_text.py` again,
 do not re-read the brief or the original files; read only the part of an extracted text you need for this slide.
 **Every slide has its own conversation.** A slide's first message begins `[slide-conversation n=<n> id=<id>]` and hands you
 the plan in short, the text now on the built slides and how they were built: that conversation is about slide n **only**, now

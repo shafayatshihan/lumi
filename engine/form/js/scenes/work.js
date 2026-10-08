@@ -200,7 +200,7 @@ export default {
         halo.style.transform = `scale(${0.7 + n * 0.08})`;
         rays.style.opacity = n >= 3 ? (n === 4 ? 1 : 0.5) : 0;
         setRate(RATE[n]);
-        countP.set(n === 4 ? 'bright idea, ready!' : n ? `ideas in ${n} of 4` : 'feed me your ideas');
+        countP.set(n === 4 ? 'bright idea, ready' : n ? `ideas in ${n} of 4` : 'feed me your ideas');
         countP.rect.setAttribute('fill', n === 4 ? C.ink : n ? C.f6 : C.f4);
         outCard.style.opacity = n === 4 ? 1 : 0;
         if (!force && n === 4 && last.n === 3) S.anim(outCard, [{ transform: 'translate(-30px,30px) scale(.4)', opacity: 0 }, { transform: 'translate(4px,-6px) scale(1.06)', opacity: 1, offset: 0.65 }, { transform: 'none', opacity: 1 }], { duration: 700, delay: 900, fill: 'backwards', easing: 'ease-out' });

@@ -1,0 +1,52 @@
+<!-- archetype: what-it-is | three facts + the object opened out with soft numbered discs | main visual: 3D | companions: <=3 facts, 2-4 callouts -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="What it is">
+  <div class="safe">
+    <div class="hs-main">
+      <div class="hs-l w5">
+        <p class="kicker" data-edit="s{{N}}-1">02 · What it is</p>
+        <h2 class="headline" data-edit="s{{N}}-2">Three parts, <span class="em">one job</span></h2>
+        <ol class="hs-steps">
+          <li><span class="hs-n">1</span><div><strong data-edit="s{{N}}-3">The base</strong><p data-edit="s{{N}}-4">carries the load <span class="hs-count">2x</span></p></div></li>
+          <li><span class="hs-n on">2</span><div><strong data-edit="s{{N}}-5">The core</strong><p data-edit="s{{N}}-6">does the work the talk is about</p></div></li>
+          <li><span class="hs-n">3</span><div><strong data-edit="s{{N}}-7">The cover</strong><p data-edit="s{{N}}-8">keeps the rest out <span class="hs-count">1x</span></p></div></li>
+        </ol>
+      </div>
+      <div class="hs-r w7">
+        <div class="hs-stage">
+          <div class="aura-3d hs-3d" data-scene="s{{N}}-scene" data-period="22" aria-hidden="true">
+            <span class="hs-pin" data-follow="base" data-align="right" data-dx="20">1</span>
+            <span class="hs-pin" data-follow="core" data-align="right" data-dx="20">2</span>
+            <span class="hs-pin" data-follow="cover" data-align="right" data-dx="20">3</span>
+            <div class="hs-tag warm" data-follow="core" data-dx="40"><b data-edit="s{{N}}-9">The core</b><span data-edit="s{{N}}-10">what this talk is about</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="hs-foot"><span class="hs-mark" data-edit="s{{N}}-11">Deck mark</span><span class="hs-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Walk the numbers, not the words.</strong> Say "one", point at the disc marked 1, then read its line. Do
+    the same for two and three. The discs are there so the room never has to search.</p>
+    <p><strong>Let the drift do the explaining.</strong> The parts ease apart and back on one slow breath; while they
+    are apart, say what sits against what. That is the fact people remember.</p>
+    <p><strong>Say what is real.</strong> Give the real part count and the real proportions, and say which of the two
+    are simplified here. If asked for a dimension you were not given, say it varies and move on.</p>
+  </aside>
+</section>
+<script>
+/* Replace the three placeholder forms with the subject's own (LOOK-BASE 4.0 and 4.1: real count, real proportions,
+   each moving part its own object at its real pivot). Exactly ONE orange form: the hero. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const S = HS3D.room(ctx, { target: [0, 1.7, 0], distance: 13, turn: -22, tilt: 15 });
+  const base  = S.add(HS3D.block(THREE, 3.4, 2.4, 0.7, { fill: 'warm' }));
+  const core  = S.add(HS3D.blob(THREE, 0.95, { fill: 'orange', squash: 0.9 }));  core.position.y = 1.6;
+  const cover = S.add(HS3D.slab(THREE, 2.8, 2.0, 0.4, { fill: 'candy' }));
+  cover.position.y = 2.8; cover.rotation.x = -Math.PI / 2;
+  S.ground(2.8);
+  S.sway([core], [0, 0.5, 0]);
+  S.sway([cover], [0, 0.9, 0], { lag: 2 });
+  HS3D.pins(S, ctx.el, { base: base, core: core, cover: cover });
+  return S.api({ update(t) { S.breathe(t); } });
+}, { period: 22 });
+</script>

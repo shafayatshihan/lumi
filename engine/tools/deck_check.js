@@ -132,7 +132,7 @@ function collect({ MIN_PX, TOL, BODY_MIN, BODY_EXEMPT, ILLUS }) {
     const area = el => { const r = el.getBoundingClientRect(); return r.width * r.height; };
     const visuals = [];
     s.querySelectorAll('.aura-3d').forEach(el => { if (!el.parentElement.closest('.aura-3d')) visuals.push('3D'); });
-    s.querySelectorAll('.bb-blender').forEach(() => visuals.push('3D'));        // a studio render (Blender) is the slide's 3D picture
+    s.querySelectorAll('.bb-blender:not(.aura-3d)').forEach(() => visuals.push('3D'));        // a studio render (Blender) is the slide's 3D picture; a baked one is also .aura-3d, counted once
     s.querySelectorAll('.bb-chart, [data-visual="chart"]').forEach(() => visuals.push('chart'));
     // a 2D canvas loop (.aura-canvas) is an animated diagram: it counts as the slide's diagram, never as a sixth kind
     // C-11: on a slide that already has a 3D scene a 2D canvas is part of that motion visual (an overlay or a loop), not a second main visual

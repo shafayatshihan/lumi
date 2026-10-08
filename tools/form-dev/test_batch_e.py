@@ -104,10 +104,11 @@ def run(T=None, browser=True):
         check('L-14: slide hashes tell which slide changed', len(h1) == 2 and h1[0] == h2[0] and h1[1] != h2[1])
 
         # ---- L-01: pre-extraction on upload, manifest, stale detection, forget
-        files = root / '3 - Put your files here' / 'Report'; files.mkdir(parents=True)
+        # no deck record here, so this is the draft folder every upload lands in before the interview makes the deck
+        files = fs.files_root(None) / 'Report'; files.mkdir(parents=True)
         (files / 'r.txt').write_text('Duct 200 x 40 mm. Mach 5 inlet.', encoding='utf-8')
         check('L-01: a new file is stale before extraction', stale_has(fs, 'Report/r.txt'))
-        ok = fs.extract_sources(['Report/r.txt'], timeout=120)
+        ok = fs.extract_sources(None, ['Report/r.txt'], timeout=120)
         man = fs.read_manifest().get('files', {})
         check('L-01: extract_sources writes the text and a manifest entry (kind, chars, text file, images, size, mtime)',
               ok and 'Report/r.txt' in man and man['Report/r.txt']['chars'] > 10 and Path(man['Report/r.txt']['text']).is_file(), man)
@@ -117,7 +118,7 @@ def run(T=None, browser=True):
         fs.ensure_extracted()
         check('L-01: ensure_extracted brings it up to date before a run', not stale_has(fs, 'Report/r.txt'))
         fs.forget_extracted('Report/r.txt')
-        check('L-01: a removed upload is forgotten (text and manifest entry)', 'Report/r.txt' not in fs.read_manifest().get('files', {}) and not (root / '.aura' / 'temp' / 'text' / 'Report' / 'r.txt.txt').exists())
+        check('L-01: a removed upload is forgotten (text and manifest entry)', 'Report/r.txt' not in fs.read_manifest().get('files', {}) and not (fs.text_root(None) / 'Report' / 'r.txt.txt').exists())
 
     # ---- L-04: the accent token clears 4.5:1 on every canvas, and the numbers the checker reads exist
     css = (ENGINE / 'deck' / 'themes' / 'bold-blue.css').read_text(encoding='utf-8')

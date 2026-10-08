@@ -17,13 +17,17 @@
 //   a recorded loop inside the deck. They are skipped (never recorded or re-rendered), keep their embedded media, and a draft preview or an
 //   empty holder stops the finalize with a plain message. Their PDF page is the render itself (the loop's poster, frame 1).
 //   <deck>?still=<n> shows slide n as a still and sets <html data-aura-still-ready="1"> when it is drawn (PDF pages).
-// Progress goes to stdout as JSON lines: {t:'plan',loops:[{n,frames}],slides}, {t:'frame',i,n,k,frames},
+// Before anything is recorded, every loop slide is drawn once and window.LumiCapture.health() (runtime.js contract
+// section 5) is asked what actually drew. A slide whose 3D did not draw makes finalize start over under Chromium's
+// software GL, and if that fails too it stops with a plain sentence and writes nothing - a blank slide must never
+// reach a client, and before this it did so silently with exit 0.
+// Progress goes to stdout as JSON lines: {t:'plan',loops:[{n,frames}],slides,softGl}, {t:'frame',i,n,k,frames},
 // {t:'encode',i,n}, {t:'still',k,of}, {t:'write'}, {t:'done'}. Errors go to stderr (one plain line) with exit code 1.
 // Timing (batch 6 spec Part D): {t:'timing',scope:'loop',...} after each loop and {t:'timing',scope:'deck',...} at the
 // end. They are measurement only - an older reader ignores an unknown `t`, and nothing here changes what is rendered.
 'use strict';
 const fs = require('fs'), path = require('path'), { spawn } = require('child_process');
-const { serveRootFor, serve, launch } = require('./lib/deckpage');
+const { serveRootFor, serve, launch, SOFT_GL_ARGS } = require('./lib/deckpage');
 
 const say = o => process.stdout.write(JSON.stringify(o) + '\n');
 const arg = (name, def) => { const i = process.argv.indexOf(name); return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : def; };
@@ -79,34 +83,70 @@ process.on('unhandledRejection', e => { sayFail(e); process.exit(1); });
   const outHtml = arg('--html'), outPdf = arg('--pdf'), ffmpeg = arg('--ffmpeg'), fps = Math.max(1, parseInt(arg('--fps', '20'), 10) || 20);
   if (!fs.existsSync(deck) || !outHtml || !outPdf || !ffmpeg) { console.error('usage: finalize.js <deck.html> --html <out> --pdf <out> --ffmpeg <exe>'); process.exit(2); }
   const server = await serve(serveRootFor(deck));
-  const browser = await launch();
+  let browser = await launch();
+  let softGl = false;
   const tmpDir = fs.mkdtempSync(path.join(path.dirname(path.resolve(outHtml)), '.finalize-'));
   try {
-    const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
-    await ctx.route('**/*', r => (r.request().url().startsWith(server.origin) || /^(data|blob):/.test(r.request().url())) ? r.continue() : r.abort());
-    const page = await ctx.newPage();
+    let ctx, page, hasCapture = false, loops = [], recorded = [], slideCount = 0, health = {};
     const base = server.url(deck);
 
     // ---- 1. loops
-    await page.goto(base + '?capture', { waitUntil: 'load', timeout: 120000 });
-    const hasCapture = await page.waitForFunction(() => !!window.LumiCapture, null, { timeout: 15000 }).then(() => true, () => false);
-    let loops = [], recorded = [];
-    if (hasCapture) {
-      await page.evaluate(() => Promise.resolve(window.LumiCapture.ready));
-      // Blender slides (studio renders) are already pictures / recorded loops: they are listed here, never recorded again (contract 10)
-      recorded = await page.evaluate(() => Object.entries(window.LumiCapture.recorded || {}).map(([n, v]) => ({ n: parseInt(n, 10), kind: v.kind, draft: !!v.draft, filled: !!v.filled })).sort((a, b) => a.n - b.n));
-      loops = await page.evaluate(() => Object.entries(window.LumiCapture.slides || {})
-        .map(([n, s]) => ({ n: parseInt(n, 10), period: Number(s && s.period), rect: s && s.rect ? { x: +s.rect.x, y: +s.rect.y, w: +s.rect.w, h: +s.rect.h } : null }))
-        .filter(x => x.n > 0 && x.period >= 0 && isFinite(x.period)).sort((a, b) => a.n - b.n));
+    // Open the deck in capture mode, draw one frame of every loop, and ask the runtime what actually drew
+    // (contract section 5). Doing this BEFORE recording is the whole point: a scene that throws used to be invisible,
+    // and 40 frames of the slide background were encoded, embedded and reported as a success.
+    const openCapture = async () => {
+      ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+      await ctx.route('**/*', r => (r.request().url().startsWith(server.origin) || /^(data|blob):/.test(r.request().url())) ? r.continue() : r.abort());
+      page = await ctx.newPage();
+      await page.goto(base + '?capture', { waitUntil: 'load', timeout: 120000 });
+      hasCapture = await page.waitForFunction(() => !!window.LumiCapture, null, { timeout: 15000 }).then(() => true, () => false);
+      loops = []; recorded = []; health = {};
+      if (hasCapture) {
+        await page.evaluate(() => Promise.resolve(window.LumiCapture.ready));
+        // Blender slides (studio renders) are already pictures / recorded loops: they are listed here, never recorded again (contract 10)
+        recorded = await page.evaluate(() => Object.entries(window.LumiCapture.recorded || {}).map(([n, v]) => ({ n: parseInt(n, 10), kind: v.kind, draft: !!v.draft, filled: !!v.filled })).sort((a, b) => a.n - b.n));
+        loops = await page.evaluate(() => Object.entries(window.LumiCapture.slides || {})
+          .map(([n, s]) => ({ n: parseInt(n, 10), period: Number(s && s.period), rect: s && s.rect ? { x: +s.rect.x, y: +s.rect.y, w: +s.rect.w, h: +s.rect.h } : null }))
+          .filter(x => x.n > 0 && x.period >= 0 && isFinite(x.period)).sort((a, b) => a.n - b.n));
+      }
+      slideCount = await page.evaluate(() => (window.Aura && Aura.slides ? Aura.slides().length : 0) ||
+        document.querySelectorAll('.deck > .slide, body > .slide, .slide').length);
+      if (!slideCount) throw new Error('no slides found in the deck');
+      const bad = recorded.filter(r => r.draft || !r.filled);
+      if (bad.length) throw new Error(`slide ${bad.map(r => r.n).join(', ')} still ${bad.length === 1 ? 'shows' : 'show'} ${bad.some(r => r.draft) ? 'a preview, not the approved render' : 'no render'}: render ${bad.length === 1 ? 'it' : 'them'} in the build first.`);
+      const done = new Set(recorded.map(r => r.n));
+      loops = loops.filter(x => !done.has(x.n)).map(x => ({ ...x, frames: x.period > 0 ? Math.max(1, Math.round(x.period * fps)) : 1 }));
+      for (const l of loops) await page.evaluate(n => Promise.resolve(window.LumiCapture.slides[n].seek(0)), l.n);
+      if (hasCapture) health = await page.evaluate(() => (window.LumiCapture.health ? window.LumiCapture.health() : {}));
+    };
+    // the loop slides whose 3D did not draw. A deck built before this change has no health(), so health is {} and
+    // nothing is gated - the check can only ever add a failure that was already there, never invent one.
+    const blank = () => loops.filter(l => (health[l.n] || {}).failed && health[l.n].failed.length)
+      .map(l => ({ n: l.n, why: health[l.n].failed[0].reason }));
+
+    await openCapture();
+    if (blank().length && !softGl) {
+      const first = blank()[0];
+      say({ t: 'warn', slide: first.n, message: `the 3D picture on slide ${first.n} did not draw on this computer's graphics card, so Lumi is recording the deck again with its own software renderer. This takes longer.` });
+      await ctx.close().catch(() => {});
+      await browser.close().catch(() => {});
+      browser = await launch({ args: SOFT_GL_ARGS });
+      softGl = true;
+      await openCapture();
     }
-    const slideCount = await page.evaluate(() => (window.Aura && Aura.slides ? Aura.slides().length : 0) ||
-      document.querySelectorAll('.deck > .slide, body > .slide, .slide').length);
-    if (!slideCount) throw new Error('no slides found in the deck');
-    const bad = recorded.filter(r => r.draft || !r.filled);
-    if (bad.length) throw new Error(`slide ${bad.map(r => r.n).join(', ')} still ${bad.length === 1 ? 'shows' : 'show'} ${bad.some(r => r.draft) ? 'a preview, not the approved render' : 'no render'}: render ${bad.length === 1 ? 'it' : 'them'} in the build first.`);
-    const done = new Set(recorded.map(r => r.n));
-    loops = loops.filter(x => !done.has(x.n)).map(x => ({ ...x, frames: x.period > 0 ? Math.max(1, Math.round(x.period * fps)) : 1 }));
-    say({ t: 'plan', loops: loops.map(({ n, frames }) => ({ n, frames })), slides: slideCount, recorded: recorded.map(r => r.n) });
+    if (blank().length) {
+      // the server shows the LAST stderr line and cuts it at 200 characters (friendly_tool_error), so the sentence stays
+      // short and the slide list is capped rather than running on
+      const ns = blank().map(b => b.n), one = ns.length === 1;
+      const list = ns.length <= 3 ? (one ? String(ns[0]) : ns.slice(0, -1).join(', ') + ' and ' + ns[ns.length - 1])
+        : ns.slice(0, 3).join(', ') + ' and ' + (ns.length - 3) + ' more';
+      // the technical cause goes to the log, never into the sentence: it is a stack-shaped string with a localhost URL
+      // in it, and the standing rule is that an error reaching a person is plain and says what to do next.
+      say({ t: 'detail', scope: 'capture', slides: ns, reason: blank()[0].why, softGl });
+      throw new Error(`the 3D picture${one ? '' : 's'} on slide${one ? '' : 's'} ${list} did not draw, even with Lumi's ` +
+        `software renderer. Nothing was written. Check ${one ? 'that slide' : 'those slides'}, then finalize again.`);
+    }
+    say({ t: 'plan', loops: loops.map(({ n, frames }) => ({ n, frames })), slides: slideCount, recorded: recorded.map(r => r.n), softGl });
 
     const clips = [];
     const tLoops0 = hr();
@@ -158,6 +198,9 @@ process.on('unhandledRejection', e => { sayFail(e); process.exit(1); });
     say({ t: 'write' });
     const tWrite0 = hr();
     let src = fs.readFileSync(deck, 'utf8').replace(/<script type="text\/plain" id="lumi-loop-\d+"[^>]*>[\s\S]*?<\/script>\s*/g, '');
+    // batch 6: a baked slide is now a recorded loop like every other scene, so its inlined model and the player are dead weight
+    // (several MB a slide). The holder keeps its poster for a viewer without video.
+    src = src.replace(/<script id="lumi-bake-(?:player|scenes)">[\s\S]*?<\/script>\s*/g, '');
     const blobs = clips.map(c => `<script type="text/plain" id="lumi-loop-${c.n}" data-mime="video/mp4" data-period="${c.period}">${fs.readFileSync(c.file).toString('base64')}</script>`).join('\n');
     const at = src.lastIndexOf('</body>');
     src = at >= 0 ? src.slice(0, at) + blobs + '\n' + src.slice(at) : src + '\n' + blobs + '\n';
@@ -176,10 +219,18 @@ process.on('unhandledRejection', e => { sayFail(e); process.exit(1); });
       const hasRuntime = await page.evaluate(() => !!window.Aura).catch(() => false);
       const flagged = await page.waitForFunction(() => document.documentElement.getAttribute('data-aura-still-ready') === '1', null,
         { timeout: hasRuntime ? (parseInt(process.env.AURA_STILL_TIMEOUT_MS, 10) || 180000) : 6000 }).then(() => true, () => false);
+      // "Ready" only ever promised that a frame was drawn, not that the 3D was in it: a scene that threw is skipped and
+      // the page reports ready in milliseconds. data-aura-still-3d (contract section 5) is the one that answers the
+      // question, and without it this loop photographed blank pages and counted zero warnings.
+      const still3d = hasRuntime ? await page.evaluate(() => document.documentElement.dataset.auraStill3d || '').catch(() => '') : '';
       // D-04: one slow slide must not lose every loop already recorded. After the 3-minute wait the page is photographed as it
       // is (the slide without its finished 3D picture) and the person is told which page is affected.
-      if (hasRuntime && !flagged) stillWarnings++;
-      if (hasRuntime && !flagged) say({ t: 'warn', slide: k + 1, message: `the 3D picture on slide ${k + 1} was not ready, so its page in the PDF shows the slide without it (the video in the deck itself is fine)` });
+      if (hasRuntime && (!flagged || still3d === 'failed')) {
+        stillWarnings++;
+        say({ t: 'warn', slide: k + 1, message: still3d === 'failed'
+          ? `the 3D picture on slide ${k + 1} did not draw, so its page in the PDF shows the slide without it (the video in the deck itself is fine)`
+          : `the 3D picture on slide ${k + 1} was not ready, so its page in the PDF shows the slide without it (the video in the deck itself is fine)` });
+      }
       await page.waitForTimeout(250);
       stills.push((await page.screenshot({ type: 'jpeg', quality: 92 })).toString('base64'));
       if (k === 0) {
@@ -206,7 +257,7 @@ process.on('unhandledRejection', e => { sayFail(e); process.exit(1); });
       .nt .k{font-size:26px;color:#666;margin:0 0 12px}.nt h1{font-size:56px;line-height:1.15;margin:0 0 36px}.nt p{margin:0 0 22px}</style>${pages}`, { waitUntil: 'load' });
     await pdfPage.pdf({ path: outPdf, width: `${W}px`, height: `${H}px`, printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 } });
     const pdfS = hr() - tPdf0;
-    say({ t: 'timing', scope: 'deck', fps, crf: BASE_CRF, light: LIGHT, loopCount: clips.length, slides: slideCount,
+    say({ t: 'timing', scope: 'deck', fps, crf: BASE_CRF, light: LIGHT, softGl, loopCount: clips.length, slides: slideCount,
           startupS: r3(tLoops0 - T0), loopsS: r3(tLoopsDone - tLoops0), htmlS: r3(htmlS), stillsS: r3(stillsS),
           stills: stills.length, stillWarnings, pdfS: r3(pdfS), totalS: r3(hr() - T0),
           htmlBytes: bytesOf(outHtml), pdfBytes: bytesOf(outPdf) });

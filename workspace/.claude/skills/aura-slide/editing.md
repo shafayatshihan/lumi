@@ -11,7 +11,7 @@ The editor sends one request per message, usually prefixed with the slide the us
   deck. On a reply that answers your questions, N is the slide those questions were about. In a deck built slide by slide,
   `[slide N]` comes in slide N's own conversation (change only that slide) and `[whole deck]` in the deck's conversation
   (change every slide the request covers and name them in your answer; Lumi tells each changed slide's conversation).
-- "use the file <name>" means a file they just added to `3 - Put your files here/Anything else/` (look there first,
+- "use the file <name>" means a file they just added to `Anything else/` inside this deck's files folder (look there first,
   then the other folders). It is read-only like all their files: copy it into the build folder's `assets/`.
 - The user may also have changed some texts **directly** in the editor. The app writes those straight into the build
   folder and the packed file. So always **re-read the build source before editing**, and never put back old wording

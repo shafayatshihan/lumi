@@ -12,27 +12,43 @@
 // which the page cannot see or leave through the Fullscreen API). A maximized window keeps a title bar and a taskbar,
 // so its outerHeight is smaller - that difference is the test. window.close() works from the app window (one history
 // entry), which is why the control can close it.
+//
+// Two ways this could still shut someone in, and what is done about each:
+//   1. THE DETECTOR MISSES. Display scaling, a hidden taskbar or a second monitor can put screen.height a few CSS px
+//      away from the window, and then the control never appears in a window that has no title bar either. So the test
+//      is deliberately generous: the window counts as frameless when it covers the screen and keeps essentially none
+//      of it for a frame. Showing the control in a maximized window costs a 30 px pill; withholding it in a
+//      fullscreen one costs the person their way out. The cheap mistake is the one to make.
+//   2. close() IS REFUSED. Chromium only lets a page close a window it opened or one with a single history entry.
+//      An --app window qualifies, but a reload or a returned-to page can add entries. So the click is CHECKED: if the
+//      window is still here a moment later, the control says what does work (F11 for the window back, Alt+F4 to
+//      close) instead of silently doing nothing.
 import { h } from './dom.js';
 
-const SLACK = 2;   // a window manager can be a pixel out
+const SLACK = 4;             // a window manager, a scaled display or a hidden taskbar can be a few CSS px out
+const FRAME = 24;            // a title bar is far taller than this; fullscreen keeps none of it
 
 export function mountShellExit() {
-  // The window fills the screen AND has no frame of its own: inner == outer == screen. A maximized window fails the
-  // first (a title bar and a taskbar eat into it); a test window sized past the screen fails the second.
+  // Frameless and filling the screen: the viewport is as tall as the screen, with no chrome eating into it. A
+  // maximized window loses a title bar AND a taskbar out of innerHeight, which is tens of px, not FRAME.
   const fullscreen = () => !!document.fullscreenElement
-    || (Math.abs(window.outerHeight - screen.height) <= SLACK && Math.abs(window.innerHeight - screen.height) <= SLACK
-      && Math.abs(window.outerWidth - screen.width) <= SLACK && Math.abs(window.innerWidth - screen.width) <= SLACK);
+    || (window.outerHeight >= screen.height - SLACK && window.outerWidth >= screen.width - SLACK
+      && screen.height - window.innerHeight <= FRAME);
 
   const btn = h('button', { type: 'button', class: 'sh-exit', 'data-nosfx': '', title: 'close lumi' }, 'close lumi');
+  const tip = h('span', { class: 'sh-exit-tip', hidden: true, role: 'status' }, 'f11 for the window, alt+f4 to close');
   btn.addEventListener('click', () => {
     if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
-    window.close();
+    let closing = true;
+    try { window.close(); } catch (e) { closing = false; }
+    // if we are still here, the browser refused: say what does work rather than leave a dead button
+    setTimeout(() => { if (!closing || !window.closed) { tip.hidden = false; } }, 350);
   });
-  const bar = h('div', { class: 'sh-exit-wrap', hidden: true }, btn);
+  const bar = h('div', { class: 'sh-exit-wrap', hidden: true }, tip, btn);
   document.body.append(bar);
 
   let t = 0;
-  const paint = () => { bar.hidden = !fullscreen(); };
+  const paint = () => { bar.hidden = !fullscreen(); if (bar.hidden) tip.hidden = true; };
   const soon = () => { clearTimeout(t); t = setTimeout(paint, 120); };
   addEventListener('resize', soon);
   document.addEventListener('fullscreenchange', soon);

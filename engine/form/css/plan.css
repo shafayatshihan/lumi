@@ -371,6 +371,11 @@
 .th-h{font-family:var(--head);font-weight:900;font-size:46px;line-height:1.05;letter-spacing:-.02em}
 .th-lead{font-size:18px;line-height:1.45;color:rgba(8,9,9,.72)}
 .th-left .pl-bigs{margin-top:18px;width:100%}
+/* Lumi leans in from the bottom of the look column and is cropped by it - the character is the one thing on this
+   screen that belongs to Lumi rather than to the deck being previewed. Decorative only: aria-hidden, no hit area. */
+.th-lumi{position:absolute;left:-40px;top:574px;width:400px;pointer-events:none;display:block;
+  clip-path:inset(0 0 42px 0);animation:upBob 4.6s var(--ease-io) infinite}
+@media (prefers-reduced-motion: reduce){.th-lumi{animation:none}}
 
 /* the quality choice, beside the look: four calm rows, then an advanced control that names the model and the effort */
 .th-qual{display:flex;flex-direction:column;gap:8px;margin-top:6px}

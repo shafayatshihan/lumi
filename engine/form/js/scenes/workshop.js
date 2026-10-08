@@ -31,7 +31,7 @@ const FAN = { x: 24, y: 210, z: 62, r: 300 };
 const STAGES = ['read', 'plan', 'build', 'check', 'export', 'done'];
 const STAGE_COL = { read: PAL.lilac, plan: PAL.pink, build: PAL.orange, check: PAL.fur[4], export: PAL.rose, done: PAL.orange };
 const STAGE_TEXT = { idle: 'getting ready', read: 'reading your files', plan: 'planning the slides', build: 'building your slides',
-  check: 'checking every slide', export: 'packing it up', done: 'all done!', wait: 'a quick question for you', fail: 'paused for now' };
+  check: 'checking every slide', export: 'packing it up', done: 'all done', wait: 'a quick question for you', fail: 'paused for now' };
 
 // Card timeline (seconds from the card's start)
 const T_PRESS = 0.9, T_HIT = 1.2, T_LEAVE_PRESS = 1.5, T_PAINT = 2.2, T_PAINT_END = 3.1, T_END = 3.7, T_STACKED = 4.3;

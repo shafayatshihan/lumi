@@ -1,7 +1,7 @@
 """Developer-only stand-in for blender.exe, so the Blender pipeline is testable without Blender (docs/blender-contract.md).
 The server runs it when AURA_BLENDER points here (a .py is started with the server's own Python):
   python fake_blender.py --version
-  python fake_blender.py -b [--factory-startup ...] -P <script.py> -- --out <png | folder> [--preview] [--anim] [--res N]
+  python fake_blender.py -b [--factory-startup ...] -P <script.py> -- --out <png | folder> [--preview] [--anim] [--res N] [--bake draft|final]
                          [--height 720|1080] [--samples N] [--fps N] [--frame N] [--resume] [--cpu]
 probe_gpu.py prints a probe line. Any other script is read for these directives, then rendered the way lumi_bpy.render()
 would (same [lumi] lines, same "Fra: f | ... | Sample s/S" log lines, PNGs of the right size in the slide colour #F9F4F2):
@@ -101,6 +101,46 @@ def png(path, w, h, rgb=(0xF9, 0xF4, 0xF2)):
     with open(path, 'wb') as f:
         f.write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + chunk(b'IDAT', data) + chunk(b'IEND', b''))
 
+
+def glb(path):
+    """A real, tiny glTF binary: one orange triangle facing the camera, so a baked slide can be packed and drawn."""
+    import struct
+    pos = struct.pack('<9f', -0.5, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.8, 0.0)
+    gj = {'asset': {'version': '2.0'}, 'scene': 0, 'scenes': [{'nodes': [0]}], 'nodes': [{'mesh': 0, 'name': 'fake'}],
+          'meshes': [{'primitives': [{'attributes': {'POSITION': 0}, 'material': 0}]}],
+          'materials': [{'name': 'fake', 'doubleSided': True, 'pbrMetallicRoughness': {'baseColorFactor': [1, 0.42, 0.08, 1],
+                                                                                    'metallicFactor': 0, 'roughnessFactor': 0.6}}],
+          'buffers': [{'byteLength': len(pos)}], 'bufferViews': [{'buffer': 0, 'byteOffset': 0, 'byteLength': len(pos)}],
+          'accessors': [{'bufferView': 0, 'componentType': 5126, 'count': 3, 'type': 'VEC3',
+                         'min': [-0.5, 0.0, 0.0], 'max': [0.5, 0.8, 0.0]}]}
+    js = json.dumps(gj, separators=(',', ':')).encode()
+    js += b' ' * (-len(js) % 4)
+    body = struct.pack('<II', len(js), 0x4E4F534A) + js + struct.pack('<II', len(pos), 0x004E4942) + pos
+    with open(path, 'wb') as f:
+        f.write(struct.pack('<III', 0x46546C67, 2, 12 + len(body)) + body)
+
+
+bake = opt('--bake')
+if bake:          # like lumi_bake.run(): four maps, the export, the poster - into the --out FOLDER, atlases kept between runs
+    os.makedirs(os.path.join(out, 'atlas'), exist_ok=True)
+    say(f'[lumi] bake: 3 objects (after joining statics) in 1 material group(s), {256 if bake == "draft" else 1024} px atlases, mode={bake}')
+    for k in ('base', 'rough', 'metal', 'ao'):
+        time.sleep(slow / 2)
+        say(f'[lumi] bake: {k} done for 1 atlas(es) in 0.1 s')
+    glb(os.path.join(out, 'model.glb'))
+    png(os.path.join(out, 'poster.png'), 576, 324)
+    names = re.findall(r"L\.anchor\('(\w+)'", text)
+    man = {'schema': 'lumi-bake/1', 'mode': bake, 'atlas': 256 if bake == 'draft' else 1024, 'period': loop_n / float(fps),
+           'fps': fps, 'frames': loop_n, 'background': '#F9F4F2', 'transparent': False,
+           'camera': {'position': [0, -3, 0.4], 'target': [0, 0, 0.4], 'fovY': 30, 'fovX': 39.6, 'aspect': 1.777778,
+                      'clip': [0.01, 100], 'up': 'Z'},
+           'bounds': {'min': [-0.5, 0, 0], 'max': [0.5, 0, 0.8], 'size': 1.0}, 'sectionMaterials': [],
+           'anchors': {k: {'point': [0.0, 0.0, 0.4]} for k in names}, 'glb': 'model.glb', 'poster': 'poster.png',
+           'geoHash': 'fake', 'reused': False, 'timing': {'totalS': 2 * slow}}
+    with open(os.path.join(out, 'bake.json'), 'w', encoding='utf-8') as f:
+        json.dump(man, f)
+    say(f'[lumi] done: bake {bake} {man["atlas"]}px, 1 atlas(es), total {2 * slow:.1f} s')
+    sys.exit(0)
 
 whole = list(range(1, loop_n + 1)) if anim and not preview else [opt('--frame', 1, int)]
 todo = list(whole)

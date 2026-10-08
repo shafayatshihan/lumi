@@ -39,10 +39,13 @@ export const postJSON = (url, body = {}) => req('POST', url, body);
 export const patchJSON = (url, body = {}) => req('PATCH', url, body);
 
 // Upload one file to a "3 - Put your files here" folder. onProgress(0..1). Resolves {ok, path, name, size} or {ok:false}.
-export function upload(file, folder, onProgress = () => {}) {
+// `deck` is the deck id when one exists: the file lands in THAT deck's folder. Left out, it goes to the draft folder,
+// which the deck adopts the moment the interview makes it.
+export function upload(file, folder, onProgress = () => {}, deck) {
   return new Promise(resolve => {
     const x = new XMLHttpRequest();
-    x.open('POST', `/api/upload?folder=${encodeURIComponent(folder)}&name=${encodeURIComponent(file.name)}`);
+    x.open('POST', `/api/upload?folder=${encodeURIComponent(folder)}&name=${encodeURIComponent(file.name)}`
+      + (deck ? `&deck=${encodeURIComponent(deck)}` : ''));
     x.setRequestHeader('Content-Type', 'application/octet-stream');
     x.upload.onprogress = e => e.lengthComputable && onProgress(e.loaded / e.total);
     x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch (e) {}
@@ -68,7 +71,7 @@ export const claude = {
   events: since => getJSON('/api/claude/events?since=' + (since | 0)),
 };
 export const openSlides = path => postJSON('/api/open-slides', path ? { path } : {});
-export const openFiles = () => postJSON('/api/open-files');
+export const openFiles = deck => postJSON('/api/open-files', deck ? { deck } : {});
 
 // v0.3: readiness checks, repairs, deck library, usage.
 export const health = part => getJSON('/api/health' + (part ? '?part=' + encodeURIComponent(part) : ''));
@@ -96,8 +99,8 @@ export const brief = {
   // for the last gasp when the page closes: keepalive lets the request finish after the page is gone
   saveOnExit: body => { try { fetch('/api/brief', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body }); } catch (e) { /* closing */ } },
 };
-export const files = () => getJSON('/api/files');
-export const removeFile = path => postJSON('/api/remove', { path });
+export const files = deck => getJSON('/api/files' + (deck ? '?deck=' + encodeURIComponent(deck) : ''));
+export const removeFile = (path, deck) => postJSON('/api/remove', deck ? { path, deck } : { path });
 
 // v0.5: planning page, slide-by-slide build, finalize.
 export const plan = {

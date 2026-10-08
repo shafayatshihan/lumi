@@ -1,0 +1,42 @@
+<!-- archetype: result-chart | one FLAT chart on a white clay tile (LOOK-BASE 5.1: a value read aloud is never read off a 3D picture) | main visual: chart | companions: <=3 finding chips -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="The result">
+  <div class="safe">
+    <div class="cp-main">
+      <div class="cp-l w4">
+        <p class="kicker" data-edit="s{{N}}-1">07 · The result</p>
+        <h2 class="headline" data-edit="s{{N}}-2">Smooth, then <span class="em">suddenly not</span></h2>
+        <ul class="cp-chips">
+          <li class="cp-chip" data-edit="s{{N}}-3">Flat for 40 min</li>
+          <li class="cp-chip key" data-edit="s{{N}}-4">Lets go at 41</li>
+          <li class="cp-chip" data-edit="s{{N}}-5">Never recovers</li>
+        </ul>
+      </div>
+      <div class="cp-r w8">
+        <div class="cp-chart" id="s{{N}}-chart"></div>
+      </div>
+    </div>
+    <footer class="cp-foot" data-nonclaim><span class="cp-mark" data-edit="s{{N}}-6">Deck mark</span><span class="cp-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Read the axes first</strong>: what runs along the bottom, what goes up the side, in which units. Only
+    then follow the orange line.</p>
+    <p><strong>Walk the chips top to bottom</strong> - they are in the order the eye should travel. Point at the
+    marked moment and say what happened there in the real world.</p>
+    <p><strong>Say where the data came from</strong> and how many runs it is. If this curve is illustrative, say so
+    plainly: the chart says it too.</p>
+  </aside>
+</section>
+<script>
+/* Replace with the user's real data and its source line, or keep illustrative: true and say so in the notes. The FIRST
+   series is the clay-orange one: make it the result the slide is about. */
+CPChart.line('#s{{N}}-chart', {
+  x: { min: 0, max: 60, ticks: [0, 20, 40, 60], title: 'time elapsed, min' },
+  y: { min: 0, max: 100, ticks: [0, 50, 100], title: 'load held, %' },
+  series: [
+    { name: 'new', points: [[0, 92], [10, 91], [20, 90], [30, 90], [40, 88], [50, 86], [60, 85]], markers: true },
+    { name: 'old', points: [[0, 90], [10, 89], [20, 88], [30, 87], [40, 84], [42, 46], [50, 40], [60, 37]] },
+  ],
+  band: { from: 40, to: 60 }, event: { x: 41, y: 60, label: 'old design lets go' },
+  illustrative: true,
+});
+</script>

@@ -20,35 +20,35 @@ export { ICON };
 
 // The doability matrix. The server (form_server.py: COMPANIONS / clash_reason) checks the same - keep them in step.
 export const MAINS = [
-  { id: '3d', label: '3D model', name: 'a 3D model', why: 'a real-looking model that can turn and move, like a product photo come alive' },
-  { id: 'chart', label: 'chart', name: 'a chart', why: 'your numbers drawn as bars or lines, so the pattern jumps out' },
-  { id: 'diagram', label: 'diagram', name: 'a diagram', why: 'an illustrated, moving picture of how something works, step by step' },
-  { id: 'photo', label: 'photo', name: 'a photo', why: 'one of your own pictures, nicely framed. claude asks which one' },
-  { id: 'text', label: 'text only', name: 'big text only', why: 'just one strong sentence or quote, nothing else on the slide' },
+  { id: '3d', label: '3D model', name: 'a 3D model', why: 'a real-looking model that can turn and move' },
+  { id: 'chart', label: 'chart', name: 'a chart', why: 'your numbers as bars or lines' },
+  { id: 'diagram', label: 'diagram', name: 'a diagram', why: 'a moving picture of how something works' },
+  { id: 'photo', label: 'photo', name: 'a photo', why: 'one of your own pictures' },
+  { id: 'text', label: 'text only', name: 'big text only', why: 'one strong sentence or quote' },
 ];
 export const COMPANIONS = {
-  '3d': [{ id: 'stats', label: '3 numbers', why: 'up to 3 small number cards beside the model' },
-    { id: 'checklist', label: 'checklist', why: 'a short list of ticks next to the model' },
-    { id: 'labels', label: 'labels', why: 'little name tags on the model, pointing at its parts' },
-    { id: 'map', label: 'small map', why: 'a tiny map in a corner, to show where' }],
-  chart: [{ id: 'notes', label: '3 notes', why: 'up to 3 short notes pinned to the important points of the chart' }],
+  '3d': [{ id: 'stats', label: '3 numbers', why: 'up to 3 number cards beside the model' },
+    { id: 'checklist', label: 'checklist', why: 'a short list of ticks' },
+    { id: 'labels', label: 'labels', why: 'name tags pointing at its parts' },
+    { id: 'map', label: 'small map', why: 'a tiny map in a corner' }],
+  chart: [{ id: 'notes', label: '3 notes', why: 'up to 3 notes pinned to the chart' }],
   photo: [{ id: 'zones', label: 'zones', why: 'the photo split into labelled bands' },
-    { id: 'inset', label: 'small inset', why: 'one small close-up picture on top of the big one' },
+    { id: 'inset', label: 'small inset', why: 'a small close-up on top' },
     { id: 'marks', label: 'marks', why: 'circles and arrows drawn on the photo' }],
-  diagram: [{ id: 'steps', label: 'steps', why: 'the diagram builds up in a few short steps' }],
-  text: [{ id: 'quote', label: 'big quote', why: 'the sentence styled as one big quote, with who said it' }],
+  diagram: [{ id: 'steps', label: 'steps', why: 'builds up in a few steps' }],
+  text: [{ id: 'quote', label: 'big quote', why: 'a big quote, with who said it' }],
 };
-export const DETAILS = [{ id: 'simple', label: 'simple', why: 'a clean, plain model. quick to build' },
+export const DETAILS = [{ id: 'simple', label: 'simple', why: 'clean and plain. quick to build' },
   { id: 'detailed', label: 'detailed', why: 'real materials, shadows and small parts' },
-  { id: 'showpiece', label: 'showpiece', why: 'the wow slide: every detail, best lighting. takes longest' }];
-export const MOTIONS = [{ id: 'still', label: 'still', why: 'the model stands still, like a photo' },
-  { id: 'timed', label: 'loop', why: 'a timed animation: it turns or moves in a smooth, repeating way' },
+  { id: 'showpiece', label: 'showpiece', why: 'every detail, best lighting. slowest' }];
+export const MOTIONS = [{ id: 'still', label: 'still', why: 'stands still, like a photo' },
+  { id: 'timed', label: 'loop', why: 'turns or moves in a smooth loop' },
   { id: 'physics-like', label: 'physics-like', why: 'things fall, flow or bounce in a believable way' },
-  { id: 'simulation', label: 'simulation', why: 'a real simulation: the motion comes from real equations. slowest to build' }];
+  { id: 'simulation', label: 'simulation', why: 'motion from real equations. slowest to build' }];
 const mainOf = id => MAINS.find(m => m.id === id) || MAINS[4];
 const compHome = id => Object.keys(COMPANIONS).find(m => COMPANIONS[m].some(c => c.id === id));
 export function clashReason(main, item) {
-  if (MAINS.some(m => m.id === item)) return item === main ? '' : `one slide has room for one main picture. ${mainOf(item).name} would fight ${mainOf(main).name} for the space.`;
+  if (MAINS.some(m => m.id === item)) return item === main ? '' : `one main picture per slide. this one already has ${mainOf(main).name}.`;
   const home = compHome(item);
   return !home || home === main ? '' : `this only works with ${mainOf(home).name}.`;
 }
@@ -244,7 +244,7 @@ export function slideEditor(slide, ctx = {}) {
     own.addEventListener('click', () => { closeFix(); sfx('launch'); ctx.onOwnSlide(item.id); });
   }
   const engInfo = () => (ctx.engineInfo ? ctx.engineInfo(s.id) : null);
-  const engNow = () => { const i = engInfo(); return i ? effEngine(s.visual, i.look, i.available) : null; };
+  const engNow = () => { const i = engInfo(); return i ? effEngine(s.visual, i.look, i.available, i.bakes) : null; };
   function paintEngines() {
     const i = engInfo(), v = s.visual;
     engBox.hidden = !i || v.main !== '3d';
@@ -308,9 +308,9 @@ export function slideEditor(slide, ctx = {}) {
     h('p', { class: 'pl-lab' }, 'what goes on the slide'), bullets, addB, picLine);
   const extras = [h('p', { class: 'pl-lab' }, 'add to it'), addRow, alsoRow, h('p', { class: 'pl-lab' }, 'what it shows'), phrase,
     h('p', { class: 'pl-lab' }, 'uses your file'), srcRow];
-  const pickHint = h('p', { class: 'pl-pichint' }, 'pick one. the extras for it show up next.');
+  const pickHint = h('p', { class: 'pl-pichint' }, 'pick one.');
   const picture = h('div', { class: 'pl-pic', hidden: true },
-    h('div', { class: 'pl-pichead' }, h('p', { class: 'pl-lab' }, 'main picture (one per slide)'), doneB), mainRow, pickHint,
+    h('div', { class: 'pl-pichead' }, h('p', { class: 'pl-lab' }, 'main picture'), doneB), mainRow, pickHint,
     ctx.compact ? why : null, extras.slice(0, 3), threeBox, extras.slice(3), fixPop);
   if (ctx.compact) words.append(meterEl);
   const el = h('div', { class: 'pl-ed' + (ctx.compact ? ' is-compact' : '') }, words, picture);
@@ -464,10 +464,8 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
     setMode && setMode('home');
     main.hidden = true; buildB.hidden = true; head.hidden = true; intro.hidden = false; ivHost.hidden = true; thHost.hidden = true;
     const planB = h('button', { type: 'button', class: 'pl-big pl-ink pl-big-s1', 'data-nosfx': '', 'data-cursor-label': 'plan' },
-      h('span', { class: 'pl-big-i', html: ICON.spark }), h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'plan my slides'),
-        h('span', { class: 'pl-big-s' }, 'claude suggests the slides first. you check them, then it builds them one by one.')));
-    intro.replaceChildren(h('span', { class: 'badge' }, 'plan your deck'), h('h1', { class: 'q pl-intro-h' }, 'shall we plan the slides?'),
-      h('p', { class: 'lead pl-intro-l' }, 'a plan takes a minute or two and saves a lot of fixing later.'), h('div', { class: 'pl-bigs' }, planB));
+      h('span', { class: 'pl-big-i', html: ICON.spark }), h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'plan my slides')));
+    intro.replaceChildren(h('span', { class: 'badge' }, 'plan your deck'), h('h1', { class: 'q pl-intro-h' }, 'shall we plan the slides?'), h('div', { class: 'pl-bigs' }, planB));
     planB.addEventListener('click', async () => {
       planB.disabled = true; sfx('launch');
       const r = await api.plan.start(deckId || undefined);
@@ -501,8 +499,12 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
       h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'plan my slides')));
     thHost.replaceChildren(h('div', { class: 'th' },
       h('div', { class: 'th-left' }, h('span', { class: 'badge' }, 'the look'), h('h1', { class: 'th-h' }, 'pick a look'),
-        h('p', { class: 'th-lead' }, 'hover a look to see it move.'),
-        qualEl, h('div', { class: 'pl-bigs' }, goB)),
+        h('p', { class: 'th-lead' }, 'hover a look to see real slides.'),
+        qualEl, h('div', { class: 'pl-bigs' }, goB),
+        // The real Lumi (the knitted character from the loading screen), cropped by the bottom of the column.
+        // Not the flat cartoon: this screen is full of someone else's slides, so the one thing that is ours
+        // should be the thing people recognise from launch.
+        h('img', { class: 'th-lumi', src: '/assets/lumi-cutout.png', alt: '', 'aria-hidden': 'true' })),
       illus, listEl));
     if (!thLoading) {
       thLoading = true;
@@ -559,7 +561,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
         clearTimeout(armed); stopB.disabled = true; await api.claude.stop(); refresh();
       });
       intro.replaceChildren(h('div', { class: 'pl-wait' }, h('div', { class: 'pl-wait-cards', 'aria-hidden': 'true' }, Array.from({ length: 5 }, (_, i) => h('i', { style: `--i:${i}` }))),
-        h('h2', { class: 'pl-wait-h' }, 'claude is reading your files and planning'), h('p', { class: 'pl-wait-p' }, 'it reads everything once, then suggests 10 to 16 slides. this takes a minute or two.'), stopB));
+        h('h2', { class: 'pl-wait-h' }, 'claude is reading your files and planning'), h('p', { class: 'pl-wait-p' }, 'this takes a minute or two.'), stopB));
     }
     head.querySelector('.pl-sub').textContent = p.waiting ? 'claude has a question for you' : 'planning…';
   }
@@ -596,7 +598,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
     const again = h('button', { type: 'button', class: 'pl-big pl-ink pl-big-s1', 'data-nosfx': '' }, h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'try planning again')));
     intro.replaceChildren(h('div', { class: 'pl-wait' }, h('h2', { class: 'pl-wait-h' }, 'the plan didn’t come through'),
       h('p', { class: 'pl-wait-p' }, (p.planError || 'something went wrong.').toLowerCase()),
-      h('p', { class: 'pl-wait-p' }, 'nothing you told claude is lost. pressing the button picks it up where it stopped.'),
+      h('p', { class: 'pl-wait-p' }, 'your answers are kept. try again to pick up where it stopped.'),
       h('div', { class: 'pl-bigs' }, again)));
     again.addEventListener('click', async () => { again.disabled = true; sfx('launch'); const r = await api.plan.start(deckId); if (r && r.ok === false) { again.disabled = false; say('claude couldn’t start. try again in a moment.', true); } refresh(); });
   }
@@ -776,7 +778,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
   });
 
   // the engine chips need: is Blender here, the look (Bold Blue auto-picks it for still 3D), the server's estimates for this slide
-  const engineInfo = sid => pay && pay.blender ? { available: !!pay.blender.available, look: pay.look, est: (pay.blender.estimates || {})[sid] || null } : null;
+  const engineInfo = sid => pay && pay.blender ? { available: !!pay.blender.available, bakes: !!pay.blender.bakes, look: pay.look, est: (pay.blender.estimates || {})[sid] || null } : null;
   function paintCard(force = false) {
     const s = slides().find(x => x.id === sel);
     if (badgeFor && (!s || badgeFor !== s.id)) closeBadge();
@@ -904,7 +906,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
       visual: fixVisual({ main: m, companions: [], phrase: '' }) };
     pushUndo('added a slide');
     plan.slides.splice(i + 1, 0, s); sel = s.id; unsaved.add(s.id); pendingSave = true;
-    say(`added a new slide after slide ${i + 1} for ${mainOf(m).name}. claude is filling it in.`);
+    say(`added a slide after slide ${i + 1}. claude is filling it in.`);
     paintList(true); paintCard(true); flushNow([s.id]);
   }
   addSlideB.addEventListener('click', () => {
@@ -950,7 +952,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
     const open = openDoubts().length + slides().reduce((n, s) => n + openDoubts(s.id).length, 0);
     openModal(h('div', { class: 'pl-dlg', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'start building' },
       h('h2', { class: 'pl-dlg-h' }, 'ready to build?'),
-      h('p', { class: 'pl-dlg-p' }, 'claude builds slide 1 first and shows it to you. slides that are not built yet stay editable while you build: change them any time from the “coming up” list.' +
+      h('p', { class: 'pl-dlg-p' }, 'claude builds slide 1 and shows it to you. the rest stay editable.' +
         (open ? ` ${open} question${open > 1 ? 's are' : ' is'} still open: claude will use the suggested answer${open > 1 ? 's' : ''}.` : '')),
       h('div', { class: 'pl-dlg-b' }, no, go)));
     no.addEventListener('click', closeModal);
@@ -1044,7 +1046,7 @@ export function mountPlan(el, { deckId = null, audio, setMode, onStarted, onBuil
   };
   addEventListener('keydown', onKey);
 
-  api.files().then(g => {
+  api.files(deckId || undefined).then(g => {
     if (!alive || !Array.isArray(g)) return;
     files = g.flatMap(x => x.files || []);
     if (view === 'plan') { editor = editorFor = null; paintCard(true); }

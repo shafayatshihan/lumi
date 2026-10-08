@@ -7,8 +7,9 @@
 Options: --no-venv (skip the sandbox venv) --port 8798 (never 8765/8766/8786)   --sandbox X:\\aura-dev-e2e   --venv-from <an existing .aura\\venv to copy; without it
 sandbox.py builds one, which needs the network and a few minutes>   --out <screenshots folder>
 Needs Node, Edge and the playwright package (AURA_PLAYWRIGHT=<path to it> if it is not installed beside the repo).
-What the unit layer covers: tools/form-dev/test_frontend.mjs (bus, api, plan logic, structural rules) and markers_test.mjs (the marker
-grammar fixtures shared with the server). The walk is tools/form-dev/e2e_walk.js. The server tests stay in test_server.py."""
+What the unit layer covers: tools/form-dev/test_frontend.mjs (bus, api, plan logic, structural rules), test_post.mjs (the shared
+deck post-processing stack in engine/deck/lib: off by default, the hero rule, the honesty gate, the determinism contract) and
+markers_test.mjs (the marker grammar fixtures shared with the server). The walk is tools/form-dev/e2e_walk.js. The server tests stay in test_server.py."""
 import os, shutil, subprocess, sys, time, urllib.request
 from pathlib import Path
 
@@ -31,6 +32,9 @@ def unit():
     print('[frontend unit tests]')
     ok = True
     r = node(HERE / 'test_frontend.mjs')
+    ok &= r.returncode == 0
+    print('\n[deck post-processing stack: engine/deck/lib]')
+    r = node(HERE / 'test_post.mjs')
     ok &= r.returncode == 0
     r = node(HERE / 'markers_test.mjs', capture_output=True, text=True)
     import json

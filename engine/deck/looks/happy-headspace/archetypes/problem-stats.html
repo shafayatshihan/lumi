@@ -1,0 +1,64 @@
+<!-- archetype: problem-stats | up to three stats on soft dots + the subject showing the strain | main visual: 3D | companions: <=3 stats (one with a bar) OR 2 stats + one close line -->
+<!-- MEASURED: three stats and a close line together do not fit this column at 1920x1080 - they overflow the footer.
+     Use three stats (this file) or two stats and a <p class="close-line">, never both. -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="The problem">
+  <div class="safe">
+    <div class="hs-main">
+      <div class="hs-l w5">
+        <p class="kicker" data-edit="s{{N}}-1">01 · The problem</p>
+        <h2 class="headline" data-edit="s{{N}}-2">The old way <span class="em">runs out</span></h2>
+        <ul class="hs-stats">
+          <li>
+            <span class="hs-stat" data-edit="s{{N}}-3">3.4x</span>
+            <p data-edit="s{{N}}-4">longer than the <b>design life</b></p>
+            <div class="hs-bar" style="--v:78%"><i></i></div>
+          </li>
+          <li class="gold">
+            <span class="hs-stat md" data-edit="s{{N}}-5">11 min<small>each</small></span>
+            <p data-edit="s{{N}}-6">lost at every changeover</p>
+          </li>
+          <li class="navy">
+            <span class="hs-stat md" data-edit="s{{N}}-7">2 of 9</span>
+            <p data-edit="s{{N}}-8">parts carry the whole load</p>
+          </li>
+        </ul>
+      </div>
+      <div class="hs-r w7">
+        <div class="hs-stage">
+          <div class="aura-3d hs-3d" data-scene="s{{N}}-scene" data-period="18" aria-hidden="true">
+            <span class="hs-pin" data-follow="weak" data-align="right" data-dx="20">1</span>
+            <div class="hs-tag warm" data-follow="weak" data-dx="40"><b data-edit="s{{N}}-9">Where it gives</b><span data-edit="s{{N}}-10">the loaded joint</span></div>
+          </div>
+        </div>
+        <p class="source" data-edit="s{{N}}-11">Source: replace with the user's own file or a published reference</p>
+      </div>
+    </div>
+    <footer class="hs-foot"><span class="hs-mark" data-edit="s{{N}}-12">Deck mark</span><span class="hs-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Start with the picture, not the numbers.</strong> Point at the form marked 1 and say what goes wrong
+    there in one sentence. The room needs the place before it can hold the figures.</p>
+    <p><strong>Read the stats top to bottom, slowly.</strong> Each one is the same problem counted a different way -
+    say that out loud, or they will hear three problems. This look gives you the room to pause between them; take it.</p>
+    <p><strong>Source every number as you say it.</strong> If asked how the figures were measured, say which came from
+    the files and which from a published source; never guess at a method. Then hand over to the next slide, which is
+    the answer to all three.</p>
+  </aside>
+</section>
+<script>
+/* Replace the placeholder with the real subject showing the real strain (LOOK-BASE 4.0). Exactly ONE orange form:
+   the part under strain. Everything else is warm off-white or a supporting colour.
+   FRAMING (base 4.2 rule 5): the assembly fills 40-55 % of the frame height and never bleeds off the edge - the
+   distance below is set for that, so check the still after you change the geometry. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const S = HS3D.room(ctx, { target: [0, 1.1, 0], distance: 11.5, turn: -24, tilt: 16 });
+  const body = S.add(HS3D.block(THREE, 2.6, 1.9, 1.3, { fill: 'warm' }));
+  const lid  = S.add(HS3D.slab(THREE, 2.1, 1.5, 0.35, { fill: 'candy' })); lid.position.y = 1.5; lid.rotation.x = -Math.PI / 2;
+  const weak = S.add(HS3D.blob(THREE, 0.42, { fill: 'orange', squash: 0.82 })); weak.position.set(0.0, 2.0, 0.1);
+  S.ground(2.2);
+  S.sway([weak], [0, 0.2, 0]);
+  HS3D.pins(S, ctx.el, { weak: weak });
+  return S.api({ update(t) { S.breathe(t); } });
+}, { period: 18 });
+</script>

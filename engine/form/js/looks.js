@@ -1,5 +1,5 @@
-// "The look" screen: six looks in the right column, and the hovered / selected look's demo video large in the
-// illustration zone. "Claude chooses" plays a playful shuffle through the five looks.
+// "The look" screen: six entries in the right column (five looks + Claude chooses), and the hovered / selected look's
+// real slides large in the illustration zone. "Claude chooses" plays a playful shuffle through the five looks.
 // Bold Blue is listed first, carries a "recommended" badge and is pre-selected until the user picks a look themselves
 // (the explicit pick is remembered in localStorage, so a deliberate "Claude chooses" is never overwritten).
 // mountLooks(el, illusEl, { getState, setKey, bus, audio }) -> { destroy() }
@@ -10,7 +10,7 @@ export const LOOKS = [
   { name: 'Pink Punch', slug: '1-pink-punch', desc: 'loud and playful: bold outlines, hard shadows, hot pink' },
   { name: 'Flat-Pack', slug: '3-flat-pack', desc: 'friendly and clear: instruction-manual drawings in blue and yellow' },
   { name: 'Happy Headspace', slug: '4-happy-headspace', desc: 'warm and calm: soft round shapes, orange first' },
-  { name: 'Yellow Frame', slug: '5-yellow-frame', desc: 'formal and documentary: serif titles and the yellow frame' },
+  { name: 'Clay Pop', slug: '5-clay-pop', desc: 'tactile 3D: chunky clay models in one hot orange, soft studio light' },
   { name: 'Claude chooses', slug: null, desc: 'Claude picks the look that suits your topic and audience' },
 ];
 const AUTO = 'Claude chooses';
@@ -19,6 +19,11 @@ const PICKED_KEY = 'lumi-look-picked';
 const userPicked = () => { try { return localStorage.getItem(PICKED_KEY) === '1'; } catch (e) { return false; } };
 const rememberPick = () => { try { localStorage.setItem(PICKED_KEY, '1'); } catch (e) { /* private window */ } };
 const SHUFFLE_MS = 2600;
+// Each look shows real slides from a real deck in that look, not a demo video: four stills at
+// /themes/<slug>-1..4.jpg, cross-faded in place. Stills beat video here - they load instantly, they are the
+// actual output rather than a trailer for it, and nothing has to decode while the person is reading.
+const SHOTS = 4;
+const SLIDE_MS = 2300;
 
 // Tiny flat swatches that hint at each look.
 const SWATCH = {
@@ -26,7 +31,7 @@ const SWATCH = {
   'Bold Blue': '<rect x="4" y="4" width="36" height="36" rx="8" fill="#1d4ed8"/><circle cx="29" cy="15" r="6" fill="var(--pill)"/><rect x="10" y="25" width="24" height="5" rx="2.5" fill="var(--ink)"/><rect x="10" y="33" width="14" height="3" rx="1.5" fill="var(--pill)"/>',
   'Flat-Pack': '<rect x="4" y="4" width="36" height="36" rx="8" fill="var(--pill)" stroke="#1f5fbf" stroke-width="2"/><path d="M11 30l9-15 9 15z" fill="#ffd23f" stroke="#1f5fbf" stroke-width="2" stroke-linejoin="round"/><rect x="25" y="22" width="9" height="9" rx="1.5" fill="#1f5fbf"/><path d="M11 35h22" stroke="#1f5fbf" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 3"/>',
   'Happy Headspace': '<rect x="4" y="4" width="36" height="36" rx="18" fill="#ffe6cc"/><circle cx="18" cy="20" r="10" fill="#ff8a3d"/><circle cx="30" cy="28" r="7" fill="#f4a6c0"/><circle cx="31" cy="13" r="3.5" fill="#ffcc4d"/>',
-  'Yellow Frame': '<rect x="4" y="4" width="36" height="36" rx="3" fill="#ffd400"/><rect x="9" y="9" width="26" height="26" fill="var(--pill)"/><text x="22" y="27.5" text-anchor="middle" font-family="Georgia,\'Times New Roman\',serif" font-size="13" fill="var(--ink)">Aa</text>',
+  'Clay Pop': '<rect x="4" y="4" width="36" height="36" rx="8" fill="#f0f0f5"/><ellipse cx="20" cy="35.5" rx="11" ry="2" fill="#15151c" opacity=".16"/><rect x="9" y="16" width="22" height="19" rx="6" fill="#c93a05"/><rect x="9" y="14" width="22" height="18" rx="6" fill="#ff6a13"/><rect x="12" y="16" width="16" height="4" rx="2" fill="#ff9a3d"/><circle cx="33" cy="10.5" r="3.6" fill="#ff6a13"/><rect x="21" y="23" width="7" height="4" rx="1" fill="#f2c29a" transform="rotate(-18 24.5 25)"/>',
   'Claude chooses': '<g class="lk-dice"><rect x="5" y="5" width="15" height="15" rx="4" fill="#ff4fa3"/><rect x="24" y="5" width="15" height="15" rx="4" fill="#1d4ed8"/><rect x="5" y="24" width="15" height="15" rx="4" fill="#ffd23f"/><rect x="24" y="24" width="15" height="15" rx="4" fill="#ff8a3d"/></g><circle cx="22" cy="22" r="5.5" fill="var(--ink)"/><path d="M22 19.2v5.6M19.2 22h5.6" stroke="var(--pill)" stroke-width="1.8" stroke-linecap="round"/>',
 };
 
@@ -44,6 +49,7 @@ export function mountLooks(el, illusEl, { getState, setKey, bus, audio } = {}) {
     return RECOMMENDED;            // nothing chosen by the user yet: Bold Blue is pre-selected
   };
   let alive = true, selected = current(), shown = null, hoverT = 0, leaveT = 0, shuffleT = 0, shuffleIdx = 0, swapT = 0, clicked = false;
+  let slideT = 0, slideIdx = 0;
 
   // ---- right column: the options
   const opts = LOOKS.map((L, n) => {
@@ -72,33 +78,28 @@ export function mountLooks(el, illusEl, { getState, setKey, bus, audio } = {}) {
   });
   el.append(listEl);
 
-  // ---- illustration zone: a framed screen with two stacked videos for smooth swaps
-  const mkVid = () => {
-    const v = h('video', { class: 'lk-vid', muted: true, loop: true, playsinline: true, preload: 'metadata', 'aria-hidden': 'true', disablepictureinpicture: true });
-    v.muted = true; v.defaultMuted = true;
-    return v;
-  };
-  const vids = [mkVid(), mkVid()];
+  // ---- illustration zone: a framed screen with two stacked stills for smooth swaps
+  const mkShot = () => h('img', { class: 'lk-vid', alt: '', 'aria-hidden': 'true', decoding: 'async', draggable: 'false' });
+  const vids = [mkShot(), mkShot()];
   let front = 0;
   const badge = h('span', { class: 'lk-badge' });
-  const dots = h('span', { class: 'lk-dots', 'aria-hidden': 'true' }, LOOKS.slice(0, 5).map(() => h('i')));
+  const REAL = LOOKS.filter(L => L.slug);          // the looks with slides; 'Claude chooses' has none
+  const dots = h('span', { class: 'lk-dots', 'aria-hidden': 'true' }, Array.from({ length: SHOTS }, () => h('i')));
   const screen = h('div', { class: 'lk-screen' }, vids, h('div', { class: 'lk-top' }, badge, dots));
   const stageEl = h('div', { class: 'lk-stage' + (reduced ? ' lk-reduced' : '') }, screen,
     h('p', { class: 'lk-cap', 'aria-live': 'polite' }));
   const cap = stageEl.lastChild;
   if (illusEl) illusEl.append(stageEl);
 
-  const safePlay = v => { try { const p = v.play(); p && p.catch(() => {}); } catch (e) { /* ignore */ } };
-  function showVideo(L, dir = 0) {
+  // Show one slide of one look. `dir` slides it in from a side when the LOOK changed; a step within the same
+  // look cross-fades in place, so moving between slides reads as one deck rather than as another product.
+  function showShot(L, i, dir = 0) {
     if (!L || !L.slug) return;
+    const src = `/themes/${L.slug}-${(i % SHOTS) + 1}.jpg`;
     const back = vids[1 - front], cur = vids[front];
-    const src = `/themes/${L.slug}.mp4`;
-    if (cur.dataset.slug === L.slug && !cur.paused) return;
-    cur.pause();
-    back.poster = `/themes/${L.slug}.jpg`;
-    if (back.dataset.slug !== L.slug) { back.src = src; back.dataset.slug = L.slug; }
-    try { back.currentTime = 0; } catch (e) { /* not loaded yet */ }
-    safePlay(back);
+    if (cur.dataset.src === src) return;
+    back.src = src; back.dataset.src = src;
+    paintDots(i % SHOTS);
     back.classList.remove('is-out', 'from-r', 'from-l');
     cur.classList.remove('from-r', 'from-l');
     if (!reduced && dir) back.classList.add(dir > 0 ? 'from-r' : 'from-l');
@@ -107,18 +108,35 @@ export function mountLooks(el, illusEl, { getState, setKey, bus, audio } = {}) {
     cur.classList.add('is-out');
     front = 1 - front;
     clearTimeout(swapT);
-    swapT = setTimeout(() => { if (alive) { cur.pause(); cur.classList.remove('is-out'); } }, 520);
+    swapT = setTimeout(() => { if (alive) cur.classList.remove('is-out'); }, 520);
+  }
+  function paintDots(n) { [...dots.children].forEach((d, k) => d.classList.toggle('on', k === n)); }
+  function stopSlides() { clearTimeout(slideT); slideT = 0; }
+  // Walk one look's four slides. Paused with the tab, and restarted from the first slide whenever the look changes,
+  // so a look is always introduced by its title slide.
+  function startSlides(L, dir) {
+    stopSlides();
+    slideIdx = 0;
+    showShot(L, 0, dir);
+    const step = () => {
+      if (!alive || document.hidden) return;
+      slideIdx += 1;
+      showShot(L, slideIdx, 0);
+      slideT = setTimeout(step, SLIDE_MS);
+    };
+    slideT = setTimeout(step, SLIDE_MS);
   }
   function stopShuffle() { clearTimeout(shuffleT); shuffleT = 0; stageEl.classList.remove('is-shuffle'); }
   function startShuffle() {
     stopShuffle();
+    stopSlides();                                  // the shuffle drives the picture itself, one look per beat
     stageEl.classList.add('is-shuffle');
     const step = (first) => {
       if (!alive) return;
-      if (!first) shuffleIdx = (shuffleIdx + 1) % 5;
-      showVideo(LOOKS[shuffleIdx], first ? 0 : 1);
-      [...dots.children].forEach((d, n) => d.classList.toggle('on', n === shuffleIdx));
-      badge.textContent = LOOKS[shuffleIdx].name.toLowerCase();
+      if (!first) shuffleIdx = (shuffleIdx + 1) % REAL.length;
+      // a different slide each beat, so the shuffle shows the range of the whole set rather than five title slides
+      showShot(REAL[shuffleIdx], shuffleIdx, first ? 0 : 1);
+      badge.textContent = REAL[shuffleIdx].name.toLowerCase();
       if (!first) sfx('tick');
       shuffleT = setTimeout(() => step(false), SHUFFLE_MS);
     };
@@ -137,7 +155,7 @@ export function mountLooks(el, illusEl, { getState, setKey, bus, audio } = {}) {
     stopShuffle();
     badge.textContent = name.toLowerCase();
     const n = LOOKS.indexOf(L);
-    showVideo(L, prevIdx < 0 ? 0 : n > prevIdx ? 1 : -1);
+    startSlides(L, prevIdx < 0 ? 0 : n > prevIdx ? 1 : -1);
   }
   function preview(name, delay = 140) {
     clearTimeout(leaveT); clearTimeout(hoverT);
@@ -174,9 +192,8 @@ export function mountLooks(el, illusEl, { getState, setKey, bus, audio } = {}) {
   }
 
   const onVis = () => {
-    const v = vids[front];
-    if (document.hidden) { v.pause(); clearTimeout(shuffleT); }
-    else if (alive) { if (shown === AUTO) { shown = null; show(AUTO); } else safePlay(v); }
+    if (document.hidden) { stopSlides(); clearTimeout(shuffleT); }
+    else if (alive) { const was = shown; shown = null; show(was); }
   };
   document.addEventListener('visibilitychange', onVis);
 
@@ -189,9 +206,9 @@ export function mountLooks(el, illusEl, { getState, setKey, bus, audio } = {}) {
   return {
     destroy() {
       alive = false;
-      clearTimeout(hoverT); clearTimeout(leaveT); clearTimeout(swapT); stopShuffle();
+      clearTimeout(hoverT); clearTimeout(leaveT); clearTimeout(swapT); stopShuffle(); stopSlides();
       document.removeEventListener('visibilitychange', onVis);
-      for (const v of vids) { v.pause(); v.removeAttribute('src'); v.removeAttribute('poster'); try { v.load(); } catch (e) { /* ignore */ } }
+      for (const v of vids) v.removeAttribute('src');
       stageEl.remove();
       listEl.remove();
     },

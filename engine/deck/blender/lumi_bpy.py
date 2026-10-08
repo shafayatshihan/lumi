@@ -106,6 +106,10 @@ def args(argv=None):
                                   non-zero on a fatal finding (BLENDER.md sections 6 and 8)
       --cavity                    switch the cavity-dirt AO node on (off for Cycles, which path-traces it already;
                                   the bake path of batch 6 Part B is what needs it)
+      --bake <draft|final|hero>   render NOTHING: bake the scene's Cycles detail into textures, export one model.glb
+                                  and a bake.json beside it in --out, and exit (batch 6 Part B; lumi_bake.py).
+                                  draft = 256 px atlases, final = 1024, hero = 2048. Implies --cavity: three.js has
+                                  no global illumination, so the AO map is the only crevice darkening there is
       --anim                      render every frame of the loop (set by loop()) into the --out folder
       --frame <n>                 the frame a still or preview shows (default: the poster frame, else frame 1)
       --fps <n>                   frames per second (default 20)
@@ -124,6 +128,7 @@ def args(argv=None):
     p.add_argument('--preview', action='store_true')
     p.add_argument('--inspect', action='store_true')
     p.add_argument('--cavity', action='store_true')
+    p.add_argument('--bake', choices=('draft', 'final', 'hero'), default=None)
     p.add_argument('--anim', action='store_true')
     p.add_argument('--frame', type=int, default=None)
     p.add_argument('--fps', type=int, default=FPS)
@@ -132,6 +137,7 @@ def args(argv=None):
     p.add_argument('--cpu', action='store_true', help='force CPU')
     a, unknown = p.parse_known_args(argv)
     if unknown: print('[lumi] ignored arguments: ' + ' '.join(unknown), flush=True)
+    if a.bake: a.cavity = True        # no GI in three.js: without the AO map a baked frame is flat (Part A item 1)
     if a.res is None: a.res = PREVIEW_RES if a.preview else 100
     if a.samples is None: a.samples = PREVIEW_SAMPLES if a.preview else 128
     a.res = max(1, min(100, a.res))
@@ -170,6 +176,7 @@ def reset(a=None, res=None, fps=None):
         s['lumi_preview'] = bool(a.preview)
         s['lumi_inspect'] = bool(getattr(a, 'inspect', False))
         s['lumi_cavity'] = bool(getattr(a, 'cavity', False))
+        s['lumi_bake'] = getattr(a, 'bake', None) or ''
         s['lumi_anim'] = bool(a.anim)
         s['lumi_resume'] = bool(getattr(a, 'resume', False))
         if a.frame: s['lumi_poster'] = int(a.frame)
@@ -210,9 +217,11 @@ def gpu(a=None):
     return 'CPU'
 
 
-def cycles(samples=128, denoise=True, look='AgX - Medium High Contrast', exposure=0.0):
+def cycles(samples=128, denoise=True, look='AgX - Medium High Contrast', exposure=0.0, view='AgX'):
     """Cycles quality preset: adaptive sampling, OIDN denoise (albedo+normal, on GPU when possible), light paths
-    sized for metal/glass, indirect clamp against fireflies, no caustics, AgX + contrast look (see module doc)."""
+    sized for metal/glass, indirect clamp against fireflies, no caustics, AgX + contrast look (see module doc).
+    view: the view transform. 'Standard' for Clay Pop: AgX desaturates a vivid primary toward salmon (measured), and
+    matte clay has no highlight for Standard to clip. Any view other than AgX drops the AgX look."""
     s = bpy.context.scene
     s.render.engine = 'CYCLES'
     c = s.cycles
@@ -235,9 +244,9 @@ def cycles(samples=128, denoise=True, look='AgX - Medium High Contrast', exposur
     c.film_transparent_glass = True
     s.render.use_persistent_data = True       # faster frame sequences
     vs = s.view_settings
-    vs.view_transform = 'AgX'
+    vs.view_transform = view
     try:
-        vs.look = look or 'None'
+        vs.look = (look or 'None') if view == 'AgX' else 'None'
     except TypeError:
         vs.look = 'None'
     vs.exposure, vs.gamma = exposure, 1.0
@@ -264,7 +273,8 @@ def _set(b, **kw):
     names = {'color': 'Base Color', 'metal': 'Metallic', 'rough': 'Roughness', 'ior': 'IOR', 'coat': 'Coat Weight',
              'coat_rough': 'Coat Roughness', 'sheen': 'Sheen Weight', 'trans': 'Transmission Weight',
              'emit_color': 'Emission Color', 'emit': 'Emission Strength', 'aniso': 'Anisotropic',
-             'spec': 'Specular IOR Level'}
+             'spec': 'Specular IOR Level', 'sss': 'Subsurface Weight', 'sss_radius': 'Subsurface Radius',
+             'sss_scale': 'Subsurface Scale', 'sheen_rough': 'Sheen Roughness'}
     for k, v in kw.items():
         if v is None:
             continue
@@ -441,6 +451,34 @@ def _edgewear_to(nt, b, amount=0.6, radius=0.0025, samples=WEAR_SAMPLES, metal_t
     return bv
 
 
+def _clay_to(nt, b, lo, hi):
+    """Hand-made clay surface (Clay Pop): two noise layers in object space through ONE bump -- broad, shallow thumb
+    presses (about 1/7 of a 1 m subject) and a fine grain -- plus a small roughness drift. Written for a subject 1 m
+    across; studio() rescales the mapping and the bump distance to the real one (_fx_scale)."""
+    n, lk = nt.nodes, nt.links
+    tc = n.new('ShaderNodeTexCoord')
+    mp = n.new('ShaderNodeMapping'); mp.name = mp.label = 'lumi_clay_map'
+    lk.new(tc.outputs['Object'], mp.inputs['Vector'])
+    press = n.new('ShaderNodeTexNoise')
+    press.inputs['Scale'].default_value, press.inputs['Detail'].default_value = 7.0, 1.5
+    grain = n.new('ShaderNodeTexNoise')
+    grain.inputs['Scale'].default_value, grain.inputs['Detail'].default_value = 140.0, 4.0
+    for nz in (press, grain):
+        lk.new(mp.outputs['Vector'], nz.inputs['Vector'])
+    mix = n.new('ShaderNodeMath'); mix.operation = 'MULTIPLY_ADD'      # press + 0.25 * grain
+    lk.new(grain.outputs['Fac'], mix.inputs[0]); mix.inputs[1].default_value = 0.25
+    lk.new(press.outputs['Fac'], mix.inputs[2])
+    bp = n.new('ShaderNodeBump'); bp.name = bp.label = 'lumi_clay_bump'
+    bp.inputs['Strength'].default_value = 0.6
+    bp.inputs['Distance'].default_value = 0.004
+    lk.new(mix.outputs[0], bp.inputs['Height'])
+    lk.new(bp.outputs['Normal'], b.inputs['Normal'])
+    mr = n.new('ShaderNodeMapRange')
+    mr.inputs['To Min'].default_value, mr.inputs['To Max'].default_value = lo, hi
+    lk.new(press.outputs['Fac'], mr.inputs['Value'])
+    lk.new(mr.outputs['Result'], b.inputs['Roughness'])
+
+
 def _fx_scale(size):
     """Scale every cavity distance and bevel radius already built to a subject `size` metres across (the presets are
     written for a subject about 1 m across: ~5 cm cavity reach, ~2.5 mm edge radius). studio() calls this once."""
@@ -454,6 +492,12 @@ def _fx_scale(size):
                 nd.inputs['Distance'].default_value *= k; nd['lumi_scaled'] = 1
             elif nd.name == 'lumi_wear_bevel':
                 nd.inputs['Radius'].default_value *= k; nd['lumi_scaled'] = 1
+            elif nd.name == 'lumi_clay_bump':                 # the thumbed surface keeps its size relative to the subject
+                nd.inputs['Distance'].default_value *= k; nd['lumi_scaled'] = 1
+            elif nd.name == 'lumi_clay_map':
+                nd.inputs['Scale'].default_value = [v / k for v in nd.inputs['Scale'].default_value]; nd['lumi_scaled'] = 1
+            elif nd.type == 'BSDF_PRINCIPLED' and m.get('lumi_recipe') == 'clay':   # SSS reach: ~1.5 % of the subject
+                nd.inputs['Subsurface Scale'].default_value *= k; nd['lumi_scaled'] = 1
 
 
 def wear_amount(cavity=None, wear=None):
@@ -486,6 +530,11 @@ PRESETS = {
     'paint':     (dict(color=C['blue'], rough=0.4, coat=0.4, coat_rough=0.25), ('speckle', 0.32, 0.5), 0.35, 0.35),
     # AgX walks bright emission toward white: 1.0-1.5 keeps a hot orange, 3.5 already reads pale salmon (measured)
     'glow':      (dict(color='#2A1208', rough=0.45, metal=0.3, emit_color=C['hot'], emit=1.2), None, 0.0, 0.0),
+    # Clay Pop: matte, NO coat, a little subsurface tinted to the hue (radius derived from the colour in mat()), a
+    # soft sheen for the velvet rim, a thumbed bump. No edge wear ever: clay is soft, not scuffed -- edges come from
+    # bevel(). Tuned on 1080p renders against #F0F0F5, see docs/REGISTER-CLAY.md.
+    'clay':      (dict(color='#FF6A13', rough=0.45, spec=0.4, coat=0, sss=0.2, sss_scale=0.015, sheen=0.25,
+                       sheen_rough=0.45), ('clay', 0.34, 0.46), 0.0, 0.0),
 }
 # a worn edge shows the material underneath, not just a lighter version of the coat
 WEAR_TINT = {'paint': '#CFD2D6', 'plastic': '#E4E1DC', 'cast_iron': '#B8B2AA'}
@@ -494,7 +543,7 @@ WEAR_METAL = {'paint': 1.0, 'plastic': 0.5}      # bare metal through the coat
 
 def mat(kind, color=None, name=None, cavity=None, wear=None, hero=False, **kw):
     """PBR preset -> bpy material (cached by name). kinds: steel aluminium cast_iron titanium copper brass chrome
-    glass ceramic rubber plastic paint glow section. color='#hex' recolours (paint/plastic: any palette colour;
+    glass ceramic rubber plastic paint glow clay section. color='#hex' recolours (paint/plastic/clay: any palette colour;
     glow: the emission colour). Extra kw override principled inputs: rough, metal, coat, emit, ior, trans ...
     cavity / wear override the preset's geometry-driven pair (0 switches one off, 1.0 is strong).
     hero=True opts a non-metal (paint, plastic, ceramic) into edge wear: by default only the metals carry it.
@@ -510,6 +559,8 @@ def mat(kind, color=None, name=None, cavity=None, wear=None, hero=False, **kw):
     if color:
         base['emit_color' if kind == 'glow' else 'color'] = color
     base.update(kw)
+    if kind == 'clay' and 'sss_radius' not in base:      # light comes back out tinted toward the hue, never grey
+        base['sss_radius'] = tuple(0.15 + 0.85 * c for c in lin(base['color'])[:3])
     m, nt, b = _bsdf(name)
     _set(b, **base)
     if tex:
@@ -521,6 +572,8 @@ def mat(kind, color=None, name=None, cavity=None, wear=None, hero=False, **kw):
         elif t == 'cast':
             _noise_to(nt, b, 'Roughness', 8.0, lo, hi)
             _bump(nt, b, 40.0, 0.25)
+        elif t == 'clay':
+            _clay_to(nt, b, lo, hi)
     # geometry-driven pair, after the texture recipe so it chains onto it instead of replacing it
     default_on = (kind in METALS) or hero
     cav = cavity if cavity is not None else (p_cav if (default_on and bpy.context.scene.get('lumi_cavity')) else 0)
@@ -1184,6 +1237,11 @@ def render(path=None, frames=None):
         # --inspect: the scene is built, so check it and stop. Nothing is rendered and nothing is written.
         res = inspect()
         sys.exit(0 if res['ok'] else 3)
+    if s.get('lumi_bake'):
+        # --bake: the scene is built, so bake it instead of rendering frames (batch 6 Part B). No scene.py changes.
+        import lumi_bake
+        lumi_bake.run(path or os.path.join(os.getcwd(), 'bake'), s.get('lumi_bake'))
+        return []
     if s.camera is None:
         raise RuntimeError('no scene.camera: call L.camera(...) before L.render()')
     if s.world is None:

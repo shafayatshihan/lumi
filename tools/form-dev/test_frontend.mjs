@@ -135,19 +135,27 @@ const jsFiles = fs.readdirSync(jsDir).filter(f => f.endsWith('.js'));
   check('blender: notes use the server\'s calibrated estimates when there are some (fixed text otherwise)', /1–2 min, animation 10–60 min/.test(n0.blender) && /still ≈ 2 min/.test(n1.blender) && /720p ≈ 25 min, 1080p ≈ 55 min/.test(n2.blender), JSON.stringify([n0, n1, n2]));
   check('blender: durations read plainly', B.fmtDur(20) === 'under a minute' && B.fmtDur(95) === '2 min' && B.fmtDur(3300) === '55 min' && B.fmtDur(4500) === '1 h 15 min');
   const est = { preview: { seconds: 14 }, iteration: { tokensRun: 55000, costUsdRun: 0.45, seconds: 104 }, full: { 720: { seconds: 1500 }, 1080: { seconds: 3300 } }, queue: { waitS: 0 } };
-  check('blender: one more preview = time + tokens + cost', B.iterLine(est) === 'one more preview ≈ 2 min · ≈ 55k tokens (≈ $0.45)', B.iterLine(est));
+  check('blender: one more preview = time + cost, no tokens', B.iterLine(est) === 'one more preview ≈ 2 min · ≈ $0.45', B.iterLine(est));
   check('blender: no cost known -> no $ part', !/\$/.test(B.iterLine({ iteration: { tokensRun: 60000, costUsdRun: null, seconds: 110 } })));
-  // post-mortem P6: an older server sends the per-run `tokens` under its old name and a CUMULATIVE `costUsd`. The tokens
-  // are still right and are shown; the cumulative cost is dropped rather than printed as the price of one more preview.
-  check('blender: a pre-0.5.5 server keeps its tokens and loses only its cumulative cost',
-    B.iterLine({ iteration: { tokens: 55000, costUsd: 1.8168, seconds: 104 } }) === 'one more preview ≈ 2 min · ≈ 55k tokens',
+  // post-mortem P6: an older server sends a CUMULATIVE `costUsd`. It is dropped rather than printed as the price of one
+  // more preview.
+  check('blender: a pre-0.5.5 server loses its cumulative cost',
+    B.iterLine({ iteration: { tokens: 55000, costUsd: 1.8168, seconds: 104 } }) === 'one more preview ≈ 2 min',
     B.iterLine({ iteration: { tokens: 55000, costUsd: 1.8168, seconds: 104 } }));
-  check('blender: full render line per resolution, 0 tokens', /≈ 25 min · 0 tokens/.test(B.fullLine(est, 'animation', 720)) && /≈ 55 min/.test(B.fullLine(est, 'animation', 1080)) && /≈ 2 min/.test(B.fullLine({ full: { still: { seconds: 95 } } }, 'still')));
+  check('blender: full render line per resolution', /≈ 25 min · runs on this computer/.test(B.fullLine(est, 'animation', 720)) && /≈ 55 min/.test(B.fullLine(est, 'animation', 1080)) && /≈ 2 min/.test(B.fullLine({ full: { still: { seconds: 95 } } }, 'still')));
   check('blender: a render ahead in the queue adds its wait', B.fullSeconds({ full: { still: { seconds: 95 } }, queue: { waitS: 600 } }, 'still') === 695);
   const V = (n, status, extra = {}) => ({ id: 's' + n, n, engine: 'blender', status, previews: [{ n: 1 }], ...extra });
   check('blender: next slide waits for an unapproved studio render', B.nextGate({ a: V(1, 'preview') }, 1).ok === false && /approve its design/.test(B.nextGate({ a: V(1, 'preview') }, 1).text));
   check('blender: next slide waits while a full render runs', B.nextGate({ a: V(1, 'rendering') }, 1).why === 'rendering');
   check('blender: rendered or "skip for now" lets the next slide start; unbuilt slides do not count', B.nextGate({ a: V(1, 'rendered'), b: V(2, 'preview', { deferred: { at: 'x' } }), c: V(3, 'writing') }, 2).ok);
+  // batch 6 Part B: a moving figure on a Blender look is a BAKED studio render in a new deck; it never holds up the next slide
+  check('blender B.2: a new deck bakes moving figures on Bold Blue and Clay Pop; an older deck keeps them live',
+    B.effEngine({ main: '3d', motion: 'timed' }, 'Bold Blue', true, true) === 'blender' && B.effEngine({ main: '3d', motion: 'timed' }, 'Clay Pop', true, true) === 'blender'
+    && B.effEngine({ main: '3d', motion: 'timed' }, 'Bold Blue', true, false) === 'threejs' && B.effEngine({ main: '3d', motion: 'timed' }, 'Flat-Pack', true, true) === 'threejs');
+  check('blender B.5: a baked slide never blocks the next one', B.nextGate({ a: V(1, 'preview', { baked: true }), b: V(2, 'rendering', { baked: true }) }, 2).ok);
+  check('blender B.5: a baked slide shows ONE time, no resolution choice',
+    /≈ 3 min$/.test(B.engineNotes('animation', { baked: true, 720: 170, 1080: 170 }).blender)
+    && B.fullSeconds({ full: { baked: { seconds: 100 } }, queue: { waitS: 20 } }, 'animation', 1080) === 120);
   check('blender: card mode: preview/approved/failed open, rendering/rendered/kept bar, writing none', B.cardMode(V(1, 'preview')) === 'open' && B.cardMode(V(1, 'failed')) === 'open'
     && B.cardMode(V(1, 'rendering')) === 'bar' && B.cardMode(V(1, 'rendered')) === 'bar' && B.cardMode(V(1, 'preview', { deferred: {} })) === 'bar'
     && B.cardMode(V(1, 'writing')) === 'none' && B.cardMode(V(1, 'preview'), { folded: true }) === 'bar' && B.cardMode(V(1, 'rendered'), { editing: true }) === 'open'
@@ -194,7 +202,7 @@ const src = Object.fromEntries(jsFiles.map(f => [f, read(f)]));
     /\.iv-col\{width:720px/.test(fs.readFileSync(path.join(cssDir, 'plan.css'), 'utf8'))
     && !/bd-qdock/.test(src['interview.js']));
   check('IV: progress is what is BANKED (a round line and settled chips), never a countdown',
-    /round \$\{round\} . claude keeps asking/.test(src['interview.js']) && /settledChips/.test(src['interview.js'])
+    /`round \$\{round\}`/.test(src['interview.js']) && /settledChips/.test(src['interview.js'])
     && !/class: 'iv-(bar|progress)'/.test(src['interview.js']));
   check('COST: the allowance line is left out when lumi has no trustworthy reading, and costs are time, never money or tokens',
     /if \(!a \|\| !isFinite\(a\.pct\)\) return out;/.test(src['plan.js'])
@@ -237,10 +245,10 @@ const src = Object.fromEntries(jsFiles.map(f => [f, read(f)]));
   const play = src['lumi-play.js'], studio = fs.readFileSync(path.join(cssDir, 'studio.css'), 'utf8');
   check('PLAY: the game reads space only when nothing else holds the keyboard',
     /const nothingFocused = /.test(play) && /if \(!nothingFocused\(\)\) return;/.test(play)
-    && /if \(!running \|\| hidden \|\| !inside \|\| focused\) return;/.test(play)
+    && /if \(!running \|\| hidden \|\| asking \|\| !inside \|\| focused\) return;/.test(play)
     && /if \(isTyping\(\)\) e\.preventDefault\(\);/.test(play));
   check('PLAY: the loop runs only while on screen, focused and engaged, and stops the moment it may not',
-    /alive && running && !hidden && !paused && engaged\(\) && onScreen && !document\.hidden && document\.hasFocus\(\)/.test(play)
+    /alive && running && !asking && !hidden && !paused && engaged\(\) && onScreen && !document\.hidden && document\.hasFocus\(\)/.test(play)
     && /if \(!on && raf\) \{ cancelAnimationFrame\(raf\); raf = 0; \}/.test(play));
   check('PLAY: the game is named for what it is, not after the product, and its controls are one word',
     /flappy/i.test(play) && !/lumi/i.test((/'aria-label': '([^']*)'/.exec(play.slice(play.indexOf("class: 'pl-arena'"))) || [])[1] || 'lumi')

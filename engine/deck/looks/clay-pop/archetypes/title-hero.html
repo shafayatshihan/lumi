@@ -1,0 +1,46 @@
+<!-- archetype: title-hero | the subject modelled in clay, full bleed, on the right; the title on the calm left | main visual: 3D (a Blender still when the plan says so) | companions: kicker, names -->
+<!-- STILL IN BLENDER: replace the .aura-3d holder with
+       <div class="bb-blender cp-full" data-blender="<slide id>" data-kind="still" role="img" aria-label="..."></div>
+     write scene.py with L.mat('clay', color=...) and L.studio(bg='#F0F0F5', wear=0) (LOOK.md section 3.3), and delete
+     the <script> below. Lumi fills the holder with the render. -->
+<section class="slide" data-kind="title" data-minutes="0.75" data-title="Title">
+  <div class="aura-3d cp-full" data-scene="s{{N}}-hero" data-period="12" aria-hidden="true"></div>
+  <div class="safe">
+    <div class="cp-hero">
+      <p class="kicker" data-edit="s{{N}}-1">Course or event</p>
+      <h1 class="title" data-edit="s{{N}}-2">A short title, <span class="em">in clay</span></h1>
+      <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. Never invent a role the interview did not establish. -->
+      <ul class="cp-meta">
+        <li data-optional="identity" data-edit="s{{N}}-3"><span class="lb">Presented by</span><b>Presenter Name</b></li>
+        <li data-optional="identity" data-edit="s{{N}}-4"><span class="lb">For</span><b>Course or event</b><br>Institution</li>
+      </ul>
+    </div>
+    <footer class="cp-foot" data-nonclaim><span class="cp-mark" data-edit="s{{N}}-5">Deck mark</span><span class="cp-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Name the thing on the screen first.</strong> Say what it is in one plain sentence, then why this room
+    should care about it today.</p>
+    <p><strong>Point at the model.</strong> It is the real object, made in clay so its shape reads at a glance; the
+    pieces floating beside it are its own parts, pulled out so they can be seen.</p>
+    <p><strong>Frame the talk in three beats</strong>: why it matters, how it works, what we found. If asked, say the
+    model is a schematic and which proportions are to scale.</p>
+  </aside>
+</section>
+<script>
+/* The hero tier (LOOK-BASE 4.6): the deck's best figure. Replace the block and beads with the real subject's own parts,
+   real counts, real proportions (LOOK-BASE 4.1). Exactly ONE wink of personality per figure - here, the cream sticker. */
+Aura.scene('s{{N}}-hero', (ctx) => {
+  const { THREE } = ctx;
+  const S = CP3D.studio(ctx, { target: [0, 1.4, 0], distance: 13, azimuth: -26, elevation: 14, shift: -0.2 });
+  const body = S.add(CP3D.block(THREE, 2.4, 1.8, 1.6, { color: 'clay' }));       body.position.y = 0.9;
+  const knob = S.add(CP3D.puck(THREE, 0.42, 0.3, { color: 'black' }));           knob.position.set(-0.5, 1.95, 0.1);
+  const sticker = S.add(CP3D.block(THREE, 0.5, 0.34, 0.04, { color: 'cream', bevel: 0.015 }));
+  sticker.position.set(0.55, 1.35, 0.81); sticker.rotation.z = 0.35;              // the wink: a little crooked
+  S.contact(body, 1.9);
+  [[-1.6, 2.5, 0.7, 0.26], [-0.5, 2.9, 0.3, 0.2], [0.8, 2.7, -0.1, 0.15]].forEach(([x, y, z, r], i) => {
+    const b = S.add(CP3D.ball(THREE, r, { color: i === 1 ? 'grey' : 'clay' })); b.position.set(x, y, z);
+    S.float(b, { amp: 0.1, phase: i * 1.7 });                                    // satellites: they drift, never land
+  });
+  return S.api({ update(t) { S.sway(t, { deg: 4 }); } });
+}, { period: 12 });
+</script>

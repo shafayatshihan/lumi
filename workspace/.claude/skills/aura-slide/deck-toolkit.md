@@ -25,7 +25,7 @@ Temporary files live in `.aura/temp/` only: `text/` (extracted text), `build/<sl
 | Bold Blue | `bold-blue` | recommended default: any technical or science talk; photoreal studio 3D + clear charts. **Follow `looks/_shared/LOOK-BASE.md` then `looks/bold-blue/LOOK.md`** (its own template, archetype snippets, numbers and 3D toolkit override this file) |
 | Flat-Pack | `flat-pack` | processes, methods, builds, step-by-step how-it-works stories |
 | Happy Headspace | `happy-headspace` | health, education, psychology, environment, friendly public talks |
-| Yellow Frame | `yellow-frame` | science, field work, nature, geography, thesis defences that want gravitas |
+| Clay Pop | `clay-pop` | product and device talks, engineering builds, anything physical you want the room to want to touch. **Follow `looks/_shared/LOOK-BASE.md` then `looks/clay-pop/LOOK.md`** |
 
 The theme file already sets fonts, colours and classes: `.kicker`, `.title` (112), `.headline` (84), `.sub` (48),
 body 36, `.label` (28), `.big-num`, `.em` (the ONE emphasis phrase, using the theme's device), `.sig` (signature

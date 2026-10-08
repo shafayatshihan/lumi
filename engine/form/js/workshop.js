@@ -165,7 +165,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
   const input = h('textarea', { class: 'ws-input', rows: '1', maxlength: '20000', 'aria-label': 'message to claude', placeholder: 'claude is working…', disabled: true });
   const sendBtn = h('button', { type: 'submit', class: 'ws-send', 'aria-label': 'send', html: SEND, disabled: true, 'data-cursor-label': 'send', 'data-nosfx': '' });
   const fileIn = h('input', { type: 'file', hidden: true, 'aria-hidden': 'true', tabindex: '-1', class: 'ws-file' });
-  const folderIco = EDIT ? h('button', { type: 'button', class: 'ws-attach', 'aria-label': 'add a file', title: 'add a file for claude', html: FOLDER, 'data-cursor-label': 'add a file', 'data-nosfx': '' }) : null;
+  const folderIco = EDIT ? h('button', { type: 'button', class: 'ws-attach', 'aria-label': 'add a file', title: 'add a file', html: FOLDER, 'data-cursor-label': 'add a file', 'data-nosfx': '' }) : null;
   const clip = h('div', { class: 'ws-clip', hidden: true });
   const box = h('form', { class: 'ws-box' + (EDIT ? ' has-attach' : '') }, folderIco, input, sendBtn, fileIn);
   const hintRow = EDIT ? h('div', { class: 'ws-hints', 'aria-label': 'suggestions' }) : null;
@@ -357,7 +357,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
           cards.forEach(x => x.lock());
           if (popupHost) {
             cards.push(popupCard(mk.choices));
-            note('claude has a question. answer it under the slide, one step at a time.');
+            note('claude has a question');
           } else {
             const c = choiceCard(mk.choices, { onSend: t => send(t), sfx });
             cards.push(c);
@@ -414,7 +414,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
         }
         M.failed = true;
         card('limit', 'claude needs a little break', when ? `claude has used up its time for now. ${when} your work so far is saved.`
-          : (text || 'claude has reached its usage limit for now. please try again a bit later.'), [btn('try again', retry)]);
+          : (text || 'claude has reached its usage limit for now. try again a bit later.'), [btn('try again', retry)]);
         if (live) sfx('error');
         break;
       }
@@ -442,7 +442,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
         } else if (ev.ok && M.deck && !M.asked) {
           setStage(DONE_STAGE);
           if (EDIT) { if (built) note('changes saved to your deck', 'ws-saved'); }
-          else card('done', 'your slides are ready!', `“${baseName(M.deck)}” is in your slides folder. want changes? open the editor.`,
+          else card('done', 'your slides are ready', `“${baseName(M.deck)}” is in your slides folder.`,
             [onEdit ? btn('edit my slides', () => onEdit(deckId || (status && status.deckId)), 'ws-ink') : null, btn('present them', openDeck)].filter(Boolean));
           if (live && built && onDone) { try { onDone(M.deck); } catch (e) { console.warn(e); } }
         }
@@ -503,7 +503,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
       if (!f) return;
       const me = attached = { name: f.name, state: 'up', p: 0 };
       paintClip(); paint();
-      const r = await api.upload(f, UPLOAD_FOLDER, p => { if (attached === me) { me.p = p; paintClip(); } });
+      const r = await api.upload(f, UPLOAD_FOLDER, p => { if (attached === me) { me.p = p; paintClip(); } }, deckId || undefined);
       if (!alive || attached !== me) return;
       if (r && r.ok) { me.state = 'ok'; me.name = r.name || f.name; sfx('upload'); fire('files:uploaded', { folder: UPLOAD_FOLDER, name: me.name, size: r.size }); }
       else { me.state = 'err'; sfx('error'); }
@@ -543,9 +543,9 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
     input.placeholder = elsewhere ? 'claude is busy with another deck…' : running ? 'working… write when it’s done'
       : !hasRun() && !EDIT ? 'nothing to reply to yet' : asking ? 'answer claude’s questions first…' : waiting ? 'type your answer…'
       : EDIT ? (shown === 'deck' ? 'what should change everywhere?' : (threadN() || sel) ? `what should change on slide ${threadN() || sel}?` : 'what should change?')
-      : done ? 'want a change? ask claude here…' : 'tell claude what to do next…';
+      : done ? 'ask for a change…' : 'tell claude what to do next…';
     cards.forEach(c => c.setEnabled(open));
-    input.title = running ? 'claude is working, so messages wait until it is done' : asking ? 'answer the questions first' : '';
+    input.title = running ? 'wait until claude is done' : asking ? 'answer the questions first' : '';
     box.classList.toggle('is-ask', waiting && canReply);
     chat.classList.toggle('is-run', running || elsewhere);
     statusTxt.textContent = offline ? 'can’t reach lumi…' : gate === 'cli' ? 'not installed' : gate === 'signin' ? 'needs sign-in'
@@ -599,10 +599,10 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
       const go = h('button', { type: 'button', class: 'ws-btn ws-ink ws-big', 'data-cursor-label': 'go', 'data-nosfx': '' }, 'make my slides');
       go.addEventListener('click', async () => { go.disabled = true; go.textContent = 'starting…'; sfx('launch'); await startRun(); if (alive) { go.disabled = false; go.textContent = 'make my slides'; } });
       body = [h('div', { class: 'ws-art', html: ART.start }), h('p', { class: 'ws-g-t' }, 'ready when you are'),
-        h('p', { class: 'ws-g-x' }, 'claude hasn’t started yet. press the button and it gets to work.'), h('div', { class: 'ws-g-b' }, go)];
+        h('p', { class: 'ws-g-x' }, 'nothing has started yet.'), h('div', { class: 'ws-g-b' }, go)];
     } else if (kind === 'nosession') {
       body = [h('div', { class: 'ws-art', html: ART.start }), h('p', { class: 'ws-g-t' }, 'made outside the app'),
-        h('p', { class: 'ws-g-x' }, 'claude didn’t build this deck here, so it can’t pick up its work. you can still click any text on the slide to change it.')];
+        h('p', { class: 'ws-g-x' }, 'claude didn’t build this deck, so it can’t continue it. click any text on a slide to change it.')];
     }
     gateEl.replaceChildren(h('div', { class: 'ws-g-in' }, body, h('p', { class: 'ws-g-toast', role: 'status' })));
     paint();
@@ -623,7 +623,7 @@ export function mountWorkshop(leftEl, rightEl, opts = {}) {
       if (!alive || gate !== 'signin') return;
       if (s && s.signedIn === true) {
         status = s; sfx('success');
-        b.classList.remove('is-waiting'); b.textContent = 'signed in!';
+        b.classList.remove('is-waiting'); b.textContent = 'signed in';
         loginT = setTimeout(async () => { if (!alive) return; showGate(null); M.auth = false; await continueAfterSignIn(); }, 900);
       } else loginT = setTimeout(check, LOGIN_POLL_MS);
     };

@@ -20,7 +20,7 @@ Reference files beside this one (read them when the step says so):
 - `deck-toolkit.md`: how to write a deck for the Aura runtime, the tool commands, `data-edit` ids, how to read the check.
 - `story-arcs.md`: the story shape for each kind of talk, slide counts, presenter vs document mode.
 - `aura-blend.md` and `brands/`: the Aura look rules and the five themes. `looks/_shared/LOOK-BASE.md`: the structural
-  rules every look obeys; `looks/<look>/LOOK.md`: that look's brand (Bold Blue, Flat-Pack).
+  rules every look obeys; `looks/<look>/LOOK.md`: that look's brand (every one of the five).
 - `.claude/skills/power-design/principles/design-principles.md`: the 20 slide rules (all apply).
 
 **Which instruction wins.** The app's message for the step you are on (`[plan-mode]`, `[build-slide …]`, `[deck-folder …]`) is
@@ -155,11 +155,13 @@ Read `.aura/brief/brief.json` (exact answers) and `.aura/brief/brief.md` (readab
 
 ## 2. Check and read their files
 `[[aura:stage=read]]`
-- List everything under `3 - Put your files here/` (all subfolders). Note which folders are empty.
-- The app has already extracted every uploaded file when it was uploaded: read `.aura/temp/text/manifest.json` (per file: kind, pages,
+- Every deck has its own folder under `3 - Put your files here/`, and the step message names it. List everything under
+  **that one folder** (all subfolders) and note which are empty. Never read another deck's folder: its numbers are not yours.
+- The app has already extracted every uploaded file when it was uploaded: read the manifest the `[environment]` line names
+  (this deck's own, under `.aura/decks/<id>/text/`) (per file: kind, pages,
   characters, its text file, the pictures found inside it, warnings) and then the `.txt` files it names; pictures are in `<file>.images/`.
   Run the extractor yourself only for a file the manifest does not list:
-  `.aura/venv/Scripts/python.exe .aura/engine/tools/extract_text.py --only "<path inside 3 - Put your files here>"`
+  `.aura/venv/Scripts/python.exe .aura/engine/tools/extract_text.py --only "<path inside this deck's files folder>"`
 - Read the main report (`files.mainReport`) fully, in pieces if it is long. Skim the rest for facts, numbers,
   figures and the citation list. Look at the pictures you may use (their photos, extracted figures, logo).
   Never use anything listed in `files.avoid`.
@@ -195,7 +197,7 @@ Reply in this shape, filled with their details:
 ## 5. Choose the look
 - `look.theme` names one of the five Aura themes → use it. "Claude chooses" (or empty) → pick the theme that suits the
   topic and audience (see the guide in `deck-toolkit.md`) and tell the user which one you picked and why, in one line.
-- **A look with its own spec (Bold Blue, Flat-Pack) → read `looks/_shared/LOOK-BASE.md` first, whole, then
+- **Every look has its own spec (Pink Punch, Bold Blue, Flat-Pack, Happy Headspace, Clay Pop) → read `looks/_shared/LOOK-BASE.md` first, whole, then
   `looks/<look>/LOOK.md`, whole, every time.** The base holds the structural rules every look obeys (composition, the
   clash matrix, subject-first staging, fidelity, data honesty, voice, notes, the checklist); the look file holds only
   its palette, type, motion feel and figure idiom, including its archetype snippets

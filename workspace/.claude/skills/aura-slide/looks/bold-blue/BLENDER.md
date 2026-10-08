@@ -94,8 +94,13 @@ L.render(a.out)
 - Every helper keys frames 1..N+1 with a periodic function, so frame N+1 equals frame 1 and the loop has no jump. Use
   whole turns and whole cycles. Never key by hand with arbitrary end values.
 - `loop(seconds, poster=N)` picks the frame the preview and the PDF page show. Motion blur stays off.
-- Keep motion slow and readable (a half turn in 4 s). The camera does not move. Animation costs about frames x the
-  still's time, so keep the scene light: under about 300k faces, and no glass inside glass.
+- Keep motion slow and readable (a half turn in 4 s). The camera does not move. Keep the scene light: under about
+  300k faces.
+- **An animation is BAKED** (in a deck made with Lumi 0.5.6 or later): Lumi bakes the materials into textures once
+  (about 1-2 minutes) and plays the model live, so the motion costs nothing extra and a change to the motion, timing or
+  camera alone is free. **Glass commits the slide to a long render**: a scene with `L.mat('glass')` or any `trans=`
+  cannot be baked, so every frame is path-traced instead (20-60 minutes). Use glass in a moving figure only when the
+  slide is about the glass; a cutaway (`L.cutaway`, section 2) shows the inside without it, and bakes.
 
 The order is fixed. Build the subject, then cut it, then call `studio()` (which sizes itself to the subject), then
 `camera()`, then the loop (animations only), then `render()`. Keep `L.args()` and `L.render(a.out)` as they are: Lumi's
@@ -123,7 +128,7 @@ preview and full render pass their own `--out`, size and samples through them.
   plastic, ceramic, rubber and cast preset carries a procedural texture: brushed streaks along the object's local Z,
   speckle, or a cast bump. So build tubes and shafts along local Z (`lathe`), and the brushing will follow the axis.
 - **Materials (4.3).** `L.mat(kind, color=None, **overrides)`. The kinds are `steel aluminium cast_iron titanium copper
-  brass chrome glass ceramic rubber plastic paint glow section`. Use one hero material and at most three supporting ones. `paint` and
+  brass chrome glass ceramic rubber plastic paint glow clay section`. `clay` is Clay Pop's material - see `looks/clay-pop/LOOK.md` 3.3. Use one hero material and at most three supporting ones. `paint` and
   `plastic` take any palette colour (`L.C['blue']` is the 3D blue `#0061EF`). Section faces default to hairline
   `#E2DED9` with 45-degree blue hatch lines. Use `L.section(style='flat', fill=L.C['ink'], name=...)` for rubber, and
   `flip=True` for a neighbouring part. Glass looks right in Cycles even when one glass object is inside another, unlike three.js.
@@ -178,8 +183,8 @@ material **TRANSFER** mode. Cut each part with its own call when the parts need 
    (half-way) if the motion could leave the frame.
 2. The background is exact by construction (section 3). Do not sample pixels or run other tools on the PNG.
 3. Stop there. **Never** run `--res 100 --samples 128` or `--anim` yourself: Lumi renders the preview the user judges and,
-   after approval, the full render (1080p 128 spp still; animation 720p or 1080p at 64 spp, 20 fps), with progress,
-   cancel and a CPU fallback.
+   after approval, the full render (1080p 128 spp still; a baked animation's final bake follows its preview by itself;
+   an animation with glass 720p or 1080p at 64 spp, 20 fps), with progress, cancel and a CPU fallback.
 
 ## 7. Timings (reference laptop: MX350 2 GB with OptiX, i5-1135G7)
 
@@ -194,7 +199,9 @@ material **TRANSFER** mode. Cut each part with its own call when the parts need 
 | 1920x1080, 128 spp, a mechanical subject (41T + 11T gears, M8 bolt + nut) | 130 s |
 | the same, with edge wear | **133 s, +3 %** |
 | the same, with edge wear AND `--cavity` | 147 s, +13 % |
-| animation, 80 frames (4 s) at 720p 64 spp | about 20-30 min |
+| animation, 80 frames (4 s) at 720p 64 spp (glass only) | about 20-30 min |
+| a baked animation, the real gear-reducer slide (48 parts): draft bake / final bake | ~60 s / ~110 s |
+| the same after a change to motion, timing or camera only (the textures are kept) | ~5 s |
 
 **Edge wear and cavity dirt (measured 2026-10-05, bundled Blender 5.2.2, OptiX on the MX350).** Edge wear is on by
 default for the hero material and the metals and costs 3-9 %. Cavity dirt is **off** for Cycles: path-traced global

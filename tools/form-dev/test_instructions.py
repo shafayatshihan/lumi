@@ -292,7 +292,7 @@ def run(check):
     ls = (SKILL / 'looks' / 'bold-blue' / 'LOOK.md').read_text(encoding='utf-8')
     dc = read(ENGINE / 'tools' / 'deck_check.js')
     check('deck_check.js reads its generic numbers from hard-rules.json', 'RULES.generic' in dc and '266' not in dc)
-    check('the server word cap is the checker\'s number (Bold Blue and generic)', fs.word_cap('Bold Blue') == bb['wordBudget']['content'] and fs.word_cap('Pink Punch') == gen['wordBudget']['content'])
+    check('the server word cap is the checker\'s number (Bold Blue and generic)', fs.word_cap('Bold Blue') == bb['wordBudget']['content'] and fs.word_cap('An Unlisted Look') == gen['wordBudget']['content'])
     check('words are counted the same way on both sides (letters only)', fs.count_words('Moisture control saved 34% water', '2025') == 4)
     stale = {'1–4 typefaces': 'typeface count', 'the rulebook file says 2': 'rulebook claim', 'Smallest text is 26 px': 'old size rule',
              'at most 3 per message while planning': 'old question limit', 'never ask more than 3': 'old question limit',
