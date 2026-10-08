@@ -2789,6 +2789,13 @@ LATEST = {'tag': None, 'at': 0.0, 'error': None}
 LATEST_LOCK = threading.Lock()
 LATEST_FILE = TEMP / 'latest-release.json'
 LATEST_CHECKED_THIS_RUN = False     # the first latest_release() of a run always asks GitHub; see the note there
+# How long a GOOD answer is reused. It was 6 hours, which was wrong for the way Lumi is actually used: the app
+# stays open for the hour a deck takes, so "fresh on the first call of each run" (0.5.9) only helped someone who
+# happened to relaunch. The owner left Lumi running, a release landed 4.7 hours in, and the app never noticed.
+# 30 minutes is one tiny GitHub call an hour per open app - nothing - and it means a release is seen the same
+# session it ships. A FAILED check is still backed off separately below, so a machine with no network does not
+# retry every 30 minutes.
+LATEST_TTL = 30 * 60
 
 
 def find_edge():
@@ -2837,7 +2844,7 @@ def latest_release():
         # a person looks. Starting the app is the moment to ask, so the first call after start always asks.
         fresh = not LATEST_CHECKED_THIS_RUN
         LATEST_CHECKED_THIS_RUN = True
-        if not fresh and time.time() - LATEST['at'] < 6 * 3600: return LATEST['tag']
+        if not fresh and time.time() - LATEST['at'] < LATEST_TTL: return LATEST['tag']
         m = re.search(r'github\.com/([^/]+)/([^/#?]+)', str(CFG.get('repoUrl') or ''))
         tag, err = None, None
         if m:
@@ -2848,8 +2855,10 @@ def latest_release():
                     tag = json.loads(resp.read().decode('utf-8')).get('tag_name')
             except Exception as e:
                 err = e.__class__.__name__
-        # a failed check is cached for 30 minutes only, a good one for 6 hours
-        LATEST.update(tag=tag or LATEST.get('tag'), error=err, at=time.time() - (0 if tag else 5.5 * 3600))
+        # Both a good answer and a failed one are held for LATEST_TTL. They used to differ (6 h good, 30 min bad)
+        # by backdating `at`; now the good TTL IS 30 min there is nothing to make shorter, and backdating a failure
+        # would mean retrying on the very next poll - hammering GitHub from a machine that is simply offline.
+        LATEST.update(tag=tag or LATEST.get('tag'), error=err, at=time.time())
         try:
             write_atomic(LATEST_FILE, json.dumps(LATEST))
         except OSError:
