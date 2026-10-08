@@ -133,6 +133,10 @@ export const build = {
   rest: id => postJSON('/api/decks/' + encodeURIComponent(id) + '/build', { mode: 'rest' }),
   stop: id => postJSON('/api/decks/' + encodeURIComponent(id) + '/build', { mode: 'stop' }),
 };
+// P2: the overnight queue - {action: add (items: [{slide, stage: build|render, res}]) | remove | move (step) | pause | resume | retry, job}
+export const queue = {
+  post: (id, body) => postJSON('/api/decks/' + encodeURIComponent(id) + '/queue', body),
+};
 // D-01: the explicit PowerPoint copy (one picture per slide, notes in the notes pane), a background job like finalize.
 export const pptx = {
   start: id => postJSON('/api/decks/' + encodeURIComponent(id) + '/pptx'),
@@ -151,6 +155,9 @@ export const blender = {
   render: (id, sid, res) => postJSON(bl(id, sid, 'render'), res ? { res } : {}),
   cancel: (id, sid, job) => postJSON(bl(id, sid, 'cancel'), job ? { job } : {}),
   defer: (id, sid, on = true) => postJSON(bl(id, sid, 'defer'), { on: !!on }),
+  // P3: photograph this slide's object from four angles, and pick one of them
+  cameras: (id, sid, again = false) => postJSON(bl(id, sid, 'cameras'), again ? { again: true } : {}),
+  camera: (id, sid, view) => postJSON(bl(id, sid, 'camera'), { view }),
 };
 export const finalize = {
   start: (id, opts) => postJSON('/api/decks/' + encodeURIComponent(id) + '/finalize', opts || {}),

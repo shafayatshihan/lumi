@@ -23,6 +23,7 @@
   --studio: radial-gradient(110% 95% at 38% 30%, #FFFFFF 0%, #F2EEE8 72%);
   /* ink: warm near-black, never #000 */
   --ink: #2D2C2B; --ink-2: #44423F; --muted: #5C5751; --muted-2: #63605D; --label: #6E6861; --hairline: #E2DED9;
+  --leader: #5C5751; --leader-w: 2.5px;         /* 4.4: the line from a part to its label, which now sits off the figure */
   /* accents: blue is THE emphasis colour. L-04: #005AE0 (the reference blue #0061EF darkened ~8 %) is the lightest blue that clears 4.5:1 on EVERY
      canvas below (worst: --bg-stage 5.0:1; #0061EF gave 4.47 there, a near-miss on every deck). The 3D art keeps the reference blue (studio3d.js). */
   /* accents: blue is THE emphasis colour; the rest live in the art, the rules and the data only */
@@ -176,8 +177,11 @@
 .slide .bb-blender.bb-3d, .bb-stage > .bb-blender { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 .slide .bb-blender.bb-full { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; z-index: 0; }
 .slide .bb-blender.bb-framed { border-radius: var(--radius-lg); }
-.bb-blender > .bb-tag { transform: translate(18px, -50%); }
-.bb-blender > .bb-tag[data-align="left"] { transform: translate(calc(-100% - 18px), -50%); }
+/* only until the placer has run (it sets data-placed and an exact inline transform). Note these two read
+   data-align the OPPOSITE way round to the look engines, where "left" means the text starts to the RIGHT of
+   the point; the engines' sense is the one the placer honours — see docs/STATUS-P4.md. */
+.bb-blender > .bb-tag:not([data-placed]) { transform: translate(18px, -50%); }
+.bb-blender > .bb-tag[data-align="left"]:not([data-placed]) { transform: translate(calc(-100% - 18px), -50%); }
 .bb-blender > .bb-blender-tag { position: absolute; right: 24px; top: 24px; z-index: 3; padding: 6px 20px; border-radius: 999px; pointer-events: none;
   background: rgba(255, 255, 255, .72); border: 1.5px solid rgba(255, 255, 255, .9); box-shadow: var(--shadow-tag); font: 500 28px/1.3 var(--font-text); color: var(--muted); }
 

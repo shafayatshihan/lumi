@@ -601,8 +601,10 @@
   /* ------------------------------------------------------------------ projected labels
      labels(S, holderEl, { name: anchor, ... }): every element inside the holder with data-follow="name" moves each frame
      so it sits beside the 3D anchor. anchor: [x, y, z] | THREE.Object3D | (t) => [x, y, z].
-     On the label: data-align="left|right|center" (text to the right of the point, to its left, or centred on it),
-     data-dx / data-dy (px offset, default 24 / 0). Labels are kept inside the holder and the slide's 96 px safe zone. */
+     A label NEVER covers the figure (LOOK-BASE 4.4). This projects each anchor and hands the points to the one shared
+     placer in runtime.js, which puts the label in clear space outside the subject's silhouette and draws a leader back
+     to the part. data-align="left|right|center" and data-dx / data-dy still say which way the label WANTED to sit, and
+     that direction wins every tie, but they can no longer park it on top of the subject. */
   function labels(S, holder, anchors) {
     const THREE = S.THREE, v = new THREE.Vector3();
     const els = Array.from(holder.querySelectorAll('[data-follow]'));
@@ -611,26 +613,18 @@
     const set = {
       time(t) { time = t; },
       update() {
-        const w = holder.offsetWidth, h = holder.offsetHeight, slide = holder.closest('.slide');
-        let ox = 0, oy = 0;
-        if (slide) { for (let e = holder; e && e !== slide && slide.contains(e); e = e.offsetParent) { ox += e.offsetLeft; oy += e.offsetTop; } }
+        const w = holder.offsetWidth, h = holder.offsetHeight;
+        if (!w || !h || !window.LumiLabel) return;
+        const items = [];
         els.forEach(el => {
           const a = anchors[el.dataset.follow]; if (!a) return;
           if (Array.isArray(a)) v.set(a[0], a[1], a[2]);
           else if (typeof a === 'function') { const p = a(time); v.set(p[0], p[1], p[2]); }
           else if (a.isObject3D) a.getWorldPosition(v);
           v.project(S.camera);
-          const hidden = v.z > 1 || v.z < -1;
-          const align = el.dataset.align || 'left', dx = parseFloat(el.dataset.dx || '24'), dy = parseFloat(el.dataset.dy || '0');
-          const ew = el.offsetWidth, eh = el.offsetHeight;
-          let x = (v.x + 1) / 2 * w, y = (1 - v.y) / 2 * h;
-          x = align === 'right' ? x - dx - ew : align === 'center' ? x - ew / 2 : x + dx;
-          y = y + dy - eh / 2;
-          x = Math.max(Math.max(0, 96 - ox), Math.min(x, Math.min(w, 1824 - ox) - ew));
-          y = Math.max(Math.max(0, 96 - oy), Math.min(y, Math.min(h, 984 - oy) - eh));
-          el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
-          el.style.visibility = hidden ? 'hidden' : '';
+          items.push({ el, x: (v.x + 1) / 2 * w, y: (1 - v.y) / 2 * h, show: v.z <= 1 && v.z >= -1 });
         });
+        window.LumiLabel.place(holder, items, window.LumiLabel.sceneGrid(THREE, S.scene, S.camera, w, h));
       },
     };
     return S.labels(set);

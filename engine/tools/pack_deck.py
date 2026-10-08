@@ -195,7 +195,8 @@ class Packer:
         """Batch 6 Part B: a baked studio render is not a picture but a model. The holder BECOMES a live three.js scene
         (class aura-3d + data-scene) that lib/bake-player.js plays from the inlined model.glb, so finalize records it with
         the seek-based capture like any other scene. data-baked keeps it out of the runtime's list of already-recorded
-        Blender holders; the [data-anchor] labels inside it are moved by the player."""
+        Blender holders; the [data-anchor] labels inside it are moved by the player.
+        DORMANT since batch 2 P1: only decks pinned bake=True reach here (see lumi_bake.py's header); keep it for them."""
         glb = adir / f'{sid}.glb'
         man = meta.get('bake') or {}
         if not glb.is_file() or not man:

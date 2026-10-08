@@ -455,8 +455,19 @@ def run(T=None, browser=True):
           and o2l.get('t', 0) > o2.get('t', 0) >= 0, (o2, o2l))
     check('presenter mode: leaving the slide pauses the loop and rewinds it', (r.get('backS1') or {}).get('paused') is True and (r['backS1'].get('t') == 0), r.get('backS1'))
     lab = {x['n']: x for x in r.get('labels') or []}
-    check('labels: [data-anchor] children sit at the recorded percentages (body ~60-80 %, ring 75 %), visible', lab.get('body', {}).get('shown') and 59 <= float(lab['body']['l'].rstrip('%')) <= 80
-          and lab.get('ring', {}).get('l') == '75%', lab)
+    # P4: a label no longer sits ON its recorded percentage - that was the bug (the anchor is often the middle of
+    # the figure). LumiLabel parks every label at the origin and moves it by a transform into clear space, with a
+    # leader back to the part, so style.left is '0px' by design. What has to hold now: each label is placed,
+    # visible, and inside the holder. How much of the FIGURE it covers is deck_check.js's job, and the runtime
+    # raises data-labels-crowded when its own best slot is still over 12 % covered.
+    for nm in ('body', 'ring'):
+        e = lab.get(nm, {})
+        check(f'labels: [data-anchor] "{nm}" is placed by LumiLabel, visible and inside the frame',
+              e.get('shown') and e.get('placed') and e.get('inside') and 'translate' in (e.get('tr') or ''), e)
+    check('labels: the two labels do not land on the same spot', lab.get('body', {}).get('px') is not None
+          and (abs(lab['body']['px'] - lab.get('ring', {}).get('px', 0)) > 1
+               or abs(lab['body']['py'] - lab.get('ring', {}).get('py', 0)) > 1), lab)
+    check('labels: the runtime did not report the frame as crowded', r.get('crowded') is False, r.get('crowded'))
     st = r.get('still2') or {}
     check('?still=2 (the PDF page): the video is hidden and the poster image is what shows', st.get('videoDisplay') == 'none' and st.get('paused') is True and st.get('img') == 1280 and st.get('imgVisible'), st)
     al = r.get('all') or {}

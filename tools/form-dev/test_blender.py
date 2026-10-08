@@ -35,8 +35,8 @@ def wait_job(T, P, sid, timeout=20):
 
 
 def pin_cycles(T, P):
-    """Make P a deck from before baking (batch 6 B.9: rec['bake'] is pinned at creation), so its animations take the
-    per-frame Cycles path these checks were written for. That path still exists: old decks, and any scene with glass."""
+    """Pin P to the per-frame Cycles path these checks were written for. Since batch 2 P1 that is what a new deck already
+    pins (rec['bake'] = False); kept so the checks say so explicitly."""
     f = T.AURA / 'decks' / f'{P}.json'
     rec = json.loads(f.read_text(encoding='utf-8'))
     rec['bake'] = False
@@ -44,18 +44,29 @@ def pin_cycles(T, P):
 
 
 def baked_suite(T, blog):
-    """Batch 6 Part B on the fake blender: a NEW deck bakes an animated studio render. Routing (B.2), the draft bake as
-    the preview, the final bake following by itself (B.5), the files (B.6), and glass staying on Cycles."""
+    """Batch 6 Part B on the fake blender: a deck pinned bake=True (batch 6 to v0.6.1) bakes an animated studio render.
+    Routing (B.2), the draft bake as the preview, the final bake following by itself (B.5), the files (B.6), and glass
+    staying on Cycles. Batch 2 P1: a NEW deck no longer bakes - its animation is per-frame Cycles."""
     import test_batch_c
     check, jget, jpost = T.check, T.jget, T.jpost
     print('\n[batch 6 Part B: the baked path]')
     P = test_batch_c.make_plan_deck(T, 'Baked deck')
-    rec = json.loads((T.AURA / 'decks' / f'{P}.json').read_text(encoding='utf-8'))
-    check('B.9: a new deck is pinned to bake its animations', rec.get('bake') is True, rec.get('bake'))
+    f = T.AURA / 'decks' / f'{P}.json'
+    rec = json.loads(f.read_text(encoding='utf-8'))
+    check('batch 2 P1: a new deck is pinned NOT to bake', rec.get('bake') is False, rec.get('bake'))
     plan = json.loads(json.dumps(T.plan_of(P)['plan']))
     plan['slides'][0].update(title='Gear pair', visual={'main': '3d', 'companions': [], 'detail': 'detailed', 'motion': 'timed', 'phrase': 'gears'})
     T.save(P, plan)
     T.wait_plan_idle(P)
+    pj = T.plan_of(P)
+    sid0 = pj['plan']['slides'][0]['id']
+    e = (pj.get('engines') or {}).get(sid0, {})
+    est = ((pj.get('blender') or {}).get('estimates') or {}).get(sid0) or {}
+    check('batch 2 P1: a new deck\'s animation goes to Blender, per-frame (a 720p/1080p choice, not one baked time)',
+          e.get('engine') == 'blender' and not est.get('baked') and est.get('720') and est.get('1080'), (e, est))
+    rec = json.loads(f.read_text(encoding='utf-8'))
+    rec['bake'] = True                             # from here on: a deck made between batch 6 and v0.6.1
+    f.write_text(json.dumps(rec, indent=2), encoding='utf-8')
     pj = T.plan_of(P)
     sid = pj['plan']['slides'][0]['id']
     e = (pj.get('engines') or {}).get(sid, {})
@@ -524,11 +535,14 @@ def run(T):
         T.stop_server(srv)
         srv = T.start_server(AURA_BLENDER=str(FAKE_BLENDER))
         v = bl(T, P, s2)
-        restart_ok = (v.get('status') == 'failed' and (v.get('error') or {}).get('code') == 'interrupted' and v.get('approved')
-                      and not (T.AURA / 'decks' / P / 'blender' / s2 / 'frames').exists(), (v.get('status'), v.get('error'), bool(v.get('approved'))))
+        # batch 2 P2: an interrupted full render is no longer failed - it goes back in the overnight queue (frames kept,
+        # resumed by full()); tools/form-dev/test_queue_p2.py checks the frames and the resume in detail
+        qj = [j for j in ((T.plan_of(P).get('queue') or {}).get('jobs') or []) if j.get('slide') == s2 and j.get('stage') == 'render']
+        restart_ok = (v.get('status') in ('approved', 'rendering', 'rendered') and not v.get('error') and v.get('approved')
+                      and qj and qj[0].get('state') in ('pending', 'running', 'done'), (v.get('status'), v.get('error'), bool(v.get('approved')), qj))
         T.stop_server(srv)
         srv = T.start_server(AURA_BLENDER=str(FAKE_BLENDER), AURA_FAKE_BLENDER_LOG=str(blog))
         baked_suite(T, blog)
     finally:
         T.stop_server(srv)
-    check('restart during a render: failed "interrupted", approval kept, frames removed', restart_ok[0], restart_ok[1])
+    check('restart during a render: back in the queue, approval kept, not failed (P2)', restart_ok[0], restart_ok[1])

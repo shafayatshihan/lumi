@@ -156,11 +156,23 @@ button.hm-upd:hover{color:var(--ink)}
 
 /* ---------------------------------------------------------------- build page: fewer things at once */
 #build .ed-stats{display:none}
-#build .ed-chat.is-quiet{top:792px;height:74px}
+#build .ed-chat.is-quiet{top:772px;height:94px}
 #build .ed-chat.is-quiet .ws-head,#build .ed-chat.is-quiet .ws-body,#build .ed-chat.is-quiet .ws-hints,#build .ed-chat.is-quiet .ws-clip,
 #build .ed-chat.is-quiet .ws-jump{display:none !important}
 #build .ed-chat.is-quiet .ws{justify-content:center;box-shadow:var(--sh-card)}
+/* P5.2: the caption and the "about <slide>" row are ONE line.
+   The quiet state hides the head, the body, the hints and the clip - but never .ws-aim, which Part C added later.
+   So when a slide was open the panel carried two captions: this ::before floating 30px ABOVE the panel at left:8,
+   and .ws-aim just inside it at left:14. Two sentences, 23px apart, on different left edges, one of them outside
+   the card it belongs to. That is the misplacement the owner marked, not a missing rule.
+   Now: if the aim row is showing, it carries the caption and the floater is gone; if it is not (no slide in
+   scope), the floater is the caption, as before. Either way the panel shows one line above the input, and that
+   line starts where the input's text starts - 26px, which is .ws-box's 10px margin plus its 16px padding. */
 #build .ed-chat.is-quiet::before{content:'ask claude to change anything';position:absolute;left:8px;top:-30px;font-size:16px;color:var(--mute)}
+#build .ed-chat.is-quiet:has(.ws-aim:not([hidden]))::before{content:none}
+#build .ed-chat.is-quiet .ws-aim{padding:2px 14px 6px 26px}
+#build .ed-chat.is-quiet .ws-aim .ws-aim-l{display:none}
+#build .ed-chat.is-quiet .ws-aim::before{content:'ask claude to change anything';font-size:16px;color:var(--mute)}
 .bd-more{flex:none;display:grid;place-items:center;width:56px;height:56px;border-radius:50%;transition:transform .25s var(--ease)}
 .bd-more svg{width:24px;height:24px}
 .bd-more.on{background:var(--btn-primary) !important;color:#fff}
@@ -168,6 +180,17 @@ button.hm-upd:hover{color:var(--ink)}
 .bd-up-more{height:40px;margin:2px 0 0 4px;align-self:flex-start;padding:0 16px;border-radius:100px;background:var(--btn-soft);box-shadow:var(--sh-soft);font-size:17px}
 .bd-alldlg .bd-all{margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .bd-alldlg .bd-up-row{background:var(--bg)}
+/* P2: the overnight queue inside the same dialog - one column, a row per job, a tick box per slide that can be queued */
+.bd-alldlg .bd-q{grid-template-columns:1fr;gap:6px;max-height:min(56vh,520px);overflow:auto}
+.bd-q .pl-dlg-p{margin:0 0 4px}
+.bd-q-row{display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:14px;background:var(--bg);font-size:15px}
+.bd-q-row[data-state=failed]{box-shadow:inset 3px 0 0 #d9534f}
+.bd-q-row[data-state=asking]{box-shadow:inset 3px 0 0 var(--btn-primary)}
+.bd-q-row[data-state=done]{color:var(--mute)}
+.bd-q-what{flex:1;min-width:0}
+.bd-q-act{flex:none;min-width:32px;height:32px;padding:0 10px;border-radius:100px;background:var(--btn-soft);font-size:14px}
+.bd-q-pick{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:14px;font-size:15px;cursor:pointer}
+.bd-q-pick input{width:18px;height:18px;flex:none}
 
 /* ---------------------------------------------------------------- tiny doodles on the main calls to action */
 .begin,.btn-make{position:relative}
@@ -406,7 +429,7 @@ html.scrolls body{overflow:visible;height:100%}
 .bl-card[hidden]{display:none}
 .bl-card[data-mode=open] .bl-bar,.bl-card[data-mode=bar] .bl-main{display:none}
 .bl-main{height:100%;display:grid;grid-template-columns:360px minmax(0,1fr);gap:18px;padding:14px 16px 14px 14px}
-.bl-left{min-width:0;display:flex;flex-direction:column;gap:8px}
+.bl-left{position:relative;min-width:0;display:flex;flex-direction:column;gap:8px}   /* P3: .bl-note floats on the column, so it shows over the picture AND over the chooser that replaces it */
 .bl-pic{position:relative;width:360px;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:var(--bg);box-shadow:0 0 0 2px var(--lav)}
 .bl-img{display:block;width:100%;height:100%;object-fit:contain}
 .bl-img[hidden]{display:none}
@@ -429,7 +452,29 @@ html.scrolls body{overflow:visible;height:100%}
 .bl-dot:focus-visible{outline:3px solid var(--accent);outline-offset:0}
 .bl-hlab{margin-left:auto;font-size:14px;color:var(--mute);white-space:nowrap}
 .bl-cap{font-size:14px;line-height:1.3;color:var(--mute);font-style:italic;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.bl-cap:empty{display:none}
+.bl-cap:empty,.bl-cap[hidden],.bl-pic[hidden]{display:none}
+/* P3 — the camera chooser. Four renders of HIS object, 2x2, in the picture's own 360px slot (the dock is a fixed
+   344px tall, so there is no room for a grid underneath one). Thumbnails are 16/9 like the slide they will become. */
+.bl-cam{min-width:0;display:flex;flex-direction:column;gap:6px}
+.bl-cam[hidden]{display:none}
+/* the dock gives the left column 316px: heading 20 + 6 + grid 248 + 6 + row 28 = 308. margins are zeroed deliberately,
+   the page's own p rule would add 34px and push "see it bigger" out through the bottom of the card. */
+.bl-cam-h{margin:0;font-family:var(--head);font-weight:900;font-size:17px;line-height:1.2}
+.bl-cam-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.bl-cam-b{position:relative;display:block;width:100%;padding:0;border-radius:11px;overflow:hidden;background:var(--bg);box-shadow:0 0 0 2px var(--lav);transition:box-shadow .18s var(--ease),transform .18s var(--ease)}
+.bl-cam-b:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 0 0 2px var(--lav-deep)}
+.bl-cam-b.on{box-shadow:0 0 0 3px var(--accent)}
+.bl-cam-b:disabled{opacity:.55}
+.bl-cam-b:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.bl-cam-i{display:block;width:100%;aspect-ratio:16/9;object-fit:contain}
+.bl-cam-l{display:block;padding:3px 6px 4px;font-size:14px;line-height:1.15;color:var(--ink);background:rgba(255,255,255,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bl-cam-b.on .bl-cam-l{background:var(--accent);color:#fff}
+.bl-cam-b.is-wait{aspect-ratio:16/9;height:auto;background:linear-gradient(100deg,var(--bg) 30%,var(--lav) 50%,var(--bg) 70%) 0 0/300% 100%;animation:blShim 1.6s linear infinite}
+.bl-cam-row{display:flex;align-items:center;gap:8px;min-height:28px}
+.bl-cam-f{flex:1;min-width:0;margin:0;font-size:14px;line-height:1.25;color:var(--mute)}
+.bl-cam-keep,.bl-cam-open{flex:none;height:28px;padding:0 12px;border-radius:100px;background:var(--btn-soft);box-shadow:var(--sh-soft);font-size:14px;color:var(--ink)}
+.bl-cam-open{align-self:flex-start}
+.bl-cam-keep[hidden],.bl-cam-open[hidden]{display:none}
 .bl-right{min-width:0;min-height:0;display:flex;flex-direction:column;gap:10px}
 .bl-top{display:flex;align-items:flex-start;gap:10px}
 .bl-h{flex:1;min-width:0;font-family:var(--head);font-weight:900;font-size:21px;line-height:1.2}

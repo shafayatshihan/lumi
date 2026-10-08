@@ -21,6 +21,7 @@
   --surface-2: #FDF8F6;
   /* text: warm charcoal, never pure black */
   --ink: #2D2C2B; --ink-2: #2D2C2B; --muted: #44423F; --label: #44423F; --hairline: #E2DED9;
+  --leader: #44423F; --leader-w: 3px;           /* 4.4: soft and round, like everything else here */
   /* the lead colour. Big shapes, lines, the squiggle. NEVER small text: 2.9:1 on white. */
   --brand: #FF7300;
   --accent: #FF7300;

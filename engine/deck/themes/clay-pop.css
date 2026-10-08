@@ -19,6 +19,7 @@
   --groove: #E3E3EB;                            /* a pressed channel in the clay: bar tracks, the rail */
   /* ink: cool near-black, and greys that are punctuation only */
   --ink: #15151C; --ink-2: #2B2B33; --muted: #5A5A66; --label: #6C6C78; --hairline: #DCDCE4;
+  --leader: #2B2B33; --leader-w: 3px;           /* 4.4: the line from a part to its label */
   /* THE primary. Light side goes yellow, shadow side goes red (measured), never white or brown. */
   --clay: #FF6A13; --clay-hi: #FF9A3D; --clay-top: #FDB23B; --clay-lo: #C93A05;
   --clay-ink: #B93D07;                          /* orange as TEXT, any size (4.95:1 on the studio) - rare */

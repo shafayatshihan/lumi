@@ -19,6 +19,7 @@
   --surface: #FFFFFF;                           /* every card, every tag, every chip */
   /* ink: the outline and every letter. Black, never grey-black. */
   --ink: #000000; --ink-2: #000000; --muted: #242423; --label: #242423; --hairline: #000000;
+  --leader: #000000; --leader-w: 5px;           /* 4.4: the leader is an outline like every other line in this look */
   /* ONE voice colour */
   --brand: #FF90E8;                             /* hot pink: the highlighter, the hero fill, the "this one" block */
   --accent: #FF90E8;

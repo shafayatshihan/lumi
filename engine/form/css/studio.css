@@ -8,7 +8,12 @@
 #stage[data-route=editor] #editor{visibility:visible}
 
 /* character modes for the new screens (bottom aligned, like stage mode) */
-#stage[data-mode=home] #char{left:0;top:630px;width:480px;height:270px}
+/* P5.4: home had this at left:0, 480 wide - flush into the corner, so the page edge cut Lumi down the side and she
+   read as a sticker stuck on the corner rather than a character standing on the floor. Same lesson as .th-lumi
+   (plan.css): the source frame's flat bottom edge only reads as "standing" when the box sits ON the stage floor
+   AND nothing else crops her. So: off the left edge by the page gutter (96px, the same one #brand uses), and down
+   to the 400x225 the editor already uses. Still 16:9, so object-fit:cover still crops nothing. */
+#stage[data-mode=home] #char{left:96px;top:675px;width:400px;height:225px}
 #stage[data-mode=edit] #char{left:521px;top:675px;width:400px;height:225px}
 
 /* top bar extras */
@@ -41,10 +46,10 @@
 .hm-new:hover{transform:translateY(-4px) rotate(-.4deg)}
 .hm-new:active{transform:scale(.97)}
 .hm-new-top{flex:1;display:grid;place-items:center;border-radius:22px;background:var(--lilac);overflow:hidden}
-/* the card art is the character now (an <img>), not a drawn sheet-and-pencil SVG: the sub-rules below only
-   matched parts of that drawing and are inert, kept so the diff is readable. */
-.hm-new-art{width:134px;height:134px;overflow:visible;object-fit:contain;display:block;margin:0 auto;
-  animation:upBob 3.4s var(--ease-io) infinite}
+/* P5.4: back to the drawing's own 220x130 box. The square 134x134 and the whole-element bob belonged to the
+   character photo that sat here for one round; the sheet does its own bobbing (.hm-sheet), so bobbing the svg
+   as well doubled it. */
+.hm-new-art{width:228px;height:134px;overflow:visible}
 .hm-new-art .hm-sheet{animation:upBob 3.4s var(--ease-io) infinite}
 .hm-new-art .hm-pencil{transform-origin:181px 49px;transform-box:view-box;transition:transform .5s var(--ease)}
 .hm-new:hover .hm-pencil{transform:rotate(-12deg) translate(-6px,4px)}

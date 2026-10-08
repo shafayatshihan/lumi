@@ -1,6 +1,9 @@
 /* Lumi baked-slide player (batch 6 Part B). Classic script, no imports of its own: it takes the THREE that
    Aura.scene() passes in, exactly like studio3d.js. Load it after runtime.js.
 
+   DORMANT since batch 2 P1 (2026-10-08): new decks never bake (animations are per-frame Cycles again, see
+   lumi_bake.py's header). Still inlined by pack_deck.py for decks pinned bake=True - keep it working for them.
+
    What it does: loads the model.glb that lumi_bake.py wrote, puts it in the look's own three.js studio, and drives
    its animation as a pure function of t. That last part is the whole point - it means a baked slide is just another
    scene under the capture contract in runtime.js, so finalize.js records it with the seek-based path that already
@@ -161,6 +164,17 @@
         root.add(floor);
       }
       root.environment = envFromRamp(THREE, ctx.renderer);
+      // TONE MAP, or the slide is grey. The poster beside it is a Cycles frame through AgX "Medium High Contrast"
+      // - lumi_bpy's own note says plain AgX "is washed out and grey on this high-key studio", which is exactly
+      // what three.js's default NoToneMapping gives: raw linear -> sRGB. studio3d.js has tone-mapped its live
+      // scenes since v0.4 (ACESFilmic, exposure 1); a baked slide never did, so the person approved a Cycles
+      // picture and the deck showed a flatter one. ACESFilmic is not AgX, but it is the same family and it is what
+      // every other Lumi scene already uses - matching the rest of the app matters more than matching Blender
+      // exactly, and the two now differ by a grade rather than by a tone curve.
+      if ('toneMapping' in ctx.renderer) {
+        ctx.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        ctx.renderer.toneMappingExposure = (man.exposure == null ? 1 : man.exposure);
+      }
       if (man.background && !man.transparent) root.background = new THREE.Color(man.background);
     }
     camera.position.copy(eye);
@@ -249,17 +263,26 @@
       anchors.push({ el, node, p: zup(THREE, node ? a.local : a.point) });
     });
     const v = new THREE.Vector3();
+    /* P4: a label never covers the figure (LOOK-BASE 4.4). This used to write the projected point straight out as a
+       percentage, which put the tag on top of the part it names. The points now go to the one shared placer in
+       runtime.js, exactly as the five live look engines do, so a deck baked before the bake path went dormant keeps
+       working AND gets the rule. Without runtime.js (the player standing alone) it falls back to the old behaviour. */
     function placeLabels() {
       if (!anchors.length) return;
       model.updateMatrixWorld(true);
       camera.updateMatrixWorld();
+      const holder = ctx.el, w = holder ? holder.offsetWidth : 0, h = holder ? holder.offsetHeight : 0;
+      const L = window.LumiLabel;
+      const items = [];
       anchors.forEach((a) => {
         v.copy(a.p);
         if (a.node) a.node.localToWorld(v);
         v.project(camera);
+        if (L && w && h) { items.push({ el: a.el, x: (v.x + 1) / 2 * w, y: (1 - v.y) / 2 * h, show: v.z <= 1 && v.z >= -1 }); return; }
         a.el.style.left = ((v.x + 1) * 50).toFixed(3) + '%';
         a.el.style.top = ((1 - v.y) * 50).toFixed(3) + '%';
       });
+      if (items.length) L.place(holder, items, L.sceneGrid(THREE, model, camera, w, h));
     }
 
     function setHatchRes(w, h) {

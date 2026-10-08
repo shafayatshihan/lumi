@@ -15,6 +15,7 @@ AURA_FAKE_FIX_FAIL=<name> makes that one fail)."""
 import concurrent.futures, datetime, hashlib, html as htmllib, json, os, platform, re, shutil, subprocess, sys, threading, time, traceback, unicodedata
 import urllib.request, uuid
 import aura_markers
+import lumi_queue
 from collections import deque
 from html.parser import HTMLParser
 from email.utils import formatdate, parsedate_to_datetime
@@ -882,7 +883,7 @@ DECK_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 DECK_ROUTE = re.compile(r'^/api/decks/([A-Za-z0-9_-]{1,64})(?:/(thumb\.png|slides|slides/(\d{1,3})\.png|text|'
                         r'interview/answer|interview|plan|plan/answer|'
                         r'plan/picture|plan/suggest|plan/slide/add|plan/slide/save|plan/slide/remove|'
-                        r'build|finalize|pptx))?$')
+                        r'build|queue|finalize|pptx))?$')
 DECK_LOCK = threading.RLock()
 # plannedAt: when a plan with slides was first written. It is NOT the same question as "does this deck have a Claude
 # session": with one shared conversation the interview opens the session long before planning, so the planning step must
@@ -991,7 +992,8 @@ def new_deck(brief=None, **fields):
            'look': look_of(brief), 'quality': quality_of(brief), 'createdAt': t, 'updatedAt': t, 'sessionId': None,
            'brief': brief, 'build': None, 'caps': dict(DECK_CAPS), 'interviewState': 'asking',
            'qualityV': QUALITY_V,             # this record's tier names mean what they say (see quality_v2)
-           'bake': True}                      # batch 6 B.9: animated studio renders are BAKED in this deck (pinned at creation)
+           'bake': False}                     # batch 2 P1: baking dropped - animations are per-frame Cycles again (pinned at
+                                              # creation; decks pinned True keep their baked path)
     rec.update(fields)
     return save_deck(rec, touch=False)
 
@@ -2088,7 +2090,7 @@ class Runner:
         is left alone."""
         for rec in all_decks():
             fields = {}
-            if interrupted and rec.get('buildTarget'): fields.update(buildTarget=None, buildRest=False)
+            if interrupted and rec.get('buildTarget'): fields.update(buildTarget=None)    # buildRest is the queue's now (P2)
             if rec.get('planState') == 'planning':
                 fields.update(planState='error', planError='Lumi was closed while Claude was planning. Try again.')
             # An interview that was mid-question when Lumi closed has nothing that will ever finish it. 'waiting' is left
@@ -2513,6 +2515,8 @@ class Runner:
         except Exception as e:
             log('after_run failed', repr(e), traceback.format_exc(limit=-3).replace(chr(10), ' | '))
         finally:
+            try: queue_after_run(run, bool(retry))       # P2: still "busy" here, so the queue cannot start the next step yet
+            except Exception as e: log('queue after_run failed', repr(e))
             with self.lock:
                 if self.settling and self.settling[0] is run: self.settling = None
             run.finished.set()
@@ -3534,7 +3538,9 @@ def plan_payload(rec):
             'runKind': RUNNER.run.kind if busy and RUNNER.run else None,
             'waiting': bool(RUNNER and RUNNER.waiting and RUNNER.deck_id == rec['id']),
             'queued': list(q.get('slides') or []) + [s['id'] for s in q.get('suggest') or []],
-            'buildStarted': build_started(rec), 'buildRest': bool(rec.get('buildRest')), 'buildTarget': rec.get('buildTarget'),
+            'buildStarted': build_started(rec), 'buildTarget': rec.get('buildTarget'),
+            # P2: derived from the overnight queue, never stored, so the page's three reads of it need no change
+            'buildRest': bool(QUEUE and QUEUE.find(rec['id'], stage='build')), 'queue': queue_view(rec['id']),
             'count': len(slides), 'built': sum(1 for s in slides if s.get('built')),
             'target': slide_context(slides, rec.get('buildTarget')),
             'exists': bool(f), 'mtime': int(f.stat().st_mtime) if f else None,
@@ -3543,7 +3549,9 @@ def plan_payload(rec):
             # Section 6: what this deck costs the person, in time and in a plain share of today's allowance. `allowance`
             # is null whenever the last reading is missing or stale, and the page then shows the time on its own.
             'cost': {'build': deck_build_estimate(rec), 'allowance': usage_share()},
-            'blender': {'available': blender_available(), 'bakes': bool(rec.get('bake')),
+            # 'bakes' = "a moving figure on a Blender look goes to Blender" (effEngine); since batch 2 P1 that is any deck
+            # that pinned the key, baked or per-frame - the same test as slide_engine
+            'blender': {'available': blender_available(), 'bakes': 'bake' in rec,
                         'status': {k: v.get('status') for k, v in bl_states(rec).items() if isinstance(v, dict)},
                         'estimates': bl_plan_estimates(rec)}}
 
@@ -4502,7 +4510,8 @@ def reply_conv(deck_id, slide, scope=None):
     return ids[slide - 1] if 1 <= slide <= len(ids) else None
 
 
-def build_next(deck_id, rest=None):
+def build_next(deck_id, sid=None):
+    """Build the first unbuilt slide, or (the overnight queue) the slide `sid`."""
     rec = load_deck(deck_id)
     if not rec: return 404, {'ok': False, 'error': 'no-deck'}
     RUNNER.wait_settled()
@@ -4516,12 +4525,15 @@ def build_next(deck_id, rest=None):
         queued = bool(PLANQ.get(deck_id))
     if queued or any(s.get('status') in ('queued', 'replanning') for s in slides):
         return 409, {'ok': False, 'error': 'replanning', 'reason': 'claude is still updating the plan.'}
-    nxt = next(((i, s) for i, s in enumerate(slides) if not s.get('built')), None)
-    if not nxt: return 409, {'ok': False, 'error': 'all-built'}
+    if sid:
+        nxt = next(((i, s) for i, s in enumerate(slides) if s['id'] == sid), None)
+        if not nxt: return 404, {'ok': False, 'error': 'no-slide'}
+        if nxt[1].get('built'): return 409, {'ok': False, 'error': 'built'}
+    else:
+        nxt = next(((i, s) for i, s in enumerate(slides) if not s.get('built')), None)
+        if not nxt: return 409, {'ok': False, 'error': 'all-built'}
     i, s = nxt
-    fields = {'buildTarget': s['id'], 'planState': 'building'}
-    if rest is not None: fields['buildRest'] = bool(rest)
-    rec = update_deck(deck_id, **fields)
+    rec = update_deck(deck_id, buildTarget=s['id'], planState='building')
     # v0.5.2: the slide is built in its OWN conversation (fresh and self-contained the first time; a retry resumes it). Questions
     # asked during the step stay in it. L-17 still applies per slide: one past SLIDE_CTX_RESET tokens is handed off to a fresh one.
     mine = conv_of(rec, s['id'])
@@ -4539,7 +4551,7 @@ def build_next(deck_id, rest=None):
                               user_text=f'make slide {i + 1}: {s.get("title") or "untitled"}', deck_id=deck_id,
                               kind='build-slide', meta={'slide': s['id'], 'n': i + 1}, conv=s['id'])
     if code != 200:
-        update_deck(deck_id, buildTarget=None, **({'buildRest': False} if rest else {}))
+        update_deck(deck_id, buildTarget=None)
         if eng.get('engine') == 'blender': set_bl(deck_id, s['id'], status=was)
         return code, res
     return code, dict(res, slide=s['id'], n=i + 1, of=len(slides))
@@ -4548,10 +4560,21 @@ def build_next(deck_id, rest=None):
 def build_action(deck_id, body):
     mode = body.get('mode')
     if mode == 'next': return build_next(deck_id)
-    if mode == 'rest': return build_next(deck_id, rest=True)
-    if mode == 'stop':
-        rec = update_deck(deck_id, buildRest=False)
+    if mode == 'rest':
+        # P2: "build the rest" is one queue job per unbuilt slide (not a latch a question, an error, a limit or a restart
+        # silently drops); the first one starts now if Claude is free.
+        rec = load_deck(deck_id)
         if not rec: return 404, {'ok': False, 'error': 'no-deck'}
+        left = [s['id'] for s in plan_slides(rec) if not s.get('built')]
+        if not plan_slides(rec): return 409, {'ok': False, 'error': 'no-plan'}
+        if not left: return 409, {'ok': False, 'error': 'all-built'}
+        for sid in left: QUEUE.add(deck_id, sid, 'build', est=SLIDE_WRITE_S)
+        QUEUE.pause(deck_id, False)
+        queue_tick()
+        return 200, {'ok': True, 'queued': len(left), 'running': bool(RUNNER.running)}
+    if mode == 'stop':
+        if not load_deck(deck_id): return 404, {'ok': False, 'error': 'no-deck'}
+        for q in QUEUE.find(deck_id, stage='build'): QUEUE.remove(q['id'])     # the builds still to come; a failed one stays
         if RUNNER.running and RUNNER.deck_id == deck_id: RUNNER.stop()
         return 200, plan_payload(load_deck(deck_id))
     return 400, {'ok': False, 'error': 'bad-mode'}
@@ -4631,8 +4654,7 @@ def after_run(run):
                 for d in (rec.get('plan') or {}).get('doubts') or []:
                     if d.get('answer'): d['applied'] = True
                 left = [s for s in plan_slides(rec) if not s.get('built')]
-                rec = write_plan(rec, rec['plan'], buildTarget=None, planState='building' if left else 'built',
-                                 buildRest=bool(rec.get('buildRest')) and bool(left))
+                rec = write_plan(rec, rec['plan'], buildTarget=None, planState='building' if left else 'built')
     if finished_n and target:
         last = next((t for t in reversed(run.texts) if t and t.strip()), '')      # what Claude said when the slide was done
         said = re.sub(r'\s+', ' ', '\n'.join(ln for ln in last.splitlines() if '[[aura:' not in ln and not ln.startswith('[fake-'))).strip()
@@ -4679,20 +4701,15 @@ def after_run(run):
             for s in plan_slides(rec):
                 if s.get('status') in ('queued', 'replanning'): s.pop('status', None)
             extra = {'planState': 'error', 'planError': 'You stopped the planning.'} if rec.get('planState') == 'planning' else {}
-            if isinstance(rec.get('plan'), dict): write_plan(rec, rec['plan'], buildRest=False, buildTarget=None, **extra)
-            else: update_deck(deck_id, buildRest=False, buildTarget=None, **extra)
+            if isinstance(rec.get('plan'), dict): write_plan(rec, rec['plan'], buildTarget=None, **extra)
+            else: update_deck(deck_id, buildTarget=None, **extra)
         return
     if rec.get('planState') == 'planning' and run.kind == 'plan':
         update_deck(deck_id, planState='error', planError='Claude did not finish the plan. Try again.')
     if pump_plan(deck_id): return
     if bl_pump(deck_id): return                       # a Blender change request that waited for Claude (contract section 7)
-    rec = load_deck(deck_id)
-    if rec.get('buildRest') and good and not run.asked and any(not s.get('built') for s in plan_slides(rec)):
-        def _next():
-            run.finished.wait(30)         # after_run's bookkeeping is done before the next step starts (S-03)
-            cur = load_deck(deck_id)
-            if cur and cur.get('buildRest'): build_next(deck_id)     # "stop" may have arrived in the meantime
-        threading.Thread(target=_next, daemon=True).start()
+    # the next build step is the overnight queue's to start (queue_tick), not a thread here that a question, an error, a
+    # usage limit or a restart could silently drop (P2)
 
 
 # ---------------------------------------------------------------- Blender (docs/blender-contract.md is the contract)
@@ -4704,8 +4721,10 @@ BLENDER_DEFAULTS = {'fps': 20, 'previewRes': 30, 'previewSamples': 16, 'stillHei
 BLENDER_FIND = {'at': 0.0, 'hit': None}
 BLENDER_PROBE_FAIL = {'at': 0.0, 'key': None}
 BLENDER_LOCK = threading.RLock()                   # the per-slide state in the deck records
-BLENDER_FILE_RE = re.compile(r'^(previews/preview-\d{1,4}\.png|final\.png|final\.mp4|final-poster\.png|bake/(?:draft|final)/(?:poster\.png|model\.glb|bake\.json))$')
+BLENDER_FILE_RE = re.compile(r'^(previews/preview-\d{1,4}\.png|final\.png|final\.mp4|final-poster\.png|bake/(?:draft|final)/(?:poster\.png|model\.glb|bake\.json)'
+                             r'|cameras/cam-[a-z0-9][a-z0-9-]{0,23}\.png)$')       # P3: the camera chooser's thumbnails
 BLENDER_ROUTE = re.compile(r'^/api/decks/([A-Za-z0-9_-]{1,64})/blender(?:/([a-z0-9][a-z0-9-]{0,23})(?:/(preview|change|approve|render|cancel|defer|'
+                           r'cameras|camera|'                                      # P3: render the candidates / pick one
                            r'files/(.+)))?)?$')
 BLENDER_STATUSES = ('writing', 'previewing', 'preview', 'changing', 'approved', 'rendering', 'rendered', 'failed')
 DEFAULT_ITER_TOKENS = 60000
@@ -4919,14 +4938,26 @@ def bl_rel(deck_id, sid):
 
 
 def bl_hash(deck_id, sid):
+    """What "the scene" means for approvals: scene.py, and the camera the person chose for it.
+
+    P3: a camera choice IS a change of scene - the picture moves - so it has to move this hash, or an approval made
+    at one angle would silently render at another. camera.json is folded in only when it exists, so every deck that
+    has no chosen camera hashes byte-for-byte as it did before and no finished approval goes stale on upgrade."""
+    d = bl_dir(deck_id, sid)
     try:
-        return hashlib.sha1((bl_dir(deck_id, sid) / 'scene.py').read_bytes()).hexdigest()
+        h = hashlib.sha1((d / 'scene.py').read_bytes())
     except OSError:
         return None
+    try:
+        h.update(b'\0camera\0' + (d / 'camera.json').read_bytes())
+    except OSError:
+        pass
+    return h.hexdigest()
 
 
 # batch 6 B.2: glass is the one thing a bake cannot carry (no transmission in the atlases), so a scene that uses it stays
 # on the per-frame Cycles path - detected from scene.py, never asked of the user.
+# batch 2 P1: only matters for decks still pinned bake=True; new decks never bake, so every animation is per-frame anyway.
 GLASS_RE = re.compile(r"""\bmat\(\s*['"]glass['"]|\btrans\s*=\s*(?:0*\.0*[1-9]|[1-9])""")
 
 
@@ -4964,7 +4995,7 @@ def bake_seconds(deck_id, sid, mode):
 def slide_engine(rec, slide, available=None):
     """The EFFECTIVE engine of one slide (contract section 2): {engine, kind, note, chosen}. engine is None when the slide has
     no 3D main picture. An explicit visual.engine wins; auto = a Blender look + Blender available -> blender, for a still,
-    and (batch 6 B.2) for an animation too in a deck that bakes (rec['bake'])."""
+    and for an animation too in a deck that pinned rec['bake'] (batch 6 B.2: baked; batch 2 P1: False = per-frame)."""
     v = (slide or {}).get('visual') or {}
     if v.get('main') != '3d': return {'engine': None, 'kind': None, 'note': None, 'chosen': False}
     kind = 'still' if v.get('motion') == 'still' else 'animation'
@@ -4978,8 +5009,12 @@ def slide_engine(rec, slide, available=None):
     # No explicit choice: the LOOK's own 3D policy decides (LOOK_3D). A look whose policy is 'threejs' never renders in
     # Blender; a 'blender' look uses it for stills only, and only when Blender is installed. Either way an engine is
     # always returned - a 3D slide must never end up with none (BACKLOG B1).
-    auto = bool(avail) and look_3d_engine(rec.get('look')) == 'blender' and (kind == 'still' or bool(rec.get('bake')))
-    return {'engine': 'blender' if auto else 'threejs', 'kind': kind, 'note': None, 'chosen': False}
+    # Animations: any deck that pinned 'bake' (batch 6 on) renders them in Blender - baked if True, per-frame Cycles if
+    # False (batch 2 P1). Older decks without the key keep three.js animations, so nothing they finished goes stale.
+    want = look_3d_engine(rec.get('look')) == 'blender' and (kind == 'still' or 'bake' in rec)
+    # batch 2 P1: a studio render that falls back for want of Blender says so (pin_engine tells the user), never silently
+    return {'engine': 'blender' if want and avail else 'threejs', 'kind': kind,
+            'note': 'blender-missing' if want and not avail else None, 'chosen': False}
 
 
 def plan_engines(rec):
@@ -5171,7 +5206,8 @@ def bl_view(rec, sid):
     st.update(id=sid, n=n, engine=eng.get('engine'), kind=st.get('kind') or eng.get('kind'), chosen=eng.get('chosen'),
               note=eng.get('note'), status=st.get('status') or ('none' if not sh else 'preview'), sceneExists=bool(sh),
               sceneCurrent=bool(sh) and bool(st.get('previews')) and (st.get('previews') or [{}])[-1].get('sceneHash') == sh,
-              estimates=bl_estimates(rec, sid), baked=bl_baked(rec, sid, st.get('kind') or eng.get('kind')))
+              estimates=bl_estimates(rec, sid), baked=bl_baked(rec, sid, st.get('kind') or eng.get('kind')),
+              cameras=bl_cam_view(rec, sid) if eng.get('engine') == 'blender' else None)      # P3: the camera chooser
     return st
 
 
@@ -5326,10 +5362,12 @@ class BlenderRenderer:
     def _work(self, job):
         try:
             if job.kind == 'bench': self._bench(job)
+            elif job.kind == 'cameras': bl_cameras_run(self, job)      # P3: the camera chooser's candidates
             else: self._render(job)
         except Exception as e:
             log('blender job crashed', job.kind, job.deck_id, job.sid, repr(e))
-            if job.kind != 'bench': self._fail(job, 'no-output', f'Lumi hit an internal error ({e.__class__.__name__}).')
+            if job.kind == 'cameras': bl_cameras_fail(job, 'no-output')
+            elif job.kind != 'bench': self._fail(job, 'no-output', f'Lumi hit an internal error ({e.__class__.__name__}).')
         finally:
             with self.lock:
                 if self.running.get(job.lane) is job: self.running[job.lane] = None
@@ -5426,8 +5464,12 @@ class BlenderRenderer:
         else:
             args, out = ['--anim', '--height', str(res), '--fps', str(D['fps']), '--samples', str(D['animSamples'])], d / 'frames'
             samples = D['animSamples']
+        # P2: the ONE place --resume is armed, so a yield, a retry and a restart all carry on the same way: frames already on
+        # disk from this very scene at this very height are kept, anything else is started clean by _render.
+        resume = kind != 'still' and self._frames_resumable(out, bl_hash(deck_id, sid), res) > 0
+        if resume: args.append('--resume')
         job = BlenderJob(deck_id, sid, 'full', args, out, {'kind': kind, 'res': res, 'samples': samples, 'prev': st.get('status'),
-                                                           'sceneHash': bl_hash(deck_id, sid)})
+                                                           'sceneHash': bl_hash(deck_id, sid), 'resume': resume})
         est = bl_estimates(rec, sid, self)['full']
         _e = est.get('still') or est.get(str(res)) or {}
         job.est, job.est_basis = _e.get('seconds') or 600, _e.get('basis')     # problem 12: scored against render_s afterwards
@@ -5604,6 +5646,7 @@ class BlenderRenderer:
         out = Path(job.out)
         if job.kind == 'full' and job.meta.get('kind') == 'animation' and not job.meta.get('resume') and not job.meta.get('baked'):
             shutil.rmtree(out, ignore_errors=True)   # a resumed render keeps the frames it already has (problem 9)
+            self._frames_mark(out, job.meta.get('sceneHash'), job.meta.get('res'))
         out.parent.mkdir(parents=True, exist_ok=True)
         with self._open_log(job, f'{job.kind}-{job.meta.get("n") or job.meta.get("res") or 1}') as logf:
             rc, tail, why = self._exec(job, scene, out, job.args, job.cpu, logf)
@@ -5621,8 +5664,12 @@ class BlenderRenderer:
         if job.yielding or why == 'yielded': return self._yielded(job, n)
         if job.meta.get('baked'):       # the bake folder keeps its atlases between runs (B.3), so its files are checked by name
             produced = all((out / f).is_file() for f in ('bake.json', 'model.glb', 'poster.png'))
+        elif out.suffix.lower() == '.png':
+            produced = out.is_file()
         else:
-            produced = out.is_file() if out.suffix.lower() == '.png' else (out.is_dir() and any(out.glob('frame_*.png')))
+            # P2: "any frame exists" proves nothing once renders resume - the run before this one left its frames on disk. A
+            # resumed run that died in its first second would otherwise encode a short loop and mark the slide rendered.
+            produced = out.is_dir() and job.frames > 0 and len(list(out.glob('frame_*.png'))) >= job.frames
         if why or rc != 0 or not produced:
             code, detail = self._classify(tail, rc, why) if (why or rc != 0) else ('no-output', '')
             return self._fail(job, code, detail)
@@ -5838,18 +5885,307 @@ class BlenderRenderer:
             log('blender bench not saved', e)
         if RUNNER: RUNNER.add('blender', 'Lumi measured how fast this computer renders.', code='bench-done', c=out['c'], a=out['a'], k=out['k'])
 
-    def reconcile(self):
-        """At start: no job survives a restart, so a slide left previewing/rendering failed with 'interrupted' (approval kept)."""
+    # ---- frames that outlive a run (P2)
+    # frames/.lumi-frames.json says which scene, at which height, the frames in that folder were rendered from. Without it,
+    # or when either moved, the frames are not this render's and are never resumed: half-old, half-new is worse than none.
+    FRAMES_MARK = '.lumi-frames.json'
+    PNG_END = b'\x00\x00\x00\x00IEND\xaeB`\x82'
+
+    @classmethod
+    def _frames_mark(cls, out, scene_hash, res):
+        try:
+            out.mkdir(parents=True, exist_ok=True)
+            write_atomic(out / cls.FRAMES_MARK, json.dumps({'sceneHash': scene_hash, 'res': res}))
+        except OSError as e:
+            log('frames mark not written', out, e)
+
+    @classmethod
+    def _frames_resumable(cls, out, scene_hash, res):
+        """How many good frames a render can carry on from (0: start clean). A frame cut off mid-write by a power cut has no
+        PNG end chunk; it is deleted here so --resume renders it again instead of skipping it."""
+        try:
+            mark = json.loads((out / cls.FRAMES_MARK).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return 0
+        if not scene_hash or mark.get('sceneHash') != scene_hash or mark.get('res') != res: return 0
+        good = 0
+        for f in out.glob('frame_*.png'):
+            try:
+                with open(f, 'rb') as fh:
+                    fh.seek(-len(cls.PNG_END), 2)
+                    ok = fh.read() == cls.PNG_END
+            except OSError:
+                ok = False
+            if ok: good += 1
+            else:
+                try: f.unlink()
+                except OSError: pass
+        return good
+
+    def reconcile(self, crashed=()):
+        """At start (P2). A full render the server was killed in is NOT failed: its frames stay and it goes back in the
+        overnight queue, which hands it to full() - and full() resumes it from the first missing frame. The one exception is
+        a scene.py that changed while the server was down: then the frames are removed (half-old, half-new is worse than
+        none). An interrupted preview is cheap and still fails with 'interrupted', as before. `crashed`: (deck, slide) pairs
+        the queue just gave up on (the poison-job guard) - those fail here too and are not queued again."""
         for rec in all_decks():
             for sid, st in bl_states(rec).items():
-                if isinstance(st, dict) and (st.get('status') in ('previewing', 'rendering') or st.get('job')):
-                    job = (st.get('job') or {}).get('kind') or ('full' if st.get('status') == 'rendering' else 'preview')
+                if not (isinstance(st, dict) and (st.get('status') in ('previewing', 'rendering') or st.get('job'))): continue
+                live = st.get('job') or {}
+                job = live.get('kind') or ('full' if st.get('status') == 'rendering' else 'preview')
+                if job != 'full' or QUEUE is None or (rec['id'], sid) in crashed:
                     set_bl(rec['id'], sid, status='failed', job=None,
                            error={'code': 'interrupted', 'reason': bl_reason('interrupted'), 'at': now_iso(), 'job': job})
-                    shutil.rmtree(bl_dir(rec['id'], sid) / 'frames', ignore_errors=True)
+                    continue
+                frames = bl_dir(rec['id'], sid) / 'frames'
+                row = QUEUE.find(rec['id'], sid, 'render')
+                res = live.get('res') or (row[0].get('res') if row else None)
+                kept =self._frames_resumable(frames, bl_hash(rec['id'], sid), res) if res else 0
+                if not kept: shutil.rmtree(frames, ignore_errors=True)
+                set_bl(rec['id'], sid, status='approved' if st.get('approved') else 'preview', job=None, error=None)
+                q = QUEUE.add(rec['id'], sid, 'render', res=res, est=live.get('estimate'))
+                QUEUE.update(q, framesDone=kept or None)
+                n = bl_slide(rec, sid)[0]
+                bl_event(rec['id'], sid, 'render-requeued', f'Lumi was closed while slide {n} was rendering. It is back in the queue'
+                         + (f' and carries on from frame {kept + 1}.' if kept else '.'), frame=kept or None)
+                log('startup: render requeued', rec['id'], sid, 'frames kept', kept)
 
 
 BLENDER = None
+
+
+# ---------------------------------------------------------------- the overnight queue (batch 2 P2)
+# lumi_queue.Queue is the store (.aura/queue.json); this is the feeder. It is NOT a second scheduler: Claude gets one build
+# step at a time through build_next, Blender gets at most ONE queued full render at a time through BlenderRenderer.full(),
+# so a preview or a newly approved still still cuts in exactly as it always did (_rank, _ask_yield). Every full render,
+# however it was started, is mirrored into the store, so a restart finds it. Lock order: the store's lock is taken last and
+# never held across set_bl / load_deck / RUNNER.launch / BLENDER.full (the store never calls out).
+QUEUE = None
+QUEUE_TICK_S = 2.0
+QUEUE_TICK_LOCK = threading.Lock()                 # one tick at a time: the worker thread and a "start now" from a request
+QUEUE_BUSY = ('busy', 'waiting', 'replanning')     # the world is busy, not the job: try again soon, no attempt burned
+QUEUE_LIMIT_WAIT_S = 20 * 60                       # a usage limit: try again in 20 minutes, no attempt burned
+QUEUE_TERMINAL = ('no-deck', 'no-slide', 'no-plan', 'no-scene', 'script-error', 'ffmpeg-missing', 'not-approved',
+                  'preview-outdated', 'no-blender', 'out-of-memory', 'bad-res',
+                  'timeout', 'no-output')      # retrying these only wastes the night (a timeout is 3x the estimate, each time)
+QUEUE_EDGE = {'active': False, 'since': 0.0}
+
+
+def queue_err(code, reason):
+    return {'code': code, 'reason': reason, 'at': time.time()}
+
+
+def queue_n(deck_id, sid):
+    return bl_slide(load_deck(deck_id) or {}, sid)[0]
+
+
+def queue_moving():
+    """Work that will move by itself. A build behind an open question does not: Claude is held by that question."""
+    if not QUEUE: return False
+    held = bool(RUNNER and RUNNER.waiting)
+    return any(j['deck'] not in QUEUE.paused and (j['state'] == 'running' or (j['state'] == 'pending' and not (held and j['stage'] == 'build')))
+               for j in QUEUE.find())
+
+
+def queue_last_error(deck_id):
+    for ev in reversed(RUNNER.events[-60:] if RUNNER else []):
+        if ev.get('deck') == deck_id and ev.get('kind') in ('error', 'limit') and ev.get('text'): return one_line(ev['text'])[:200]
+    return 'Claude did not finish this slide.'
+
+
+def queue_settle_build(q, run=None, retrying=False):
+    """Where a build job stands now that no Claude run is working on it."""
+    rec = load_deck(q['deck'])
+    _, sl = bl_slide(rec or {}, q['slide'])
+    if not sl: return QUEUE.update(q, state='failed', lastError=queue_err('no-slide', 'This slide is no longer in the plan.'))
+    if sl.get('built'): return QUEUE.update(q, state='done')
+    if retrying: return q                  # C-08: a fresh conversation is about to carry the same step on
+    if (run and run.asked) or (RUNNER.waiting and RUNNER.deck_id == q['deck']):
+        if q['state'] != 'asking':
+            QUEUE.update(q, state='asking')
+            n = queue_n(q['deck'], q['slide'])
+            # ONE event: claude-events.jsonl survives the server exiting and replays on the morning's first page load
+            RUNNER.add('status', f'Slide {n} has a question for you. It waits for your answer; nothing answers or skips it for you. '
+                       'Renders already in the queue carry on.', code='queue-asking', deck=q['deck'], conv='deck', slide=n)
+        return q
+    if run and run.stopped:
+        QUEUE.pause(q['deck'], True)       # the person stopped Claude: nothing more starts on this deck until they resume
+        return QUEUE.update(q, state='failed', lastError=queue_err('stopped', 'You stopped this step.'))
+    if run and (run.hit_limit or run.limited):
+        return QUEUE.unstart(q, QUEUE_LIMIT_WAIT_S)
+    if q['state'] == 'asking':             # answered, and the answer did not finish the slide: build it again, no attempt burned
+        return QUEUE.unstart(q, 0)
+    return QUEUE.failed_attempt(q, 'build-failed', queue_last_error(q['deck']), retry_s=60)
+
+
+def queue_after_run(run, retrying=False):
+    """Called by the Runner after after_run(), while it still counts as busy, for every finished run."""
+    if not (QUEUE and run.deck_id): return
+    for q in QUEUE.find(run.deck_id, stage='build', states=('running', 'asking')):
+        if run.kind == 'build-slide' and (run.meta or {}).get('slide') != q['slide']: continue
+        if run.kind != 'build-slide' and q['state'] != 'asking': continue
+        queue_settle_build(q, run, retrying)
+
+
+def queue_tick():
+    if not QUEUE or not RUNNER or not BLENDER: return
+    with QUEUE_TICK_LOCK:
+        QUEUE.prune()
+        live = {}
+        for j in BLENDER.jobs():
+            if j.kind == 'full' and j.deck_id: live[(j.deck_id, j.sid)] = j
+        # 1. every full render is durable: one started from the page (approve -> render) is mirrored in as running
+        for (d, s), j in live.items():
+            have = QUEUE.find(d, s, 'render')
+            if not have: QUEUE.add(d, s, 'render', res=j.meta.get('res'), est=j.est_first or j.est, state='running', exec_id=j.id)
+            elif have[0]['state'] == 'pending':    # rendered by hand before its turn came: it is that job, not a second one
+                QUEUE.update(have[0], state='running', startedAt=time.time(), execId=j.id)
+        # 2. a running render whose Blender job is gone has finished one way or another: the slide's state says how
+        for q in QUEUE.find(stage='render', states=('running',)):
+            j = live.get((q['deck'], q['slide']))
+            if j:
+                if j.done_frames and j.done_frames != q.get('framesDone'): QUEUE.update(q, framesDone=j.done_frames, execId=j.id)
+                continue
+            st = bl_state(load_deck(q['deck']) or {}, q['slide'])
+            err = st.get('error') if isinstance(st.get('error'), dict) else {}
+            if st.get('status') == 'rendered': QUEUE.update(q, state='done')
+            elif st.get('status') == 'failed' and err.get('code'):
+                if err['code'] in QUEUE_TERMINAL: QUEUE.update(q, state='failed', lastError=queue_err(err['code'], err.get('reason') or ''))
+                else: QUEUE.failed_attempt(q, err['code'], err.get('reason') or '', retry_s=30)
+            elif st.get('status') in ('rendering', 'previewing'): continue    # between full()'s set_bl and its submit: look again
+            else: QUEUE.remove(q['id'])        # cancelled from the page: the person's choice, not a failure
+        # 3. a build job no Claude run is carrying any more (after_run's hook missed it: an exception, a recovery that never started)
+        if not RUNNER.busy:
+            for q in QUEUE.find(stage='build', states=('running',)):
+                if time.time() - (q.get('startedAt') or 0) > 5: queue_settle_build(q)
+        # 4. feed Blender: at most one queued full render at a time, and only into an empty full lane
+        with BLENDER.lock:
+            free = not BLENDER.running['full'] and not BLENDER.lanes['full']
+        q = QUEUE.next('render') if free else None
+        if q:
+            QUEUE.start(q)                     # flushed as running, attempt counted, BEFORE the launch
+            try: code, res = BLENDER.full(q['deck'], q['slide'], q.get('res'))
+            except Exception as e:
+                log('queue: full() crashed', repr(e)); code, res = 500, {'error': 'start-failed'}
+            e = res.get('error')
+            if code == 200: QUEUE.update(q, execId=(res.get('job') or {}).get('id'), est=(res.get('job') or {}).get('estimate'))
+            elif e == 'rendering': QUEUE.update(q, attempts=max(0, q['attempts'] - 1))     # already in Blender: step 2 follows it
+            elif e in QUEUE_TERMINAL: QUEUE.update(q, state='failed', lastError=queue_err(e, res.get('reason') or ''))
+            else: QUEUE.failed_attempt(q, e or 'start-failed', res.get('reason') or 'The render could not start.', retry_s=300)
+        # 5. feed Claude: one build step, never past an open question (launching would bury it)
+        q = QUEUE.next('build') if not (RUNNER.busy or RUNNER.waiting) else None
+        if q:
+            QUEUE.start(q)
+            try: code, res = build_next(q['deck'], sid=q['slide'])
+            except Exception as e:
+                log('queue: build_next crashed', repr(e)); code, res = 500, {'error': 'start-failed'}
+            e = res.get('error')
+            if code == 200: pass
+            elif e == 'built': QUEUE.update(q, state='done')
+            elif e in QUEUE_BUSY: QUEUE.unstart(q, 15)
+            elif e in QUEUE_TERMINAL: QUEUE.update(q, state='failed', lastError=queue_err(e, res.get('reason') or ''))
+            else: QUEUE.failed_attempt(q, e or 'start-failed', res.get('reason') or 'Claude could not start.', retry_s=300)
+        queue_edge()
+
+
+def queue_edge():
+    """The drain edge: when the queue stops moving, ONE event says what happened. That is the whole overnight report."""
+    moving = queue_moving()
+    if moving and not QUEUE_EDGE['active']: QUEUE_EDGE.update(active=True, since=time.time())
+    if moving or not QUEUE_EDGE['active']: return
+    QUEUE_EDGE['active'] = False
+    since = QUEUE_EDGE['since']
+    ended = [j for j in QUEUE.find(states=('done', 'failed')) if (j.get('endedAt') or 0) >= since]
+    asking = QUEUE.find(states=('asking',))
+    held = [j for j in QUEUE.find(stage='build', states=('pending',))]
+    if not ended and not asking: return
+    built = sum(1 for j in ended if j['state'] == 'done' and j['stage'] == 'build')
+    rendered = sum(1 for j in ended if j['state'] == 'done' and j['stage'] == 'render')
+    failed = [j for j in ended if j['state'] == 'failed']
+    parts = ([f'{built} slide{"s" if built != 1 else ""} built'] if built else []) + ([f'{rendered} rendered'] if rendered else [])
+    text = 'The queue has finished' + (': ' + ', '.join(parts) + '.' if parts else '.')
+    for j in failed[:4]:
+        text += f' Slide {queue_n(j["deck"], j["slide"])} failed: {((j.get("lastError") or {}).get("reason") or "no reason was given").rstrip(".")}.'
+    for j in asking[:2]:
+        text += f' Slide {queue_n(j["deck"], j["slide"])} is waiting for your answer' + (f' ({len(held)} more after it).' if held else '.')
+    QUEUE.last_drain = {'at': time.time(), 'since': since, 'built': built, 'rendered': rendered, 'failed': len(failed), 'asking': len(asking)}
+    QUEUE.save()
+    deck = (failed or asking or ended)[0]['deck']
+    RUNNER.add('status', text, code='queue-drained', deck=deck, conv='deck', **{k: v for k, v in QUEUE.last_drain.items() if k != 'at'})
+    log('queue drained', QUEUE.last_drain)
+
+
+def queue_worker():
+    while True:
+        try: queue_tick()
+        except Exception as e: log('queue tick failed', repr(e), traceback.format_exc(limit=-3).replace(chr(10), ' | '))
+        time.sleep(QUEUE_TICK_S)
+
+
+def queue_view(deck_id):
+    """The queue block of plan_payload: this deck's jobs, and a wall-clock finish time for the whole queue. The two lanes
+    run side by side, so the queue is done when the longer of the two is."""
+    if not QUEUE: return None
+    now, claude, blender = time.time(), 0.0, 0.0
+    for j in sorted(QUEUE.find(states=('pending', 'running')), key=lambda j: (j['state'] != 'running', j['order'])):
+        wait = max(0.0, (j.get('notBefore') or 0) - now)          # a usage-limit wait or a retry back-off starts later
+        if j['stage'] == 'build':
+            claude = max(claude, wait) + (SLIDE_WRITE_S if j['state'] == 'pending' else max(30, SLIDE_WRITE_S - (now - (j.get('startedAt') or now))))
+        else:
+            live = BLENDER.live(j['deck'], j['slide']) if BLENDER and j['state'] == 'running' else None
+            blender = max(blender, wait) + float((live or {}).get('etaS') or j.get('est') or 600)
+    rec = load_deck(deck_id) or {}
+    rows, rank = [], {'running': 0, 'asking': 1, 'pending': 2, 'failed': 3, 'done': 4}
+    for j in sorted(QUEUE.find(deck_id, states=None), key=lambda j: (rank.get(j['state'], 5), j['order'])):
+        n, sl = bl_slide(rec, j['slide'])
+        rows.append({**{k: j.get(k) for k in ('id', 'slide', 'stage', 'state', 'attempts', 'lastError', 'res', 'est', 'framesDone', 'notBefore')},
+                     'n': n, 'title': (sl or {}).get('title')})
+    work = claude or blender
+    return {'jobs': rows, 'paused': deck_id in QUEUE.paused, 'moving': queue_moving(),
+            'finishAt': int((now + max(claude, blender)) * 1000) if work else None, 'lastDrain': QUEUE.last_drain}
+
+
+def queue_action(deck_id, body):
+    """POST /api/decks/<id>/queue {action: add|remove|move|pause|resume|retry, ...}. Returns the plan payload."""
+    a = body.get('action')
+    rec = load_deck(deck_id)
+    if not rec: return 404, {'ok': False, 'error': 'no-deck'}
+    if a == 'add':
+        items = body.get('items') if isinstance(body.get('items'), list) else []
+        ids = [s['id'] for s in plan_slides(rec)]
+        n = 0
+        for it in items:
+            if not isinstance(it, dict) or it.get('slide') not in ids or it.get('stage') not in lumi_queue.STAGES: continue
+            res, est = None, SLIDE_WRITE_S
+            if it['stage'] == 'render':
+                res = it.get('res') if it.get('res') in (720, 1080) else None
+                full = bl_estimates(rec, it['slide'], BLENDER)['full']
+                est = (full.get('still') or full.get(str(res or BLENDER_DEFAULTS['animHeight'])) or {}).get('seconds')
+            QUEUE.add(deck_id, it['slide'], it['stage'], res=res, est=est)
+            n += 1
+        if not n: return 400, {'ok': False, 'error': 'nothing-to-add'}
+        QUEUE.pause(deck_id, False)
+    elif a in ('pause', 'resume'):
+        QUEUE.pause(deck_id, a == 'pause')
+    else:
+        q = QUEUE.get(body.get('job'))
+        if not q or q['deck'] != deck_id: return 404, {'ok': False, 'error': 'no-job'}
+        if a == 'remove':
+            QUEUE.remove(q['id'])              # first, so the stop below finds no job to settle
+            if q['state'] == 'running' and q['stage'] == 'render': BLENDER.cancel(deck_id, q['slide'], 'full')
+            elif q['state'] == 'running' and RUNNER.running and RUNNER.run and RUNNER.run.kind == 'build-slide' \
+                    and RUNNER.deck_id == deck_id and (RUNNER.run.meta or {}).get('slide') == q['slide']:
+                RUNNER.stop()
+        elif a == 'move':
+            QUEUE.move(q['id'], -1 if body.get('step') == -1 else 1)
+        elif a == 'retry':
+            if q['state'] != 'failed': return 409, {'ok': False, 'error': 'not-failed'}
+            QUEUE.update(q, state='pending', attempts=0, notBefore=0, endedAt=None)
+            QUEUE.pause(deck_id, False)
+        else:
+            return 400, {'ok': False, 'error': 'bad-action'}
+    threading.Thread(target=queue_tick, daemon=True).start()      # start at once, not at the next tick
+    return 200, plan_payload(load_deck(deck_id))
 
 
 def bl_change_message(rec, sid, text):
@@ -5967,6 +6303,9 @@ def pin_engine(rec, sid, eng):
     """Write the engine Lumi just resolved into the plan (contract section 2), so the slide is BUILT and FINALIZED with the same
     engine it was planned with. Without this the engine was recomputed from the look and from whether Blender happens to be
     installed, so it could change under a deck that was already built. Returns the (possibly reloaded) record."""
+    if eng.get('note') == 'blender-missing':          # batch 2 P1: the owner's rule - fall back to three.js AND SAY SO
+        bl_event(rec['id'], sid, 'blender-missing', f'Slide {bl_slide(rec, sid)[0]}: Blender is not installed, so this figure '
+                 'is drawn in live 3D (three.js) instead of a studio render. Repair Lumi from the loading screen to get it.')
     if not eng.get('engine') or eng.get('chosen'): return rec
     plan = rec.get('plan')
     if not isinstance(plan, dict): return rec
@@ -6073,6 +6412,186 @@ def bl_pump(deck_id):
     return False
 
 
+# ---------------------------------------------------------------- P3: the camera the person chooses
+# Claude picked the angle and nobody was ever asked. These four are rendered from HIS object, at preview quality, in one
+# Blender launch, and he clicks one. A diagram would say what "three-quarter" means; only a render of this object says
+# whether three-quarter is right FOR IT.
+#
+# 'current' is always first - it is the angle the scene itself set, so the choice is a comparison and not a leap. The
+# other three are the ones that differ most from a typical three-quarter: a tighter, lower hero; a flat profile; and a
+# view from above. About 10 s each, and one 4.5 s startup for all of them.
+BL_CAM_VIEWS = ('current', 'hero', 'side', 'high')
+BL_CAM_LABEL = {'current': 'as it is now', 'hero': 'lower, closer', 'side': 'from the side', 'high': 'from above',
+                'three-quarter': 'three-quarter', 'front': 'straight on', 'top': 'from the top', 'low': 'low down'}
+
+
+def bl_cam_file(deck_id, sid):
+    return bl_dir(deck_id, sid) / 'camera.json'
+
+
+def bl_cam_read(deck_id, sid):
+    """The angle he chose for this slide, or None. lumi_bpy.camera() reads the same file at render time."""
+    try:
+        d = json.loads(bl_cam_file(deck_id, sid).read_text(encoding='utf-8'))
+        return d if isinstance(d, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def bl_scene_only_hash(deck_id, sid):
+    """scene.py alone. The chooser is keyed to THIS, not to bl_hash: picking an angle writes camera.json and so moves
+    bl_hash by design, and the four candidates would otherwise call themselves stale the instant he used them."""
+    try:
+        return hashlib.sha1((bl_dir(deck_id, sid) / 'scene.py').read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def bl_cam_sheet(deck_id, sid):
+    """The candidates on disk right now. Read from the folder, not from the deck record, so the thumbnails appear one by
+    one while Blender is still working on the rest - lumi_bpy rewrites the manifest after every candidate."""
+    d = bl_dir(deck_id, sid) / 'cameras'
+    try:
+        man = json.loads((d / 'cameras.json').read_text(encoding='utf-8'))
+        views = man.get('views') if isinstance(man, dict) else None
+    except (OSError, ValueError):
+        views = None
+    out = []
+    for key in BL_CAM_VIEWS:
+        png, v = d / f'cam-{key}.png', (views or {}).get(key)
+        if not (isinstance(v, dict) and png.is_file()): continue
+        out.append({'view': key, 'label': BL_CAM_LABEL.get(key, key), 'pose': v.get('pose'),
+                    'url': bl_url(deck_id, sid, f'cameras/cam-{key}.png') + '?t=' + str(int(png.stat().st_mtime))})
+    return out
+
+
+def bl_cam_view(rec, sid):
+    """The chooser as the page sees it: what has been photographed, what is still coming, and what he already chose."""
+    deck_id = rec['id']
+    st = bl_state(rec, sid)
+    saved = st.get('cameras') if isinstance(st.get('cameras'), dict) else {}
+    live = next((j for j in (BLENDER.jobs() if BLENDER else []) if j.deck_id == deck_id and j.sid == sid and j.kind == 'cameras'), None)
+    got = bl_cam_sheet(deck_id, sid)
+    chosen = bl_cam_read(deck_id, sid) or {}
+    return {'status': 'rendering' if live else (saved.get('status') or ('ready' if got else 'none')),
+            'wanted': len(saved.get('wanted') or BL_CAM_VIEWS), 'candidates': got,
+            'chosen': chosen.get('view') or ('current' if got else None), 'chosenAt': chosen.get('at'),
+            'job': live.info() if live else None, 'error': (saved.get('error') or {}).get('reason'),
+            # the sheet was photographed from THIS scene.py; a later edit by Claude makes its pictures a lie
+            'stale': bool(got) and saved.get('sceneHash') not in (None, bl_scene_only_hash(deck_id, sid))}
+
+
+def bl_cameras(deck_id, sid, force=False):
+    """Render the candidates. Idempotent: a sheet that is already there for this scene is not rendered again, so the card
+    can ask for it the moment a scene appears without two open tabs paying for it twice."""
+    rec = load_deck(deck_id)
+    if not rec: return 404, {'ok': False, 'error': 'no-deck'}
+    n, slide = bl_slide(rec, sid)
+    if not n: return 404, {'ok': False, 'error': 'no-slide'}
+    if slide_engine(rec, slide).get('engine') != 'blender':
+        # a live-3D slide has no Blender scene, so there is no object here to photograph (docs/STATUS-P3.md says why)
+        return 409, {'ok': False, 'error': 'not-blender',
+                     'reason': 'This slide is drawn live, not rendered, so it has no camera angles to look at.'}
+    if not find_blender(): return 503, {'ok': False, 'error': 'no-blender', 'reason': bl_reason('no-blender')}
+    if not (bl_dir(deck_id, sid) / 'scene.py').is_file(): return 404, {'ok': False, 'error': 'no-scene', 'reason': bl_reason('no-scene')}
+    if BLENDER and any(j.deck_id == deck_id and j.sid == sid and j.kind == 'cameras' for j in BLENDER.jobs()):
+        return 200, {'ok': True, 'already': True, 'cameras': bl_cam_view(rec, sid)}
+    sh = bl_scene_only_hash(deck_id, sid)
+    saved = bl_state(rec, sid).get('cameras') or {}
+    if not force and saved.get('sceneHash') == sh and len(bl_cam_sheet(deck_id, sid)) >= len(BL_CAM_VIEWS):
+        return 200, {'ok': True, 'already': True, 'cameras': bl_cam_view(rec, sid)}
+    job = BlenderJob(deck_id, sid, 'cameras', ['--cameras', ','.join(BL_CAM_VIEWS)], bl_dir(deck_id, sid) / 'cameras',
+                     {'views': list(BL_CAM_VIEWS), 'sceneHash': sh, 'res': BLENDER_DEFAULTS['previewRes']})
+    # four preview frames behind one startup: the preview estimate is the per-frame cost, measured the same way
+    job.est = int((bl_estimates(rec, sid, BLENDER)['preview'].get('seconds') or 12) * len(BL_CAM_VIEWS))
+    set_bl(deck_id, sid, cameras={'status': 'rendering', 'sceneHash': sh, 'wanted': list(BL_CAM_VIEWS), 'at': now_iso()})
+    bl_event(deck_id, sid, 'cameras-requested', f'Lumi is photographing slide {n} from {len(BL_CAM_VIEWS)} angles.',
+             job=job.id, estimate=job.est)
+    BLENDER.submit(job)
+    return 200, {'ok': True, 'job': job.info(), 'cameras': bl_cam_view(load_deck(deck_id), sid)}
+
+
+def bl_cameras_run(R, job):
+    """The 'cameras' job body. It lives out here rather than inside BlenderRenderer: the queue, the two lanes and the one
+    job at a time on the GPU are P2's, and this borrows them (_exec, _open_log, _classify) without adding to them."""
+    rec = load_deck(job.deck_id)
+    if not rec or job.cancelled: return
+    n, _ = bl_slide(rec, job.sid)
+    scene = bl_dir(job.deck_id, job.sid) / 'scene.py'
+    if not scene.is_file(): return bl_cameras_fail(job, 'no-scene')
+    if not find_blender(): return bl_cameras_fail(job, 'no-blender')
+    job.started = time.time()
+    job.cpu = R.running.get('full') is not None          # four thumbnails never wait behind an hour-long render
+    out = Path(job.out)
+    shutil.rmtree(out, ignore_errors=True)               # a half-finished older sheet must not read as this one
+    out.mkdir(parents=True, exist_ok=True)
+    set_bl(job.deck_id, job.sid, job=dict(job.info(), state='running'))
+    with R._open_log(job, 'cameras') as logf:
+        rc, tail, why = R._exec(job, scene, out, job.args, job.cpu, logf)
+        if not job.cancelled and why is None and rc != 0 and not job.cpu:
+            logf.write('# GPU run failed: trying again on the CPU\n'); logf.flush()
+            job.cpu = job.fallback = True
+            job.done_frames = job.sample = 0; job.progress = 0.0
+            rc, tail, why = R._exec(job, scene, out, job.args, True, logf)
+    if job.cancelled:
+        set_bl(job.deck_id, job.sid, cameras=None, job=None)
+        return
+    got = bl_cam_sheet(job.deck_id, job.sid)
+    if not got:
+        return bl_cameras_fail(job, R._classify(tail, rc, why)[0] if (why or rc != 0) else 'no-output')
+    # partial is worth showing: three good angles beat a message saying the fourth did not work
+    set_bl(job.deck_id, job.sid, job=None, cameras={'status': 'ready', 'sceneHash': job.meta.get('sceneHash'),
+           'wanted': job.meta.get('views'), 'got': [c['view'] for c in got], 'at': now_iso(),
+           'wall_s': round(time.time() - job.started, 2), 'device': job.device or ('CPU' if job.cpu else None)})
+    bl_event(job.deck_id, job.sid, 'cameras-done',
+             f'Slide {n} from {len(got)} angles. Which one do you want?' if len(got) > 1
+             else f'Lumi could photograph slide {n} from only one angle.', job=job.id, count=len(got))
+
+
+def bl_cameras_fail(job, code):
+    set_bl(job.deck_id, job.sid, job=None,
+           cameras={'status': 'failed', 'error': {'code': code, 'reason': bl_reason(code)}, 'at': now_iso()})
+    log('blender camera sheet failed', job.deck_id, job.sid, code)
+
+
+def bl_camera_pick(deck_id, sid, body):
+    """He chose an angle. Write camera.json beside the scene, and let the usual machinery say what it costs.
+
+    A camera choice IS a change of scene - the picture moves - so bl_hash folds camera.json in and an approval made at
+    the old angle goes stale here exactly as it does when Claude edits the scene. Nothing is thrown away: a finished
+    render stays on the slide until a new one replaces it (bl_pick), and a new preview starts at once, so what he judges
+    next is the angle he picked rather than a thumbnail of it."""
+    rec = load_deck(deck_id)
+    if not rec: return 404, {'ok': False, 'error': 'no-deck'}
+    n, _ = bl_slide(rec, sid)
+    if not n: return 404, {'ok': False, 'error': 'no-slide'}
+    if bl_state(rec, sid).get('status') in ('previewing', 'changing', 'rendering'):
+        return 409, {'ok': False, 'error': 'busy', 'reason': 'Wait for the render that is running to finish first.'}
+    want = str((body or {}).get('view') or '').strip().lower()
+    cands = {c['view']: c for c in bl_cam_sheet(deck_id, sid)}
+    if want not in cands: return 404, {'ok': False, 'error': 'no-angle', 'reason': 'That angle has not been photographed.'}
+    was = (bl_cam_read(deck_id, sid) or {}).get('view') or 'current'
+    f = bl_cam_file(deck_id, sid)
+    if want == 'current':
+        # 'current' IS the scene's own camera, so the honest way to choose it is to have no override at all - that way a
+        # later edit by Claude is still free to re-frame. Picking it after another angle is a delete, not a write.
+        try: f.unlink()
+        except OSError: pass
+    else:
+        pose = cands[want].get('pose') or {}
+        try:
+            write_atomic(f, json.dumps({'view': want, 'azimuth': pose.get('azimuth'), 'elevation': pose.get('elevation'),
+                                        'fov': pose.get('fov'), 'pose': pose, 'at': now_iso()}, indent=1))
+        except OSError as e:
+            return 500, {'ok': False, 'error': 'not-saved',
+                         'reason': locked_msg('the camera') if file_locked(e) else 'The angle could not be saved.'}
+    if was == want: return 200, {'ok': True, 'unchanged': True, 'view': bl_view(load_deck(deck_id), sid)}
+    bl_event(deck_id, sid, 'camera-chosen', f'You chose the “{BL_CAM_LABEL.get(want, want)}” angle for slide {n}.', view=want)
+    code, res = BLENDER.preview(deck_id, sid, reason='camera') if BLENDER else (503, {})
+    if code != 200: log('camera chosen but the new preview could not start', deck_id, sid, res.get('error'))
+    return 200, {'ok': True, 'view': bl_view(load_deck(deck_id), sid), 'preview': res if code == 200 else None}
+
+
 def bl_approve(deck_id, sid, body):
     rec = load_deck(deck_id)
     n, _ = bl_slide(rec, sid)
@@ -6101,6 +6620,8 @@ def bl_post(deck_id, sid, action, body):
     if action == 'change': return bl_change(deck_id, sid, body)
     if action == 'approve': return bl_approve(deck_id, sid, body)
     if action == 'render': return BLENDER.full(deck_id, sid, body.get('res'))
+    if action == 'cameras': return bl_cameras(deck_id, sid, force=bool((body or {}).get('again')))   # P3
+    if action == 'camera': return bl_camera_pick(deck_id, sid, body)                                 # P3
     if action == 'defer':                     # batch 3: "skip for now, keep the preview" (finalize still refuses until it is rendered)
         on = body.get('on', True) is not False
         st = bl_state(rec, sid)
@@ -7141,17 +7662,17 @@ class H(BaseHTTPRequestHandler):
         if path == '/api/finalize/cancel': return self.send(*FINALIZER.cancel())
         if path == '/api/blender/benchmark': return self.send(*BLENDER.bench(force=bool(body.get('force'))))
         m = BLENDER_ROUTE.match(path)
-        if m and m.group(2) and m.group(3) in ('preview', 'change', 'approve', 'render', 'cancel', 'defer'):
+        if m and m.group(2) and m.group(3) in ('preview', 'change', 'approve', 'render', 'cancel', 'defer', 'cameras', 'camera'):
             return self.send(*bl_post(m.group(1), m.group(2), m.group(3), body))
         m = DECK_ROUTE.match(path)
         if m and m.group(2) == 'text':
             return self.send(*edit_text(m.group(1), body.get('editId'), body.get('text')))
         if m and m.group(2) in ('plan', 'plan/answer', 'plan/picture', 'plan/suggest', 'plan/slide/add', 'plan/slide/save',
-                                'plan/slide/remove', 'build', 'finalize', 'pptx', 'interview', 'interview/answer'):
+                                'plan/slide/remove', 'build', 'queue', 'finalize', 'pptx', 'interview', 'interview/answer'):
             if not load_deck(m.group(1)): return self.send(404, {'ok': False, 'error': 'no-deck'})
             fn = {'interview': interview_start, 'interview/answer': interview_answer,
                   'plan': save_plan, 'plan/answer': answer_doubt, 'plan/picture': change_picture,
-                  'plan/suggest': suggest_slide, 'build': build_action,
+                  'plan/suggest': suggest_slide, 'build': build_action, 'queue': queue_action,
                   'plan/slide/add': plan_slide_add, 'plan/slide/save': plan_slide_save, 'plan/slide/remove': plan_slide_remove,
                   'finalize': lambda d, b: FINALIZER.start(d, light=bool(b.get('light')), accept_stale=bool(b.get('acceptStale'))), 'pptx': lambda d, b: PPTX.start(d)}[m.group(2)]
             return self.send(*fn(m.group(1), body))
@@ -7376,7 +7897,7 @@ class H(BaseHTTPRequestHandler):
 #                          3 days is ever removed. Files directly in "4 - Your slides" are never touched.
 #   logs/form_server.log   rotated at 2 MB (one .1 copy kept)
 RETENTION = {'orphanBuildDays': 3, 'tempDays': 7, 'cacheDays': 30, 'orphanWorkDays': 7, 'leftoverDays': 1,
-             'olderVersionsKeep': 3, 'olderVersionsMinDays': 3, 'shotFoldersKeep': 20}
+             'olderVersionsKeep': 3, 'olderVersionsMinDays': 3, 'shotFoldersKeep': 20, 'framesDays': 14}
 RETENTION.update({k: v for k, v in (CFG.get('retention') or {}).items() if k in RETENTION and isinstance(v, (int, float))})
 REAP_LOCK = threading.Lock()
 
@@ -7445,6 +7966,12 @@ def reap(dry=False, now=None):
                     # Part D depends on it: blender/<sid>/scene.py, the full renders and timing/ must still be there when the
                     # baked pipeline renders the same subjects for the A/B. Only whole folders of DELETED decks go (above),
                     # and a deleted deck's folder is moved to the bin first, never erased.
+                    # P2, the one exception: frames of an animation that never finished are kept for resuming, not for
+                    # ever. Untouched for framesDays, no queue job and no Blender job for that slide: they go.
+                    for fr in (d / 'blender').glob('*/frames'):
+                        if fr.is_dir() and _age_days(fr, now) > R['framesDays'] and not (BLENDER and BLENDER.busy_with(d.name)) \
+                                and not (QUEUE and QUEUE.find(d.name, fr.parent.name, 'render')):
+                            _drop(fr, report, 'frames of an animation that was never finished', dry)
                     for f in d.iterdir():
                         if f.name in ('blender', 'timing'): continue
                         if (f.name.startswith('.finalize-') or f.name.startswith('final.part.') or f.name.endswith('.tmp')) \
@@ -7491,14 +8018,17 @@ def reaper(srv):
     step = min(30.0, max(0.5, IDLE_LIMIT / 4))
     while True:
         time.sleep(step)
-        if RUNNER.busy or FINALIZER.status().get('running') or (BLENDER and BLENDER.busy):
-            last_hit = time.time(); continue   # never stop while Claude, a finalize or a Blender render is working
+        if RUNNER.busy or FINALIZER.status().get('running') or (BLENDER and BLENDER.busy) or queue_moving():
+            # never stop while Claude, a finalize or a Blender render is working, or while the overnight queue still has
+            # work that will move by itself (a usage-limit wait included). A drained queue - or one held only by an open
+            # question - lets the server exit normally: no stay-awake, the person keeps the machine awake (P2).
+            last_hit = time.time(); continue
         if time.time() - last_hit > IDLE_LIMIT:
             srv.shutdown(); return
 
 
 def main():
-    global PORT, RUNNER, BLENDER
+    global PORT, RUNNER, BLENDER, QUEUE
     args = sys.argv[1:]
     if '--port' in args:
         PORT = int(args[args.index('--port') + 1])
@@ -7507,7 +8037,9 @@ def main():
         sys.stderr = sys.stdout = open(LOGS / 'form_server.log', 'a', encoding='utf-8', buffering=1)
     RUNNER = Runner()
     BLENDER = BlenderRenderer()
-    BLENDER.reconcile()
+    QUEUE = lumi_queue.Queue(AURA / 'queue.json', write_atomic, log)
+    crashed = {(j['deck'], j['slide']) for j in QUEUE.recover() if j['state'] == 'failed'}
+    BLENDER.reconcile(crashed)
     srv, wanted = None, PORT
     # W-07: the configured port first, then the next ones; the port really used goes to .aura/temp/port for the launchers.
     # An explicit --port (tests, tools) is never moved: a second server on that port is an error, not a surprise.
@@ -7526,6 +8058,7 @@ def main():
     try: write_atomic(TEMP / 'port', str(PORT))
     except OSError as e: log('could not write the port file', e)
     threading.Thread(target=reaper, args=(srv,), daemon=True).start()
+    threading.Thread(target=queue_worker, daemon=True).start()     # after the port is ours: a second server never feeds
     if not os.environ.get('AURA_NO_REAP'): reap_later()
     print(f'Lumi on http://127.0.0.1:{PORT}/  (home: {AURA})', flush=True)
     try:

@@ -361,6 +361,316 @@
     });
   }
 
+  /* ================ projected labels: a label never covers the figure (LOOK-BASE 4.4) ================
+     One placement engine for all five look engines, the Blender path below and the baked player. A caller
+     hands over three things — the holder, each label's anchor point in holder pixels, and an occupancy grid
+     saying where the picture's subject is — and this puts every label in clear space OUTSIDE that subject
+     and draws a short leader back to its anchor.
+
+     Deterministic by contract. The placement of a frame depends only on that frame's arguments, never on
+     the previous frame, the clock or Math.random(), because a recorded loop has to seek to the same picture
+     every time (capture contract, 1 above). That rules out hysteresis and easing. What stops a label
+     flickering between two sides mid-loop instead is that the cost landscape is smooth and the author's own
+     data-align hint outweighs a few pixels of leader.
+
+     The ladder when the figure leaves no clear space (the "nowhere to go" case):
+       1. a RING slot beside the anchor, the preferred direction first                 — the normal result
+       2. a RAIL slot, stacked in the free margin between the figure and the frame edge, leader across
+       3. the least-covered slot of them all, plus data-labels-crowded on the holder. deck_check.js calls
+          that an error, because the fix belongs to the slide — fewer labels, or a smaller figure — and a
+          placer that silently gave up would be the clamp-onto-the-subject bug all over again. */
+
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const LBL_COLS = 56;                 // occupancy resolution across the holder; rows follow the aspect
+
+  function occGrid(w, h) {
+    const cols = LBL_COLS, rows = Math.max(6, Math.round(cols * (h || 1) / (w || 1)));
+    const cell = new Uint8Array(cols * rows);
+    const g = {
+      w, h, cols, rows, cell, filled: 0, box: null,
+      addRect(x, y, rw, rh) {
+        if (!(rw > 0) || !(rh > 0)) return;
+        const c0 = Math.max(0, Math.floor(x / w * cols)), c1 = Math.min(cols - 1, Math.ceil((x + rw) / w * cols) - 1);
+        const r0 = Math.max(0, Math.floor(y / h * rows)), r1 = Math.min(rows - 1, Math.ceil((y + rh) / h * rows) - 1);
+        if (c1 < c0 || r1 < r0) return;
+        for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const i = r * cols + c; if (!cell[i]) { cell[i] = 1; g.filled++; } }
+        const b = g.box;
+        if (!b) g.box = { x0: x, y0: y, x1: x + rw, y1: y + rh };
+        else { b.x0 = Math.min(b.x0, x); b.y0 = Math.min(b.y0, y); b.x1 = Math.max(b.x1, x + rw); b.y1 = Math.max(b.y1, y + rh); }
+      },
+      // what share of a rectangle sits on the subject, 0 (clear) to 1 (wholly covered)
+      coverage(x, y, rw, rh) {
+        if (!g.filled) return 0;
+        const c0 = Math.max(0, Math.floor(x / w * cols)), c1 = Math.min(cols - 1, Math.ceil((x + rw) / w * cols) - 1);
+        const r0 = Math.max(0, Math.floor(y / h * rows)), r1 = Math.min(rows - 1, Math.ceil((y + rh) / h * rows) - 1);
+        if (c1 < c0 || r1 < r0) return 0;
+        let on = 0, n = 0;
+        for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { n++; if (cell[r * cols + c]) on++; }
+        return n ? on / n : 0;
+      },
+      // the same question along a line: how much of a leader runs over the subject
+      lineCoverage(x0, y0, x1, y1) {
+        if (!g.filled) return 0;
+        const steps = Math.max(2, Math.min(24, Math.round(Math.hypot(x1 - x0, y1 - y0) / 12)));
+        let on = 0;
+        for (let i = 1; i < steps; i++) {
+          const x = x0 + (x1 - x0) * i / steps, y = y0 + (y1 - y0) * i / steps;
+          const c = Math.floor(x / w * cols), r = Math.floor(y / h * rows);
+          if (c >= 0 && r >= 0 && c < cols && r < rows && cell[r * cols + c]) on++;
+        }
+        return on / Math.max(1, steps - 1);
+      },
+    };
+    return g;
+  }
+
+  /* occupancy from the live scene: the screen-space box of every mesh that is part of the subject.
+     Excluded, in this order: anything the author marked auraFigure === false; the floors, backdrops and
+     fake-shadow sprites every look already marks userData.shadow === false; anything straddling the camera
+     plane (its projection is meaningless); and anything that fills the frame, which is scenery by definition.
+     A projected box is coarser than a silhouette, and deliberately so — it errs towards pushing the label
+     further out, which is the side of the rule the owner cares about. */
+  function sceneGrid(THREE, root, camera, w, h) {
+    const g = occGrid(w, h);
+    if (!THREE || !root || !camera) return g;
+    const v = new THREE.Vector3(), bb = new THREE.Box3();
+    /* Force the world matrices. three.js only refreshes them inside renderer.render(), and the label pass runs
+       BEFORE the render — on the first frame they are still identity, which put the whole subject at the origin
+       and made the grid report clear space exactly where the figure was about to be drawn. */
+    root.updateMatrixWorld(true);
+    root.traverse(o => {
+      if (!o.visible) return;
+      const ud = o.userData || {};
+      if (ud.auraFigure === false) return;
+      if (ud.auraFigure !== true) {
+        if (!o.isMesh) return;
+        if (ud.shadow === false) return;
+        if (o.material && o.material.isShadowMaterial) return;      // a shadow-catcher floor is not the subject
+      }
+      const geo = o.geometry; if (!geo) return;
+      if (!geo.boundingBox) { try { geo.computeBoundingBox(); } catch (e) { return; } }
+      if (!geo.boundingBox) return;
+      bb.copy(geo.boundingBox).applyMatrix4(o.matrixWorld);
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, behind = 0;
+      for (let i = 0; i < 8; i++) {
+        v.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z);
+        v.project(camera);
+        if (v.z > 1) behind++;
+        const sx = (v.x + 1) / 2 * w, sy = (1 - v.y) / 2 * h;
+        if (sx < x0) x0 = sx; if (sx > x1) x1 = sx; if (sy < y0) y0 = sy; if (sy > y1) y1 = sy;
+      }
+      if (behind) return;
+      x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(w, x1); y1 = Math.min(h, y1);
+      const rw = x1 - x0, rh = y1 - y0;
+      if (!(rw > 0 && rh > 0)) return;
+      if (rw * rh > 0.62 * w * h) return;
+      g.addRect(x0, y0, rw, rh);
+    });
+    return g;
+  }
+
+  /* where an object-fit: contain picture actually lands inside its holder. The Blender anchors are
+     percentages of the FRAME, and the frame is letterboxed when its aspect is not the holder's. */
+  function containBox(iw, ih, w, h) {
+    if (!(iw > 0) || !(ih > 0)) return { x: 0, y: 0, w, h };
+    const s = Math.min(w / iw, h / ih), dw = iw * s, dh = ih * s;
+    return { x: (w - dw) / 2, y: (h - dh) / 2, w: dw, h: dh };
+  }
+
+  /* occupancy from the picture itself: the Blender path has no scene, only an <img> or a <video>, so the
+     silhouette is "every pixel that is not the background". The render's background IS the slide colour by
+     contract (docs/blender-contract.md), and the outermost ring of the frame is background by construction,
+     so the reference colour is read from there rather than assumed. This is the real silhouette, not a box. */
+  const PIC_COLS = 64;
+  let picCanvas = null;
+  function pictureGrid(media, w, h) {
+    const g = occGrid(w, h);
+    const iw = media && (media.naturalWidth || media.videoWidth) || 0;
+    const ih = media && (media.naturalHeight || media.videoHeight) || 0;
+    if (!iw || !ih) return g;
+    const cols = PIC_COLS, rows = Math.max(6, Math.round(cols * ih / iw));
+    const cv = picCanvas || (picCanvas = document.createElement('canvas'));
+    cv.width = cols; cv.height = rows;
+    let d;
+    try {
+      const cx = cv.getContext('2d', { willReadFrequently: true });
+      cx.clearRect(0, 0, cols, rows);
+      cx.drawImage(media, 0, 0, cols, rows);
+      d = cx.getImageData(0, 0, cols, rows).data;
+    } catch (e) { return g; }          // tainted or not yet decodable: no silhouette, the hint alone places it
+    // reference = the median of the border ring
+    const rs = [], gs = [], bs = [];
+    for (let c = 0; c < cols; c++) for (const r of [0, rows - 1]) { const k = (r * cols + c) * 4; rs.push(d[k]); gs.push(d[k + 1]); bs.push(d[k + 2]); }
+    for (let r = 1; r < rows - 1; r++) for (const c of [0, cols - 1]) { const k = (r * cols + c) * 4; rs.push(d[k]); gs.push(d[k + 1]); bs.push(d[k + 2]); }
+    const mid = a => { a.sort((p, q) => p - q); return a[a.length >> 1]; };
+    const ref = [mid(rs), mid(gs), mid(bs)];
+    const fit = containBox(iw, ih, w, h), cw = fit.w / cols, ch = fit.h / rows;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const k = (r * cols + c) * 4;
+      if (d[k + 3] < 24) continue;      // transparent: the holder's own background shows through
+      const diff = Math.abs(d[k] - ref[0]) + Math.abs(d[k + 1] - ref[1]) + Math.abs(d[k + 2] - ref[2]);
+      if (diff > 30) g.addRect(fit.x + c * cw, fit.y + r * ch, cw, ch);
+    }
+    return g;
+  }
+
+  /* the holder clipped to the slide's 96 px edge safe zone, in holder pixels */
+  function safeBox(holder, w, h) {
+    const slide = holder.closest('.slide');
+    let ox = 0, oy = 0;
+    if (slide) for (let e = holder; e && e !== slide && slide.contains(e); e = e.offsetParent) { ox += e.offsetLeft; oy += e.offsetTop; }
+    const x0 = Math.max(0, 96 - ox), y0 = Math.max(0, 96 - oy);
+    const x1 = Math.min(w, 1824 - ox), y1 = Math.min(h, 984 - oy);
+    return { x: x0, y: y0, w: Math.max(0, x1 - x0), h: Math.max(0, y1 - y0) };
+  }
+
+  function leaderLayer(holder) {
+    let svg = holder._auraLeaders;
+    if (svg && svg.parentNode === holder) return svg;
+    svg = holder.querySelector('svg.aura-leaders');
+    if (!svg) {
+      svg = document.createElementNS(SVGNS, 'svg');
+      svg.setAttribute('class', 'aura-leaders');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.setAttribute('data-aura-rec-keep', '');     // it is part of the picture, so it is recorded with it
+      holder.appendChild(svg);
+    }
+    holder._auraLeaders = svg;
+    return svg;
+  }
+
+  const RING = [[1, 0], [0.92, -0.38], [0.92, 0.38], [0, -1], [0, 1], [-0.92, -0.38], [-0.92, 0.38], [-1, 0]];
+  const GAPS = [20, 48, 92, 150, 224, 316];
+
+  function rectOverlap(a, b) {
+    const ix = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+    const iy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    return ix > 0 && iy > 0 ? (ix * iy) / Math.max(1, Math.min(a.w * a.h, b.w * b.h)) : 0;
+  }
+  function outsideShare(r, safe) {
+    const ix = Math.max(0, Math.min(r.x + r.w, safe.x + safe.w) - Math.max(r.x, safe.x));
+    const iy = Math.max(0, Math.min(r.y + r.h, safe.y + safe.h) - Math.max(r.y, safe.y));
+    return 1 - (ix * iy) / Math.max(1, r.w * r.h);
+  }
+  // the point of a rectangle's edge nearest p, where a leader should land
+  function edgePoint(r, px, py) {
+    return { x: Math.max(r.x, Math.min(px, r.x + r.w)), y: Math.max(r.y, Math.min(py, r.y + r.h)) };
+  }
+
+  /* place(holder, items, grid, opts)
+       items: [{ el, x, y, show }] — the anchor point in holder pixels, show=false hides the label
+       grid:  an occupancy grid from sceneGrid / pictureGrid, or null to place on the hint alone
+       opts:  { safe, leaders } */
+  function placeLabels(holder, items, grid, opts) {
+    opts = opts || {};
+    const w = holder.offsetWidth, h = holder.offsetHeight;
+    if (!w || !h || !items.length) return;
+    const safe = opts.safe || safeBox(holder, w, h);
+    const wantLeaders = opts.leaders !== false;
+    const live = [];
+    items.forEach(it => {
+      const el = it.el;
+      if (!it.show) { el.style.setProperty('visibility', 'hidden', 'important'); return; }
+      el.style.setProperty('visibility', '', '');
+      el.style.left = '0px'; el.style.top = '0px';
+      live.push(it);
+    });
+    if (!live.length) { const s = holder._auraLeaders; if (s) s.replaceChildren(); holder.removeAttribute('data-labels-crowded'); return; }
+    // measure after every label is at the origin, so one layout pass serves all of them
+    live.forEach(it => { it.ew = it.el.offsetWidth; it.eh = it.el.offsetHeight; });
+
+    holder._auraGrid = grid;                   // the last occupancy, so a test page can see what the placer saw
+    const box = grid && grid.box, taken = [], segs = [];
+    let crowded = false;
+    live.forEach(it => {
+      const ew = it.ew, eh = it.eh, ax = it.x, ay = it.y;
+      /* the author's old hard offset is now a HINT: data-align / data-dx / data-dy say which way the label
+         wanted to sit, and that direction wins every tie, but it can no longer park the label on the figure. */
+      const align = it.el.dataset.align || 'left';
+      const dxh = parseFloat(it.el.dataset.dx), dyh = parseFloat(it.el.dataset.dy);
+      const hx = align === 'center' ? 0 : (isFinite(dxh) ? Math.abs(dxh) : 24) * (align === 'right' ? -1 : 1);
+      const hy = isFinite(dyh) ? dyh : (align === 'center' ? -24 : 0);
+      const hm = Math.hypot(hx, hy) || 1;
+      const pref = [hx / hm, hy / hm];
+      // away from the subject's middle is a better guess than any fixed side
+      let awayX = 0, awayY = 0;
+      if (box) {
+        const cx = (box.x0 + box.x1) / 2, cy = (box.y0 + box.y1) / 2, d = Math.hypot(ax - cx, ay - cy) || 1;
+        awayX = (ax - cx) / d; awayY = (ay - cy) / d;
+      }
+      const cand = [];
+      RING.forEach(d => GAPS.forEach(gap => {
+        const reach = gap + (Math.abs(d[0]) * ew + Math.abs(d[1]) * eh) / 2;
+        cand.push({ x: ax + d[0] * reach - ew / 2, y: ay + d[1] * reach - eh / 2, w: ew, h: eh, d, rail: 0 });
+      }));
+      // rails: the free margin between the subject and the frame edge, at the anchor's own row or column
+      if (box) {
+        const g2 = 24;
+        cand.push({ x: safe.x, y: ay - eh / 2, w: ew, h: eh, d: [-1, 0], rail: 1 });
+        cand.push({ x: safe.x + safe.w - ew, y: ay - eh / 2, w: ew, h: eh, d: [1, 0], rail: 1 });
+        cand.push({ x: ax - ew / 2, y: safe.y, w: ew, h: eh, d: [0, -1], rail: 1 });
+        cand.push({ x: ax - ew / 2, y: safe.y + safe.h - eh, w: ew, h: eh, d: [0, 1], rail: 1 });
+        cand.push({ x: Math.min(safe.x + safe.w - ew, box.x1 + g2), y: ay - eh / 2, w: ew, h: eh, d: [1, 0], rail: 1 });
+        cand.push({ x: Math.max(safe.x, box.x0 - g2 - ew), y: ay - eh / 2, w: ew, h: eh, d: [-1, 0], rail: 1 });
+      }
+      let best = null, bestCost = Infinity;
+      cand.forEach(c => {
+        /* Clamp into the safe box BEFORE scoring, never after. A candidate scored where it wanted to be and then
+           clamped is how a label ends up on the subject: the clamp is a push INWARD, which is a push onto the
+           figure. Scoring the position the label will actually occupy is the whole difference. */
+        c.x = Math.max(safe.x, Math.min(c.x, safe.x + safe.w - ew));
+        c.y = Math.max(safe.y, Math.min(c.y, safe.y + safe.h - eh));
+        const cov = grid ? grid.coverage(c.x, c.y, c.w, c.h) : 0;
+        let cost = cov * 1000 + outsideShare(c, safe) * 700;
+        for (const t of taken) cost += rectOverlap(c, t) * 800;
+        const e = edgePoint(c, ax, ay);
+        if (grid) cost += grid.lineCoverage(ax, ay, e.x, e.y) * 90;
+        /* The weights decide how STABLE a label is over a loop, not just how it looks in one frame. The author's
+           direction has to outweigh leader length by a wide margin: when the two were comparable, a label whose
+           anchor sat near the middle of the frame flipped from one side to the other and back twice a loop, a 650 px
+           jump, because the nearer side kept changing as the camera turned. Length now only orders the slots on the
+           side that was chosen; the side itself changes when that side is actually covered, which is rare. */
+        cost += Math.hypot(e.x - ax, e.y - ay) * 0.12;
+        cost += (1 - (c.d[0] * pref[0] + c.d[1] * pref[1])) * 220;          // the author's hint: the stable choice
+        cost += (1 - (c.d[0] * awayX + c.d[1] * awayY)) * 26;               // outward from the subject
+        cost += c.rail * 30;                                                // a rail is the second choice
+        if (cost < bestCost) { bestCost = cost; best = c; }
+      });
+      // 0.12 is deck_check.js's own threshold for "a label covers the figure", so the runtime flag and the
+      // measured check agree on what counts. A projected box over-reports a silhouette; a few grazing cells are not
+      // a covered figure.
+      if (grid && grid.coverage(best.x, best.y, ew, eh) > 0.12) crowded = true;
+      taken.push(best);
+      it.el.style.transform = 'translate(' + best.x.toFixed(1) + 'px, ' + best.y.toFixed(1) + 'px)';
+      it.el.dataset.placed = '1';
+      if (wantLeaders) {
+        const e = edgePoint(best, ax, ay), len = Math.hypot(e.x - ax, e.y - ay);
+        if (len > 14) {
+          const ux = (e.x - ax) / len, uy = (e.y - ay) / len;
+          segs.push({ x1: ax + ux * 7, y1: ay + uy * 7, x2: e.x - ux * 3, y2: e.y - uy * 3, dx: ax, dy: ay });
+        }
+      }
+    });
+    if (crowded) holder.setAttribute('data-labels-crowded', ''); else holder.removeAttribute('data-labels-crowded');
+    if (!wantLeaders) return;
+    const svg = leaderLayer(holder);
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    const kids = svg.childNodes;
+    while (kids.length > segs.length * 2) svg.removeChild(svg.lastChild);
+    while (kids.length < segs.length * 2) {
+      svg.appendChild(document.createElementNS(SVGNS, 'line'));
+      svg.appendChild(document.createElementNS(SVGNS, 'circle'));
+    }
+    segs.forEach((s, i) => {
+      const ln = kids[i * 2], dot = kids[i * 2 + 1];
+      ln.setAttribute('x1', s.x1.toFixed(1)); ln.setAttribute('y1', s.y1.toFixed(1));
+      ln.setAttribute('x2', s.x2.toFixed(1)); ln.setAttribute('y2', s.y2.toFixed(1));
+      dot.setAttribute('cx', s.dx.toFixed(1)); dot.setAttribute('cy', s.dy.toFixed(1)); dot.setAttribute('r', '5');
+    });
+  }
+
+  window.LumiLabel = { version: '1.0', grid: occGrid, sceneGrid, pictureGrid, containBox, safeBox, place: placeLabels };
+
   /* ---------------- Blender holders: a render that is already a picture or a recorded loop ---------------- */
   function blenderHolders(slide) { return Array.from(slide.querySelectorAll('.bb-blender[data-filled]:not([data-baked])')); }
   function blenderAnchors(h) {
@@ -368,15 +678,43 @@
     try { h._anchors = JSON.parse(h.dataset.anchors || 'null'); } catch (e) { h._anchors = null; }
     return h._anchors;
   }
-  // put every [data-anchor] label at the point recorded with the render (percent of the picture, frame i)
+  // the picture inside the holder right now: the loop's video while it plays, else the still / poster
+  function blenderMedia(h) {
+    const v = h.querySelector('video.bb-blender-video');
+    if (v && !v.paused && v.readyState >= 2 && getComputedStyle(v).display !== 'none') return v;
+    const img = h.querySelector('img.bb-blender-img');
+    return img && img.complete && img.naturalWidth ? img : null;
+  }
+  /* Put every [data-anchor] label beside the point recorded with the render, never on top of it.
+     The recorded point is a percentage of the FRAME, and the frame is object-fit: contain inside the holder,
+     so it is mapped through the letterbox box rather than through the holder (it used to be set straight as
+     a holder percentage, which was already wrong whenever the two aspects differed).
+     The silhouette comes from the picture, read at 64 columns; that costs a canvas read, so it is refreshed
+     a few times a second rather than every frame. The Blender path is never recorded by finalize — it is
+     already a video — so this throttle cannot make a captured loop non-deterministic. */
   function placeBlenderLabels(h, t) {
     const a = blenderAnchors(h); if (!a) return;
     const fps = parseFloat(h.dataset.fps) || 20;
+    const w = h.offsetWidth, hh = h.offsetHeight;
+    if (!w || !hh) return;
+    const media = blenderMedia(h);
+    const fit = media ? LumiLabel.containBox(media.naturalWidth || media.videoWidth, media.naturalHeight || media.videoHeight, w, hh)
+                      : { x: 0, y: 0, w, h: hh };
+    const now = Date.now();
+    if (media && (!h._occ || now - h._occAt > 180 || h._occW !== w || h._occH !== hh)) {
+      h._occ = LumiLabel.pictureGrid(media, w, hh); h._occAt = now; h._occW = w; h._occH = hh;
+    }
+    const items = [];
     h.querySelectorAll('[data-anchor]').forEach(el => {
       const pts = a[el.dataset.anchor]; if (!pts || !pts.length) { el.style.display = 'none'; return; }
+      el.style.display = '';
       const i = pts.length > 1 ? Math.floor(((t || 0) * fps) + 1e-6) % pts.length : 0, p = pts[Math.max(0, i)];
-      el.style.left = p[0] + '%'; el.style.top = p[1] + '%';
+      // a point well off the frame has nothing to point at. lumi_bpy drops the projected z, so a point BEHIND
+      // the camera still arrives as a plausible percentage and cannot be told apart here — see docs/STATUS-P4.md.
+      const show = p[0] > -5 && p[0] < 105 && p[1] > -5 && p[1] < 105;
+      items.push({ el, x: fit.x + p[0] / 100 * fit.w, y: fit.y + p[1] / 100 * fit.h, show });
     });
+    if (items.length) LumiLabel.place(h, items, h._occ || null);
   }
   function blenderVideo(h) { return h.querySelector('video.bb-blender-video'); }
   function playBlender(slide) {
@@ -404,7 +742,29 @@
   async function readyBlender(slide) {       // a still / PDF frame waits until the render is decoded
     await Promise.all(blenderHolders(slide).map(h => { const im = h.querySelector('img.bb-blender-img');
       return im && im.decode ? im.decode().catch(() => {}) : null; }));
+    blenderHolders(slide).forEach(h => placeBlenderLabels(h, 0));
   }
+  /* Place now, and again once the render has actually decoded: the silhouette is read FROM the picture, so a
+     first pass that ran before the <img> was ready would have placed every label on its hint alone. */
+  function refreshBlenderLabels(h) {
+    placeBlenderLabels(h, 0);
+    const im = h.querySelector('img.bb-blender-img');
+    if (im && !(im.complete && im.naturalWidth)) im.addEventListener('load', () => placeBlenderLabels(h, 0), { once: true });
+    const v = h.querySelector('video.bb-blender-video');
+    if (v) v.addEventListener('loadeddata', () => { if (v.paused) placeBlenderLabels(h, 0); }, { once: true });
+  }
+  let blenderResizePending = false;
+  function placeAllBlenderLabels() {
+    document.querySelectorAll('.bb-blender[data-filled]:not([data-baked])').forEach(h => {
+      const v = blenderVideo(h);
+      placeBlenderLabels(h, v && !v.paused ? v.currentTime : 0);
+    });
+  }
+  addEventListener('resize', () => {         // the holder's pixels changed, so every placement is stale
+    if (blenderResizePending) return;
+    blenderResizePending = true;
+    requestAnimationFrame(() => { blenderResizePending = false; placeAllBlenderLabels(); });
+  });
 
   /* ---------------- capture (?capture) and still frames (?still=n) ---------------- */
   const nextFrame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -734,7 +1094,7 @@
     });
     const finish = () => { html.dataset.auraReady = '1'; readyResolve(info()); emit('ready', info()); };
     scanLoops();
-    slides.forEach(sl => blenderHolders(sl).forEach(h => placeBlenderLabels(h, 0)));
+    slides.forEach(sl => blenderHolders(sl).forEach(refreshBlenderLabels));
     if (!FROZEN) browserNotice();
     if (FROZEN) {
       fit();

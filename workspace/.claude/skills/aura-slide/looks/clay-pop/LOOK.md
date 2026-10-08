@@ -224,7 +224,7 @@ Aura.scene('s3-scene', (ctx) => {                        // ctx: THREE, el (the 
 | `block / puck / ball / pill / ring / cable / part` | chunky shapes, generously rounded, in clay; `cable` is a soft tube along points |
 | `climb(THREE, n, o)` | **S4**: clay blocks rising left to right, the goal block orange; `{ group, tops, blocks }` |
 | `pair(THREE, a, b, gap)` | **S5**: two objects, whole, side by side, one light, one scale |
-| `tags(S, el, anchors)` | labels inside the holder that follow their part every frame |
+| `tags(S, el, anchors)` | labels inside the holder that follow their part every frame. **Never over the figure** (LOOK-BASE 4.4): each lands in clear space with a leader back to the part |
 | `steps(t, P, n, move)` / `land(k)` | the rhythm: a state holds, then one part moves; a part arriving drops and squashes once |
 
 Crease AO comes from the shared post stack when `engine/deck/lib/post-policy.js` registers Clay Pop. Never post on a

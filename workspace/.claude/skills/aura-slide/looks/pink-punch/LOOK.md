@@ -192,7 +192,7 @@ scene that is already one silhouette.
 | `line(THREE, pts, { dashed })` | a guide. Use sparingly — this look prefers an arrow |
 | `climb(THREE, n, o)` | **S4**: `n` rising blocks, a star on the top; returns `{ group, tops, blocks }` |
 | `pair(THREE, a, b, gap)` | **S5**: two objects, whole, side by side, same camera, same scale |
-| `pins(S, el, anchors)` | numbered discs and callout cards that follow their part every frame |
+| `pins(S, el, anchors)` | numbered discs and callout cards that follow their part every frame. **Never over the figure** (LOOK-BASE 4.4): each lands in clear space with a heavy black leader back to the part, like every other line here |
 | `beats(t, P, n, move)` | the poster's rhythm: `n` states per loop, each **still, then one pop** (overshooting) |
 | `easeBack(x)` | the look's easing. `easeBack(0) === 0` and `easeBack(1) === 1`, so a loop stays seamless |
 

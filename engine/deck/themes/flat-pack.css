@@ -17,6 +17,7 @@
   --surface: #FFFFFF;
   /* ink: the drawing line */
   --ink: #111111; --ink-2: #333333; --muted: #484848; --label: #6B6B6B; --hairline: #D8D8D8;
+  --leader: #111111; --leader-w: 4px;           /* 4.4: an assembly drawing's own leader, at THE line weight */
   /* two signal colours, used sparingly and never together on the same mark */
   --brand: #0058A3;                             /* blue: the one emphasis phrase, the hero part, the "do this" fill */
   --brand-2: #1A74C0;

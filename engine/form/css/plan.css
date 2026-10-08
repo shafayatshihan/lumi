@@ -258,9 +258,13 @@
 #build .ed-home:disabled{opacity:.4;cursor:default}
 #build .ed-home:disabled:hover svg{transform:none}
 .bd-bar{position:absolute;left:316px;top:646px;width:810px;height:64px;display:flex;align-items:center;gap:12px}
-.bd-main{display:inline-flex;align-items:center;gap:12px;height:64px;padding:0 26px 0 30px;border-radius:100px;background:var(--accent);color:var(--pill);font-size:23px;
+/* P5.3: this was 64px tall at 23px - the size of .pl-build, which is a page header's call to action. Here the
+   subject of the screen is the slide above it, and at that weight the button read as a banner across the middle
+   of the page. Down to 56px / 21px: the same height as .bd-rest beside it, still unmistakably the primary one
+   because it is the only filled accent control in the bar. */
+.bd-main{display:inline-flex;align-items:center;gap:11px;height:56px;padding:0 22px 0 26px;border-radius:100px;background:var(--accent);color:var(--pill);font-size:21px;
   transition:transform .25s var(--ease),opacity .2s,background .3s}
-.bd-main svg{width:24px;height:24px;transition:transform .3s var(--ease)}
+.bd-main svg{width:22px;height:22px;transition:transform .3s var(--ease)}
 .bd-main span{display:inline-flex}
 .bd-main:hover svg{transform:translateX(4px)}
 .bd-main:active{transform:scale(.96)}
@@ -273,13 +277,35 @@
 .bd-stop i{width:14px;height:14px;border-radius:3px;background:var(--pill)}
 .bd-say{position:absolute;left:316px;top:724px;width:810px;font-size:21px;line-height:1.4}
 .bd-say.is-busy::before{content:'';display:inline-block;width:11px;height:11px;margin-right:10px;border-radius:50%;background:var(--orange);animation:wsBlink 1.1s var(--ease-io) infinite}
-.bd-up{position:absolute;left:1156px;top:92px;width:348px;height:252px;display:flex;flex-direction:column;padding:12px 12px 10px;border-radius:24px;background:var(--pill)}
+.bd-up{position:absolute;left:1156px;top:92px;width:348px;height:auto;max-height:252px;display:flex;flex-direction:column;padding:12px 12px 10px;border-radius:24px;background:var(--pill);
+  transition:max-height .3s var(--ease)}
+/* P5.1: the column shares this strip with .ed-chat, which sits at top:272 once it opens - so the extra height
+   only exists while the chat is folded. It is not a second layout: the list scrolls either way, this just stops
+   four of its rows from spending the whole build behind the chat panel. */
+#build:has(.ed-chat.is-quiet) .bd-up{max-height:430px}
+/* the box is as tall as its rows and no taller - two slides left should not leave 300px of empty pill under
+   them. flex:0 1 auto (not flex:1) is what lets it shrink-wrap and still scroll once it hits the cap. */
 .bd-up-top{flex:none;height:38px;display:flex;align-items:center;gap:8px;padding-left:6px}
 .bd-up-t{font-family:var(--head);font-weight:900;font-size:20px}
 .bd-up-n{display:inline-grid;place-items:center;min-width:28px;height:26px;padding:0 8px;border-radius:100px;background:var(--bg);font-size:17px}
 .bd-up-n:empty{display:none}
 .bd-up .pg{width:34px;height:34px;background:var(--bg)}
-.bd-up-list{flex:1;display:flex;flex-direction:column;gap:6px;padding-top:4px}
+/* P5.1: this had no overflow rule, so the list could only ever be three rows and a `+N more`. It scrolls now, the
+   same way the left slide strip does - overscroll-behavior keeps the wheel off the page behind it, which must never
+   scroll, and the thin thumb matches .ed-strip-list. */
+.bd-up-list{flex:0 1 auto;min-height:0;display:flex;flex-direction:column;gap:6px;padding-top:4px;
+  overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:var(--lav-deep) transparent}
+.bd-up-list::-webkit-scrollbar{width:6px}
+.bd-up-list::-webkit-scrollbar-thumb{border-radius:6px;background:var(--lav-deep)}
+.bd-up-list::-webkit-scrollbar-track{background:transparent}
+.bd-up-row{flex:none}
+.bd-up-bot{flex:none;height:34px;display:flex;align-items:center;padding-left:6px}
+.bd-up-bot[hidden]{display:none}
+/* quiet on purpose: the list is the way to reach a slide now, and this only opens the many-at-once view. Styled
+   from base tokens so it needs no rule in the theme layer. */
+.bd-up-all{height:30px;padding:0;background:none;font-size:17px;color:var(--mute);text-decoration:underline;
+  text-underline-offset:3px;text-decoration-color:rgba(8,9,9,.25);transition:color .2s}
+.bd-up-all:hover{color:var(--ink);text-decoration-color:currentColor}
 .bd-up-row{display:flex;align-items:center;gap:10px;height:46px;padding:0 10px 0 6px;border-radius:14px;background:var(--white);text-align:left;transition:transform .2s var(--ease),background .2s}
 .bd-up-row:hover{transform:translateX(3px)}
 .bd-up-row.is-now{background:var(--lilac)}

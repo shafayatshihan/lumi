@@ -313,7 +313,10 @@
 
   /* ---------------------------------------------------------------- numbered pins and callout pills.
      Same contract as the other looks: every element inside the holder with data-follow="name" is moved each frame, so
-     it is recorded into the loop video with the picture. Here they are .pp-pin discs, .pp-tag cards and .pp-pill tags. */
+     it is recorded into the loop video with the picture. Here they are .pp-pin discs, .pp-tag cards and .pp-pill tags.
+     A label NEVER covers the figure (LOOK-BASE 4.4): the points go to the one shared placer in runtime.js, which puts
+     each one in clear space outside the subject and draws a leader back to the part. data-align / data-dx / data-dy
+     are the preferred direction now, not a hard offset. */
   function pins(S, holder, anchors) {
     var THREE = S.THREE, v = new THREE.Vector3();
     var els = Array.prototype.slice.call(holder.querySelectorAll('[data-follow]'));
@@ -322,26 +325,18 @@
     var set = {
       time: function (t) { time = t; },
       update: function () {
-        var w = holder.offsetWidth, h = holder.offsetHeight, slide = holder.closest('.slide');
-        var ox = 0, oy = 0;
-        if (slide) { for (var e = holder; e && e !== slide && slide.contains(e); e = e.offsetParent) { ox += e.offsetLeft; oy += e.offsetTop; } }
+        var w = holder.offsetWidth, h = holder.offsetHeight;
+        if (!w || !h || !window.LumiLabel) return;
+        var items = [];
         els.forEach(function (el) {
           var a = anchors[el.dataset.follow]; if (!a) return;
           if (Array.isArray(a)) v.set(a[0], a[1], a[2] || 0);
           else if (typeof a === 'function') { var p = a(time); v.set(p[0], p[1], p[2] || 0); }
           else if (a.isObject3D) a.getWorldPosition(v);
           v.project(S.camera);
-          var hidden = v.z > 1 || v.z < -1;
-          var align = el.dataset.align || 'left', dx = parseFloat(el.dataset.dx || '26'), dy = parseFloat(el.dataset.dy || '0');
-          var ew = el.offsetWidth, eh = el.offsetHeight;
-          var x = (v.x + 1) / 2 * w, y = (1 - v.y) / 2 * h;
-          x = align === 'right' ? x - dx - ew : align === 'center' ? x - ew / 2 : x + dx;
-          y = y + dy - eh / 2;
-          x = Math.max(Math.max(0, 96 - ox), Math.min(x, Math.min(w, 1824 - ox) - ew));
-          y = Math.max(Math.max(0, 96 - oy), Math.min(y, Math.min(h, 984 - oy) - eh));
-          el.style.transform = 'translate(' + x.toFixed(1) + 'px, ' + y.toFixed(1) + 'px)';
-          el.style.setProperty('visibility', hidden ? 'hidden' : '', hidden ? 'important' : '');
+          items.push({ el: el, x: (v.x + 1) / 2 * w, y: (1 - v.y) / 2 * h, show: v.z <= 1 && v.z >= -1 });
         });
+        window.LumiLabel.place(holder, items, window.LumiLabel.sceneGrid(THREE, S.scene, S.camera, w, h));
       },
     };
     return S.labels(set);

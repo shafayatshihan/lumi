@@ -923,7 +923,7 @@ def run_v5_suite():
     check('the midway answer finishes the same slide', pj.get('built') == 3 and not pj.get('buildTarget') and not pj.get('waiting'), (pj.get('built'), pj.get('waiting')))
 
     s, j = jpost(f'/api/decks/{P}/build', {'mode': 'rest'})
-    check('build the rest starts', s == 200 and jget(f'/api/decks/{P}')[1]['deck'].get('buildRest') is True, (s, j))
+    check('build the rest starts (buildRest is derived from the queue since batch 2 P2)', s == 200 and plan_of(P).get('buildRest') is True, (s, j))
     t0 = time.time()
     while plan_of(P).get('built', 0) < 4 and time.time() - t0 < 30: time.sleep(0.1)
     s, j = jpost(f'/api/decks/{P}/build', {'mode': 'stop'})

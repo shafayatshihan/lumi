@@ -116,6 +116,11 @@ def args(argv=None):
       --frames <n>                legacy: render the first n frames
       --resume                    an animation only: skip frames already written in the --out folder and carry on from
                                   the first missing one (Lumi uses it after a long render yielded the GPU to a still)
+      --cameras <a,b,c,d>         render NOTHING of the loop: one --preview frame of THIS scene's subject from each named
+                                  angle into --out as cam-<name>.png, in ONE launch (P3, the camera chooser the person
+                                  picks from). Names are VIEWS keys, or 'as-written' for the angle the scene itself set.
+                                  Implies --preview. camera.json is ignored for the run, or every candidate would be
+                                  the already-chosen angle
       --cpu                       force the CPU
     Unknown arguments are reported and ignored (a scene never dies on a flag it does not know)."""
     if argv is None:
@@ -134,10 +139,14 @@ def args(argv=None):
     p.add_argument('--fps', type=int, default=FPS)
     p.add_argument('--frames', type=int, default=None)
     p.add_argument('--resume', action='store_true')
+    p.add_argument('--cameras', default=None)
     p.add_argument('--cpu', action='store_true', help='force CPU')
     a, unknown = p.parse_known_args(argv)
     if unknown: print('[lumi] ignored arguments: ' + ' '.join(unknown), flush=True)
     if a.bake: a.cavity = True        # no GI in three.js: without the AO map a baked frame is flat (Part A item 1)
+    if a.cameras:                     # P3: candidates are judged on composition, so they cost what a preview costs
+        a.preview, a.anim, a.bake = True, False, None
+        a.cameras = [v for v in (x.strip() for x in a.cameras.split(',')) if v][:8]
     if a.res is None: a.res = PREVIEW_RES if a.preview else 100
     if a.samples is None: a.samples = PREVIEW_SAMPLES if a.preview else 128
     a.res = max(1, min(100, a.res))
@@ -180,6 +189,7 @@ def reset(a=None, res=None, fps=None):
         s['lumi_bake'] = getattr(a, 'bake', None) or ''
         s['lumi_anim'] = bool(a.anim)
         s['lumi_resume'] = bool(getattr(a, 'resume', False))
+        s['lumi_cameras'] = list(getattr(a, 'cameras', None) or [])      # P3: the chooser's candidate angles
         if a.frame: s['lumi_poster'] = int(a.frame)
         if a.frames: s['lumi_first_n'] = int(a.frames)
     return s
@@ -1000,6 +1010,32 @@ VIEWS = {  # azimuth (deg, negative = camera on the left), elevation (deg), vert
     'high': (-30, 35, 30), 'top': (0, 88, 30), 'low': (-25, 3, 30),
 }
 
+# P3: the angle the PERSON chose, kept beside scene.py as camera.json rather than edited into the scene, so Claude
+# rewriting the scene never loses it and every later render picks it up by itself. {"view","azimuth","elevation","fov"},
+# any subset; what is in it wins over the scene's own camera() arguments, which is the whole point of it. The server
+# writes that file when he picks a thumbnail; nothing in here ever writes it.
+_CHOICE = {}
+
+
+def _cam_choice():
+    """The chosen camera, or None. Read once per Blender launch. LUMI_CAMERA names the file; otherwise camera.json in the
+    working folder, which is the scene's own folder (Lumi runs Blender with cwd = scene.py's parent)."""
+    if 'v' not in _CHOICE:
+        import json as _json
+        p = os.environ.get('LUMI_CAMERA') or os.path.join(os.getcwd(), 'camera.json')
+        v = None
+        try:
+            with open(p, 'r', encoding='utf-8') as f:
+                d = _json.load(f)
+            if isinstance(d, dict) and (d.get('view') in VIEWS or d.get('azimuth') is not None):
+                v = d
+                print('[lumi] camera: chosen ' + str(d.get('view') or 'custom') +
+                      f' az={d.get("azimuth")} el={d.get("elevation")}  (camera.json)', flush=True)
+        except (OSError, ValueError, TypeError):
+            pass
+        _CHOICE['v'] = v
+    return _CHOICE['v']
+
 
 def camera(target, view='three-quarter', fill=0.7, frame_right=True, azimuth=None, elevation=None, fov=None):
     """Frame target (object or list). fill = fraction of frame height the subject's bounds occupy. frame_right=True
@@ -1007,6 +1043,12 @@ def camera(target, view='three-quarter', fill=0.7, frame_right=True, azimuth=Non
     (studio3d.js uses the same right-hand framing via view offset). Uses lens shift, so verticals stay vertical."""
     s = bpy.context.scene
     objs = target if isinstance(target, (list, tuple)) else [target]
+    ch = _cam_choice()                       # P3: the person's pick wins over whatever the scene asked for
+    if ch:
+        view = ch.get('view') if ch.get('view') in VIEWS else view
+        if ch.get('azimuth') is not None: azimuth = float(ch['azimuth'])
+        if ch.get('elevation') is not None: elevation = float(ch['elevation'])
+        if ch.get('fov') is not None: fov = float(ch['fov'])
     az, el, fv = VIEWS[view]
     az, el, fv = azimuth if azimuth is not None else az, elevation if elevation is not None else el, fov or fv
     cd = bpy.data.cameras.new('lumi_cam')
@@ -1044,8 +1086,19 @@ def camera(target, view='three-quarter', fill=0.7, frame_right=True, azimuth=Non
     cd.shift_x = ((min(xs) + max(xs)) / 2 - cx_goal) * W / H
     cd.shift_y = (min(ys) + max(ys)) / 2 - 0.5
     cd.clip_start, cd.clip_end = max(0.001, dist * 0.01), dist * 50
-    _CAM.clear(); _CAM.update(cam=cam, ctr=ctr.copy(), az=az, el=el, dist=dist, fov=fv)   # the rest pose move() starts from
+    # the rest pose move() starts from. P3 also keeps what it was FRAMED on (objs, fill, frame_right, view), which is
+    # everything cameras() needs to re-frame the same subject from another angle without re-running the scene.
+    _CAM.clear(); _CAM.update(cam=cam, ctr=ctr.copy(), az=az, el=el, dist=dist, fov=fv,
+                              objs=list(objs), fill=fill, frame_right=frame_right, view=view)
     return cam
+
+
+def cam_pose():
+    """The current rest pose in the shape the slide markup and studio3d.js use: {azimuth, elevation, distance, target, fov}."""
+    if not _CAM: return None
+    c = _CAM['ctr']
+    return {'azimuth': round(_CAM['az'], 2), 'elevation': round(_CAM['el'], 2), 'distance': round(_CAM['dist'], 4),
+            'target': [round(c.x, 4), round(c.y, 4), round(c.z, 4)], 'fov': round(_CAM['fov'], 2)}
 
 
 # ---------------------------------------------------------------- render
@@ -1456,6 +1509,73 @@ def inspect(emit=True):
     return out
 
 
+def cameras(path, names):
+    """--cameras: photograph THIS scene's subject from each named angle, one preview-quality frame each, into
+    <path>/cam-<name>.png. One Blender launch for all of them, because the ~4.5 s startup is most of a candidate.
+
+    'current' (or 'as-written') is the angle the scene itself framed - the first thumbnail is always what he has now, so
+    the choice is a comparison and not a leap. Any other name is a VIEWS key, framed on the same subject with the same
+    fill and the same right-hand framing, so the four pictures differ by ANGLE and nothing else.
+
+    Prints one `[lumi] camera <name> {pose}` line per candidate (the {azimuth,elevation,distance,target,fov} shape the
+    slide markup uses) and the usual `[lumi] frame i/n` the server's progress bar reads. Returns the files written."""
+    s = bpy.context.scene
+    if not _CAM:
+        raise RuntimeError('--cameras: the scene framed nothing -- call L.camera(...) before L.render()')
+    base = dict(_CAM)                                # what the scene itself chose, down to the resolved angles
+    objs, fill, fr = base['objs'], base['fill'], base['frame_right']
+    _CHOICE['v'] = None                              # candidates are the real angles, not the already-chosen one
+    s.render.use_simplify = True                     # same cheapness as a preview: this is about composition
+    s.render.simplify_subdivision_render = 1
+    try: s.cycles.texture_limit_render = '512'
+    except (AttributeError, TypeError): pass
+    path = os.path.abspath(path or os.path.join(os.getcwd(), 'cameras'))
+    os.makedirs(path, exist_ok=True)
+    poster = int(s.get('lumi_poster', s.frame_start))
+    s.frame_set(poster)
+    rx = s.render.resolution_x * s.render.resolution_percentage // 100
+    ry = s.render.resolution_y * s.render.resolution_percentage // 100
+    print(f'[lumi] scene frames=1 fps={s.render.fps} poster={poster} size={rx}x{ry} samples={s.cycles.samples} '
+          f'render={len(names)} mode=cameras', flush=True)
+    import json as _json
+    out, manifest = [], {'poster': poster, 'views': {}}
+    for i, name in enumerate(names, 1):
+        key = ''.join(c for c in str(name).lower() if c.isalnum() or c == '-')
+        if key in ('as-written', 'aswritten'): key = 'current'
+        if key != 'current' and key not in VIEWS:
+            print(f'[lumi] camera: no such angle "{name}", skipped', flush=True)
+            continue
+        old = s.camera
+        if key == 'current':
+            cam = camera(objs, view=base['view'], fill=fill, frame_right=fr,
+                         azimuth=base['az'], elevation=base['el'], fov=base['fov'])
+        else:
+            cam = camera(objs, view=key, fill=fill, frame_right=fr)
+        if old is not None and old is not cam:       # one live camera at a time: the discards pile up otherwise
+            cd = old.data
+            bpy.data.objects.remove(old, do_unlink=True)
+            if cd and cd.users == 0: bpy.data.cameras.remove(cd)
+        fp = os.path.join(path, f'cam-{key}.png')
+        s.render.filepath = fp
+        t1 = time.time()
+        bpy.ops.render.render(write_still=True)
+        if not s.get('lumi_transparent', False):
+            _composite(fp, s.get('lumi_bg', C['canvas']))
+        dt = time.time() - t1
+        pose = cam_pose()
+        manifest['views'][key] = {'file': os.path.basename(fp), 'pose': pose, 'render_s': round(dt, 2)}
+        # written again after EVERY candidate: the server shows the thumbnails as they arrive, so a half-finished
+        # sheet has to be readable, and a run that dies on candidate 3 still leaves two usable pictures.
+        with open(os.path.join(path, 'cameras.json'), 'w', encoding='utf-8') as f:
+            _json.dump(manifest, f, separators=(',', ':'))
+        print('[lumi] camera ' + key + ' ' + _json.dumps(pose, separators=(',', ':')), flush=True)
+        print(f'[lumi] wrote {fp}  ({dt:.1f} s)', flush=True)
+        print(f'[lumi] frame {i}/{len(names)} {dt:.2f}', flush=True)
+        out.append(fp)
+    print(f'[lumi] done {len(out)} camera(s)', flush=True)
+    return out
+
+
 def render(path=None, frames=None):
     """Render what the command line asked for: --preview = ONE cheap frame (the poster), --anim = every frame of the
     loop into a folder (frame_0001.png ...), else a still of --frame / the poster / frame 1. path: a .png file or a
@@ -1473,6 +1593,9 @@ def render(path=None, frames=None):
         return []
     if s.camera is None:
         raise RuntimeError('no scene.camera: call L.camera(...) before L.render()')
+    if s.get('lumi_cameras'):
+        # --cameras: the scene is built and framed, so photograph its subject from each candidate angle and stop (P3).
+        return cameras(path, list(s['lumi_cameras']))
     if s.world is None:
         print('[lumi] warning: no world -- call L.studio()')
     path = os.path.abspath(path or os.path.join(os.getcwd(), 'render.png'))

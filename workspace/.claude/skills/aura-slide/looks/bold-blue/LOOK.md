@@ -234,8 +234,10 @@ metal. Post-processing is self-contained (no add-ons, so a packed deck stays one
 HTML tags (`.bb-tag`, `.bb-pill`) live **inside** the `.aura-3d` holder with `data-follow="name"`;
 `BB3D.labels(S, ctx.el, { name: anchor })` moves them every frame. Anchor: `[x, y, z]` world point (a point on a
 sphere's surface stays on the surface however it turns), an `Object3D`, or `t => [x, y, z]`. `data-align="left|right|
-center"` puts the text right of / left of / centred on the point; `data-dx`, `data-dy` offset it. Labels are clamped to
-the holder and the 96 px safe zone. 2–4 per slide, 28 px, 1–3 words + ≤ 4-word description.
+center"` and `data-dx` / `data-dy` say which way the label wants to sit — a hint the placer honours on every tie, no
+longer a hard offset. **A label never covers the figure** (LOOK-BASE 4.4): each one lands in clear space outside the
+subject with a leader line back to its part, drawn in `--leader` at `--leader-w`. Anchor the point ON the part and let
+the placement happen. 2–4 per slide, 28 px, 1–3 words + ≤ 4-word description.
 
 ### 3.9 Geometry helpers
 `lathe` (anything round in profile: vials, beakers, flasks, bearings), `tube` + `path2d` + `curve` (pipes, wires,

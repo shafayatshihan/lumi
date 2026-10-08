@@ -93,8 +93,10 @@ def run(T):
         (tmp / 'claude-events.jsonl').write_text('', encoding='utf-8')
         r = fs.Runner()
         a, b, c = (json.loads((root / '.aura' / 'decks' / f'{x * 12}.json').read_text()) for x in 'abc')
-        check('W-10: interrupted run -> waiting cleared, buildTarget and buildRest cleared on every deck that had them',
-              not r.waiting and a.get('buildTarget') is None and a.get('buildRest') is False and c.get('buildTarget') is None, (r.waiting, a, c))
+        # batch 2 P2: buildRest is no longer stored (the overnight queue carries "the rest" across a restart), so only
+        # buildTarget is cleared here; a stale stored buildRest is ignored by plan_payload
+        check('W-10: interrupted run -> waiting cleared, buildTarget cleared on every deck that had it',
+              not r.waiting and a.get('buildTarget') is None and c.get('buildTarget') is None, (r.waiting, a, c))
         check('W-10: slides stuck in queued/replanning are released, built flag untouched',
               [s.get('status') for s in a['plan']['slides']] == [None, None, None] and a['plan']['slides'][0].get('built') is True, a['plan']['slides'])
         check('W-10: planState planning with nothing running -> error with a plain reason', b.get('planState') == 'error' and b.get('planError'), b)

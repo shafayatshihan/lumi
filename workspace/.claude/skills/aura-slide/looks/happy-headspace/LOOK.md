@@ -201,7 +201,7 @@ distance). `sway: 0, dolly: 0` gives a perfectly still figure — the right answ
 | `fill(part, 'orange')` | recolour a form (a step arriving, a tour visiting) |
 | `climb(THREE, n, o)` | **S4**: `n` rising soft blocks, the goal on top; returns `{ group, tops, blocks }` |
 | `pair(THREE, a, b, gap)` | **S5**: two forms, whole, side by side, same camera, same scale |
-| `pins(S, el, anchors)` | soft discs and round callout cards that follow their form every frame |
+| `pins(S, el, anchors)` | soft discs and round callout cards that follow their form every frame. **Never over the figure** (LOOK-BASE 4.4): each lands in clear space with a soft round-capped leader back to the form |
 | `steps(t, P, n, move)` | the room's rhythm: `n` states per loop, each still, then one **long, soft** move |
 | `breath(t, P)` | 0 → 1 → 0 across one loop, smooth at both ends. The look's whole motion vocabulary |
 | `easeSoft(x)` | smoothstep applied twice: slower in, slower out, never an overshoot |

@@ -29,7 +29,24 @@ const dp = require(path.join(ENGINE, 'tools', 'lib', 'deckpage'));
     out.onS2 = await vid();
     await page.waitForTimeout(500);
     out.onS2later = await vid();
-    out.labels = await page.evaluate(() => Array.from(document.querySelectorAll('.bb-blender[data-kind="animation"] [data-anchor]')).map(e => ({ n: e.dataset.anchor, l: e.style.left, t: e.style.top, shown: getComputedStyle(e).display !== 'none' })));
+    // P4 replaced raw left/top percentages with LumiLabel: every label is parked at the origin (runtime.js:575)
+    // and moved by a transform (:644), with data-placed set once it has a slot. Reading style.left now always
+    // yields '0px' - the position lives in the transform and in the box the browser reports.
+    out.labels = await page.evaluate(() => {
+      const host = document.querySelector('.bb-blender[data-kind="animation"]');
+      const hb = host ? host.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
+      return Array.from(document.querySelectorAll('.bb-blender[data-kind="animation"] [data-anchor]')).map(e => {
+        const b = e.getBoundingClientRect(), cs = getComputedStyle(e);
+        return { n: e.dataset.anchor, l: e.style.left, t: e.style.top, tr: e.style.transform,
+          placed: e.dataset.placed === '1', shown: cs.display !== 'none' && cs.visibility !== 'hidden',
+          // where the label actually sits, as a percent of the holder - what the old l/t used to mean
+          px: hb.width ? +(((b.left + b.width / 2) - hb.left) / hb.width * 100).toFixed(1) : null,
+          py: hb.height ? +(((b.top + b.height / 2) - hb.top) / hb.height * 100).toFixed(1) : null,
+          inside: b.left >= hb.left - 1 && b.top >= hb.top - 1
+            && b.right <= hb.left + hb.width + 1 && b.bottom <= hb.top + hb.height + 1 };
+      });
+    });
+    out.crowded = await page.evaluate(() => !!document.querySelector('.bb-blender[data-kind="animation"][data-labels-crowded]'));
     out.tagDraftS2 = await page.evaluate(() => !!document.querySelector('.bb-blender[data-kind="animation"] .bb-blender-tag'));
     await page.keyboard.press('ArrowLeft'); await page.waitForTimeout(400);
     out.backS1 = await vid();                                 // left the slide: paused and reset

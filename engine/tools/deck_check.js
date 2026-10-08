@@ -160,8 +160,21 @@ function collect({ MIN_PX, TOL, BODY_MIN, BODY_EXEMPT, ILLUS }) {
     const headlines = Array.from(s.querySelectorAll('h1, h2, .headline, .title')).filter(h => h.textContent.trim()).map(h => ({ text: h.textContent.replace(/\s+/g, ' ').trim().slice(0, 40), em: h.querySelectorAll('.em').length }));
     const figures = Array.from(s.querySelectorAll('img, [data-figure]')).map(im => ({ src: (im.getAttribute('src') || '').slice(0, 120), figure: im.dataset.figure || '',
       crop: (im.dataset.crop || '').split(/[ ,]+/).map(Number).filter(v => !isNaN(v)).length === 4 ? im.dataset.crop.split(/[ ,]+/).map(Number) : null }));
+    // LOOK-BASE 4.4: every projected label, so the label-over-figure pass can measure it against the picture ALONE
+    res.tags = [];
+    s.querySelectorAll('.aura-3d [data-follow], .bb-blender [data-anchor]').forEach(el => {
+      const cs2 = getComputedStyle(el);
+      if (cs2.visibility === 'hidden' || cs2.display === 'none') return;
+      const r = el.getBoundingClientRect(); if (!(r.width > 1 && r.height > 1)) return;
+      const hd = el.closest('.aura-3d, .bb-blender'); if (!hd) return;
+      const hr = hd.getBoundingClientRect();
+      res.tags.push({ text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40) || '(label)',
+        box: { x: r.left - sr.left, y: r.top - sr.top, w: r.width, h: r.height },
+        holder: { x: hr.left - sr.left, y: hr.top - sr.top, w: hr.width, h: hr.height } });
+    });
+    res.crowded = !!s.querySelector('[data-labels-crowded]');
     const slideEmpty = s.querySelectorAll('.bb-steps > li').length;
-    const title = s.dataset.title || ((s.querySelector('h1,h2,h3') || {}).textContent || '').replace(/\s+/g, ' ').trim();
+    const title = s.dataset.title ||((s.querySelector('h1,h2,h3') || {}).textContent || '').replace(/\s+/g, ' ').trim();
     const stillEl = s.querySelector('[data-still]');
     return { index: si, title: title.slice(0, 70), still: stillEl ? parseFloat(stillEl.dataset.still) : null, claimText, notesText: notesEl ? notesEl.textContent.replace(/\s+/g, ' ').trim() : '', props, emptyCols, headlines, figures,
       illustrative: new RegExp(ILLUS.source, ILLUS.flags).test(claimText) || !!s.querySelector('[data-illustrative]'),
@@ -233,6 +246,41 @@ async function analysePixels({ si, plain, normal, bareOnly }) {
   return out;
 }
 
+/* LOOK-BASE 4.4: how much of the FIGURE a projected label covers. Measured on a shot of the slide taken with every
+   label and leader hidden, so what is under a label's box is the picture itself and nothing else. The reference
+   colour is the commonest colour inside the holder — the slide's own paper for a live scene, and the render's
+   background for a Blender one, which is the slide colour by contract. Anything far enough from it is the figure.
+   This is renderer-agnostic on purpose: live three.js, a Blender still and a loop's poster are all judged alike. */
+async function analyseLabels({ si, bare, tags }) {
+  const load = src => new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = no; im.src = 'data:image/png;base64,' + src; });
+  const im = await load(bare);
+  const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(im, 0, 0);
+  const D = x.getImageData(0, 0, c.width, c.height).data, W = c.width, H = c.height;
+  const at = (px, py) => { const k = (py * W + px) * 4; return [D[k], D[k + 1], D[k + 2]]; };
+  return tags.map(t => {
+    const hb = t.holder, counts = new Map();
+    for (let py = Math.max(0, Math.round(hb.y)); py < Math.min(H, hb.y + hb.h); py += 5)
+      for (let px = Math.max(0, Math.round(hb.x)); px < Math.min(W, hb.x + hb.w); px += 5) {
+        const k = (py * W + px) * 4, q = (D[k] >> 3) + ',' + (D[k + 1] >> 3) + ',' + (D[k + 2] >> 3);
+        counts.set(q, (counts.get(q) || 0) + 1);
+      }
+    let best = null, bc = 0; counts.forEach((v, q) => { if (v > bc) { bc = v; best = q; } });
+    if (!best) return { text: t.text, cover: 0 };
+    const ref = best.split(',').map(v => v * 8 + 4);
+    const b = t.box;
+    let on = 0, n = 0;
+    for (let j = 0; j < 9; j++) for (let i = 0; i < 13; i++) {
+      const px = Math.round(b.x + (i + 0.5) * b.w / 13), py = Math.round(b.y + (j + 0.5) * b.h / 9);
+      if (px < 0 || py < 0 || px >= W || py >= H) continue;
+      n++;
+      const p = at(px, py);
+      if (Math.abs(p[0] - ref[0]) + Math.abs(p[1] - ref[1]) + Math.abs(p[2] - ref[2]) > 40) on++;
+    }
+    return { text: t.text, cover: n ? Math.round(on / n * 100) / 100 : 0 };
+  });
+}
+
 /* ------------------------------------------------------------------ main ------------------------------------------- */
 (async () => {
   let deck;
@@ -296,6 +344,22 @@ async function analysePixels({ si, plain, normal, bareOnly }) {
       pixels.push(await page.evaluate(analysePixels, { si: i, plain, normal: normals[i] }));
     }
 
+    // LOOK-BASE 4.4: a third shot per labelled slide, with the labels and leaders taken away, so what a label
+    // covers can be measured against the bare picture. Slides with no projected label pay nothing for this.
+    const labelPx = handles.map(() => []);
+    if (info.slides.some(s => s.tags && s.tags.length)) {
+      await page.addStyleTag({ content: '.aura-check-nolabels .aura-3d [data-follow], .aura-check-nolabels .bb-blender [data-anchor], .aura-check-nolabels svg.aura-leaders { visibility: hidden !important; }' });
+      await page.evaluate(() => document.documentElement.classList.add('aura-check-nolabels'));
+      await page.waitForTimeout(50);
+      for (let i = 0; i < handles.length; i++) {
+        const tags = info.slides[i].tags || [];
+        if (!tags.length) continue;
+        const bare = (await handles[i].screenshot({ animations: 'disabled' })).toString('base64');
+        labelPx[i] = await page.evaluate(analyseLabels, { si: i, bare, tags });
+      }
+      await page.evaluate(() => document.documentElement.classList.remove('aura-check-nolabels'));
+    }
+
     // judge every slide
     const deckSizes = new Set(), deckFonts = new Set();
     let minutes = 0;
@@ -316,6 +380,11 @@ async function analysePixels({ si, plain, normal, bareOnly }) {
       if (c.zones > 3) err(n, `${c.zones} zone rows; a photo slide takes at most 3.`);
       if (c.goals > 4) err(n, `${c.goals} checklist rows; at most 4.`);
       if (c.tags > 4) warn(n, `${c.tags} projected labels on the 3D; 2-4 read best.`);
+      // 4.4, the owner's universal rule: no label overlapping the figure — show it with a leader instead.
+      (labelPx[i] || []).forEach(t => {
+        if (t.cover > 0.12) err(n, `a label covers the figure (${Math.round(t.cover * 100)}% of its box is on the picture): "${t.text}". A label sits in clear space outside the subject with a leader to its part; move the anchor out, drop a label, or give the figure more room.`);
+      });
+      if (s.crowded) err(n, `a label covers the figure: the picture leaves no clear space on this slide, so the placer had nowhere to put one. Use fewer labels or make the figure smaller.`);
       s.unsafe.forEach(t => err(n, `text inside the 96 px edge safe zone ${JSON.stringify(t.box)}: "${t.text}"`));
       s.clipped.forEach(t => err(n, `text is cut off by its box or the slide edge: "${t.text}"`));
       s.broken.forEach(src => err(n, `picture did not load: ${src}`));

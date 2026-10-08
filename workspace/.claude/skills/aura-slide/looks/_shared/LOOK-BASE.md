@@ -193,8 +193,23 @@ a scripted animation a simulation.
 ### 4.4 Projected labels
 
 Label tags live **inside** the picture's holder with `data-follow="name"`, so they are recorded into the loop video with
-the picture. 2–4 per slide, 1–3 words + a short description, clamped to the holder and the safe zone. DOM *outside* the
-holder that must follow the scene (a checklist row, a map node) uses `Aura.sync(sceneId, t => …)`.
+the picture. 2–4 per slide, 1–3 words + a short description. DOM *outside* the holder that must follow the scene
+(a checklist row, a map node) uses `Aura.sync(sceneId, t => …)`.
+
+**A label never covers the figure.** This is a universal rule, the same in all five looks. A label sits in **clear space
+outside the subject's silhouette** and is joined to its part by a short **leader line** — never on the part, never on
+another label. It is not clamped onto the picture to keep it on screen; "clamp inward" was exactly the bug that put two
+tags on top of a server rack.
+
+Nothing in a slide has to implement this. `data-follow` (live scenes, every look) and `data-anchor` (Blender renders)
+both go through one placer, `LumiLabel` in `engine/deck/runtime.js`: it reads where the subject actually is, puts each
+label in the nearest clear space, and draws the leader. `data-align` / `data-dx` / `data-dy` still say which way the
+label *wants* to sit and that direction wins every tie — they are a hint now, not a hard offset.
+
+What an author still owns: **anchor the point on the part, not in the air**, and keep to 2–4 labels. When the figure
+fills the frame there may be no clear space at all; the placer then falls back to the least-covered slot and marks the
+holder `data-labels-crowded`, and `deck_check.js` fails the slide with *a label covers the figure*. The fix belongs to
+the slide — fewer labels, or a smaller figure — not to the placement.
 
 **No text inside WebGL or inside a texture ever carries meaning.** Meaningful words are HTML.
 

@@ -1,5 +1,11 @@
 """Batch 6 Part B: bake Cycles detail into textures once, export one glTF, and let three.js play it.
 
+DORMANT since batch 2 P1 (2026-10-08). New decks pin rec['bake'] = False, so their animations are per-frame Cycles
+(lumi_bpy.py --anim). The approval card showed a Cycles poster while the slide played the GLB in three.js, which has
+no GI - the person approved one picture and the deck shipped a flatter one. Kept, not deleted: decks already pinned
+bake=True still route here (form_server.bl_baked) and their finished renders must keep working. To revive it, pin
+'bake': True again in form_server.new_deck.
+
 Why this exists. A Cycles frame of a real mechanical scene is 89-130 s on the reference laptop. An animated slide is
 100-320 frames. The owner wants ~70 % of slides 3D and ~70 % of those animated, which is 11.4 hours of GPU on the
 per-frame path. Baking moves the path tracing out of the frame loop: it runs once, and the frames come from three.js

@@ -113,7 +113,11 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   let moreOpen = false;
   bdMore.addEventListener('click', () => { moreOpen = !moreOpen; sfx(moreOpen ? 'pop' : 'deselect'); paintBuild(); });
   const upList = h('div', { class: 'bd-up-list' });
-  const upCol = h('div', { class: 'bd-up' }, h('div', { class: 'bd-up-top' }, h('span', { class: 'bd-up-t' }, 'coming up'), h('span', { class: 'bd-up-n' })), upList);
+  // P5.1: the column shows every unbuilt slide and scrolls. The dialog stays, as the one place that acts on several
+  // slides at once, reached from the bar below the list instead of from a `+N more` that hid slide 7.
+  const upAll = h('button', { type: 'button', class: 'bd-up-all', 'data-cursor-label': 'see all', 'data-nosfx': '' }, 'see all');
+  const upBot = h('div', { class: 'bd-up-bot' }, upAll);
+  const upCol = h('div', { class: 'bd-up' }, h('div', { class: 'bd-up-top' }, h('span', { class: 'bd-up-t' }, 'coming up'), h('span', { class: 'bd-up-n' })), upList, upBot);
   const modal = h('div', { class: 'pl-modal bd-modal', hidden: true });
   const qdock = h('div', { class: 'bd-qdock' });              // claude's questions, docked under the preview (the slide stays visible)
   const playHost = h('div', { class: 'bd-playhost' });        // something to do while claude works + what it is doing now
@@ -565,7 +569,6 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   // ---------------------------------------------------------------- build page
   let pay = null, planT = 0, ideasWas = false, settleUntil = 0;
   const SETTLE_MS = 10000;
-  const UP_PER = 3;
   const planSlides = () => store.slides();                                     // F-11: one guarded way to read the slides
   // EVERY page here re-reads the plan from plan-store.js, and this is the one place that reacts to a new one - a poll, a
   // slide added or removed, a picture changed. Nothing keeps a second copy, so nothing can disagree with the list, the
@@ -667,18 +670,66 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     // no id is invented here: the server mints it against its own plan, so two adds can never collide on one name
     openCard({ id: '', title: '', point: '', bullets: [], sources: [], visual: { main: 'text', companions: [], phrase: '' } }, { isNew: true });
   });
+  upAll.addEventListener('click', () => { sfx('pop'); openPick(); });
+  // P2: the same dialog picks several slides for the overnight queue (builds, and approved studio renders) and shows the
+  // queue the next morning: what ran, what failed and why, what still waits. A failed job is never removed for you.
+  const Q_LIVE = ['pending', 'running', 'asking'];
+  const Q_SAY = { pending: 'waiting', running: 'working on it', asking: 'has a question for you', done: 'done', failed: 'failed' };
+  const clock = ms => {
+    const d = new Date(ms), now = new Date(), tom = new Date(now.getTime() + 864e5);
+    const day = d.toDateString() === now.toDateString() ? '' : d.toDateString() === tom.toDateString() ? 'tomorrow ' : d.toLocaleDateString(undefined, { weekday: 'long' }) + ' ';
+    const hr = d.getHours();
+    return `${day}${hr % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${hr < 12 ? 'a.m.' : 'p.m.'}`;
+  };
+  async function qPost(body) {
+    const r = await api.queue.post(deckId, body);
+    if (!alive) return;
+    if (r && r.ok === false) { sfx('error'); say(r.reason || 'couldn’t change the queue. try again?', true); }
+    await loadPlan();
+    if (alive && !modal.hidden) openPick();
+  }
+  function openPick() {
+    if (!pay) return;
+    const slides = planSlides(), q = pay.queue || { jobs: [] }, st = (pay.blender && pay.blender.status) || {};
+    const queued = new Set(q.jobs.filter(j => Q_LIVE.includes(j.state)).map(j => j.stage + ':' + j.slide));
+    const can = [...slides.map((s, i) => ({ s, i, stage: 'build' })).filter(x => !x.s.built),
+      ...slides.map((s, i) => ({ s, i, stage: 'render' })).filter(x => x.s.built && st[x.s.id] === 'approved')]
+      .filter(x => !queued.has(x.stage + ':' + x.s.id));
+    const live = q.jobs.filter(j => Q_LIVE.includes(j.state));
+    const head = !q.jobs.length ? null : h('p', { class: 'pl-dlg-p' }, q.paused ? 'the queue is paused.'
+      : live.length ? `${live.length} in the queue` + (q.finishAt ? ` · done about ${clock(q.finishAt)}` : '') : 'the queue is empty.');
+    const act = (t, body) => h('button', { type: 'button', class: 'bd-q-act', 'data-nosfx': '', onclick: () => qPost(body) }, t);
+    const rows = q.jobs.map(j => h('div', { class: 'bd-q-row', 'data-state': j.state },
+      h('span', { class: 'bd-q-what' }, `slide ${j.n || '?'} · ${j.stage === 'render' ? 'render' : 'build'} · ${Q_SAY[j.state] || j.state}`
+        + (j.state === 'failed' && j.lastError ? `: ${j.lastError.reason || j.lastError.code}` : '')
+        + (j.state === 'running' && j.framesDone ? ` (frame ${j.framesDone})` : '')),
+      Q_LIVE.includes(j.state) ? [act('↑', { action: 'move', job: j.id, step: -1 }), act('↓', { action: 'move', job: j.id, step: 1 })] : null,
+      j.state === 'failed' ? act('retry', { action: 'retry', job: j.id }) : null,
+      j.state !== 'done' ? act(j.state === 'running' ? 'stop' : 'remove', { action: 'remove', job: j.id }) : null));
+    const boxes = can.map(x => h('label', { class: 'bd-q-pick' }, h('input', { type: 'checkbox', value: x.stage + ':' + x.s.id }),
+      ` slide ${x.i + 1}: ${x.s.title || 'untitled slide'}` + (x.stage === 'render' ? ' (render)' : '')));
+    const body = h('div', { class: 'bd-all bd-q' }, head, ...rows, ...boxes,
+      !can.length && !q.jobs.length ? h('p', { class: 'pl-dlg-p' }, 'nothing to queue.') : null);
+    const go = async () => {
+      const items = [...body.querySelectorAll('input[type=checkbox]:checked')].map(c => { const [stage, slide] = c.value.split(':'); return { stage, slide }; });
+      if (!items.length) { say('tick the slides to queue first.', true); return; }
+      sfx('launch'); await qPost({ action: 'add', items });
+    };
+    dialog('still to build', body, [...(can.length ? [dlgBtn('queue these', go, true)] : []),
+      ...(q.jobs.length ? [dlgBtn(q.paused ? 'resume' : 'pause', () => qPost({ action: q.paused ? 'resume' : 'pause' }))] : []),
+      dlgBtn('close', closeModal)], 'bd-alldlg');
+  }
   function paintUp() {
     const left = planSlides().map((s, i) => ({ s, i })).filter(x => !x.s.built);
     upCol.querySelector('.bd-up-n').textContent = left.length ? String(left.length) : '';
-    const more = left.length - UP_PER;
-    const moreB = more > 0 ? h('button', { type: 'button', class: 'bd-up-more', 'data-cursor-label': 'see all', 'data-nosfx': '' }, `+${more} more`) : null;
-    if (moreB) moreB.addEventListener('click', () => {
-      sfx('pop');
-      const rest = h('div', { class: 'bd-all' }, left.slice(UP_PER).map(upRow));
-      dialog('still to build', rest, [dlgBtn('close', closeModal)], 'bd-alldlg');
-    });
-    upList.replaceChildren(...(left.length ? [...left.slice(0, UP_PER).map(upRow), moreB].filter(Boolean)
+    // the scroll position survives a repaint: this runs on every poll, and a list that jumped back to the top each
+    // time a slide finished would be unusable while you were reading the bottom of it.
+    const top = upList.scrollTop;
+    upList.replaceChildren(...(left.length ? left.map(upRow)
       : [h('p', { class: 'bd-up-none' }, 'nothing left. every slide is built.')]));
+    upList.scrollTop = top;
+    upBot.hidden = left.length < 2 && !((pay.queue || {}).jobs || []).length                       // P2: the queue lives in that dialog
+      && !Object.values((pay.blender && pay.blender.status) || {}).includes('approved');
   }
   const dlgBtn = (t, fn, ink) => {
     const b = h('button', { type: 'button', class: 'pl-big pl-big-s1' + (ink ? ' pl-ink' : ''), 'data-nosfx': '' }, h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, t)));

@@ -89,11 +89,28 @@ export function cardMode(v, { folded = false, editing = false } = {}) {
   if (v.deferred && !editing) return 'bar';
   return folded ? 'bar' : 'open';
 }
+// ---- the camera chooser (P3). The person was never asked which angle his object is seen from; claude just picked one.
+// The candidates are real renders of HIS object, so they can only exist for a slide that has a blender scene — a live-3D
+// slide has no scene to photograph. camAsk: when lumi should go and make them, unprompted and once.
+export function camAsk(v) {
+  const c = v && v.cameras;
+  if (!c || v.engine !== 'blender' || v.baked) return false;
+  // only while he is being asked to judge the design: before that there is no scene, after it there is a render to spoil
+  return c.status === 'none' && v.status === 'preview' && !v.deferred && !!(v.previews || []).length;
+}
+// show it while the design is still his to change. not during a render, and not while he looks at an older preview.
+export function camShow(v, { old = false } = {}) {
+  const c = v && v.cameras;
+  if (!c || old || v.engine !== 'blender' || v.baked) return false;
+  if (v.status !== 'preview' && v.status !== 'approved') return false;
+  return c.status === 'rendering' || !!(c.candidates || []).length;
+}
 
 // ---------------------------------------------------------------- the card
 export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, onLayout = () => {}, onMedia = () => {}, onState = () => {} } = {}) {
   let alive = true, views = {}, cur = 1, pollT = 0, idle = 0, busy = false, first = true, layout = '', noteT = 0, armT = 0, armed = false;
   const folded = new Map(), editing = new Set(), shownN = new Map(), resOf = new Map(), drafts = new Map(), mediaKey = new Map();
+  const camHid = new Set(), camAsked = new Set();    // P3: "keep this one", and the one unprompted request per scene
 
   // ---- the full card
   const img = h('img', { class: 'bl-img', alt: '' });
@@ -106,7 +123,15 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
   const hLab = h('span', { class: 'bl-hlab' });
   const hist = h('div', { class: 'bl-hist' }, hPrev, dots, hNext, hLab);
   const cap = h('p', { class: 'bl-cap' });
-  const left = h('div', { class: 'bl-left' }, pic, hist, cap);
+  // ---- the camera chooser (P3): four photographs of THIS object, 2x2, click one
+  const camH = h('p', { class: 'bl-cam-h' });
+  const camGrid = h('div', { class: 'bl-cam-grid', role: 'radiogroup', 'aria-label': 'the angle this slide is seen from' });
+  const camFoot = h('p', { class: 'bl-cam-f' });
+  const camKeep = h('button', { type: 'button', class: 'bl-cam-keep', 'data-nosfx': '' }, 'see it bigger');
+  const cams = h('div', { class: 'bl-cam', hidden: true }, camH, camGrid, h('div', { class: 'bl-cam-row' }, camFoot, camKeep));
+  // the way back: the four live where the one picture lives, so each needs a door to the other
+  const camOpen = h('button', { type: 'button', class: 'bl-cam-open', 'data-nosfx': '', hidden: true }, 'other angles');
+  const left = h('div', { class: 'bl-left' }, pic, hist, cap, cams, camOpen);
 
   const head = h('p', { class: 'bl-h' });
   const fold = h('button', { type: 'button', class: 'bl-fold', 'data-nosfx': '', 'aria-expanded': 'true', 'data-cursor-label': 'fold' }, h('span', { class: 'lbl' }, 'hide'), h('i', { 'aria-hidden': 'true' }));
@@ -123,8 +148,9 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
   const chg = h('div', { class: 'bl-chg' }, chgIn, h('div', { class: 'bl-chgrow' }, chgEst, send));
   const skip = h('button', { type: 'button', class: 'bl-skip', 'data-nosfx': '' }, 'skip for now, keep the preview');
   const note = h('p', { class: 'bl-note', role: 'status' });
-  // the short-lived note floats over the foot of the picture, so it never pushes the right column out of the card
-  pic.append(note);
+  // the short-lived note floats over the foot of the left column, so it never pushes the right column out of the card.
+  // P3: on the column rather than on the picture, because the chooser takes the picture's place while it is open.
+  left.append(note);
   const right = h('div', { class: 'bl-right' }, h('div', { class: 'bl-top' }, head, fold), msg, prog, progT, resRow, goRow, chg, skip);
   const main = h('div', { class: 'bl-main' }, left, right);
 
@@ -195,6 +221,16 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
       return r;
     }).then(r => { if (r && r.queued) say('claude is busy. your change starts when it’s free.'); });
   });
+  // the two doors between the four thumbnails and the one big preview. Neither saves anything: the angle is only
+  // chosen by clicking a thumbnail, so looking around costs nothing and commits to nothing.
+  camKeep.addEventListener('click', () => {
+    const v = view(); if (!v) return;
+    sfx('deselect'); camHid.add(v.id); paint();
+  });
+  camOpen.addEventListener('click', () => {
+    const v = view(); if (!v) return;
+    sfx('pop'); camHid.delete(v.id); paint();
+  });
   skip.addEventListener('click', () => {
     const v = view(); if (!v) return;
     sfx('deselect');
@@ -247,6 +283,42 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
     }));
     hLab.textContent = ps.length ? `preview ${i + 1} of ${ps.length}` : '';
   }
+  function paintCameras(v, mode) {
+    const can = mode === 'open' && camShow(v, { old: shownN.has(v.id) && shownPrev(v) !== latest(v) });
+    const show = can && !camHid.has(v.id);
+    cams.hidden = !show;
+    // the dock is a fixed height, so the four take the one picture's place rather than sitting under it. a thumbnail is
+    // too small to judge a design by, so "see it bigger" goes back to the preview and "other angles" returns.
+    pic.hidden = show; cap.hidden = show || !cap.textContent;
+    if (show) hist.hidden = true;
+    camOpen.hidden = !can || show || !(v.cameras.candidates || []).length;
+    if (!show) return;
+    const c = v.cameras, list = c.candidates || [], picked = c.chosen || 'current';
+    const waiting = c.status === 'rendering' && list.length < (c.wanted || 4);
+    camH.textContent = list.length ? 'which angle?' : 'photographing this from four angles…';
+    camGrid.replaceChildren(...list.map(cd => {
+      const on = cd.view === picked;
+      const b = h('button', { type: 'button', class: 'bl-cam-b' + (on ? ' on' : ''), role: 'radio', 'data-nosfx': '',
+        'aria-checked': on ? 'true' : 'false' },
+        h('img', { class: 'bl-cam-i', src: cd.url, alt: `slide ${v.n} seen ${cd.label}`, loading: 'lazy' }),
+        h('span', { class: 'bl-cam-l' }, cd.label));
+      b.disabled = busy;
+      b.addEventListener('click', () => {
+        if (busy || cd.view === picked) return;
+        sfx('select');
+        act(() => api.blender.camera(deckId, v.id, cd.view),
+          cd.view === 'current' ? 'kept the angle claude chose.' : 'new angle. making a preview of it.');
+      });
+      return b;
+    }), ...Array.from({ length: waiting ? (c.wanted || 4) - list.length : 0 },
+      () => h('span', { class: 'bl-cam-b is-wait', 'aria-hidden': 'true' })));
+    // the honest part: he must know BEFORE he clicks that a new angle costs him the approval he already gave
+    camFoot.textContent = !list.length ? 'about a minute, on this computer.'
+      : v.final ? 'a new angle means a new preview. your render stays on the slide until you render it again.'
+      : v.approved || v.status === 'approved' ? 'a new angle means approving again.'
+      : 'a new angle makes a new preview.';
+    camKeep.hidden = !list.length || c.status === 'rendering';
+  }
   function paintPic(v, mode) {
     const sp = shownPrev(v);
     const fin = v.final || null;
@@ -255,11 +327,12 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
     if (src && img.getAttribute('src') !== src) img.src = src;
     img.hidden = !src;
     shim.hidden = !!src;
-    imgTag.textContent = useFinal ? (fin.stale ? 'final render (older design)' : fin.kind === 'animation' ? `final loop · ${fin.res}p` : 'final render') : sp ? `preview ${sp.n}` : '';
+    imgTag.textContent = useFinal ? (fin.stale ? 'final render (older design)' : fin.kind === 'animation' ? (fin.res ? `final loop · ${fin.res}p` : 'final loop') : 'final render') : sp ? `preview ${sp.n}` : '';
     imgTag.hidden = !imgTag.textContent;
     img.alt = useFinal ? `the full render of slide ${v.n}` : sp ? `preview ${sp.n} of slide ${v.n}` : '';
     cap.textContent = !useFinal && sp ? (sp.change ? `after: “${sp.change}”` : sp.n === 1 ? 'claude’s first design' : '') : '';
     if (mode === 'open') paintHistory(v); else hist.hidden = true;
+    paintCameras(v, mode);
   }
   function paint() {
     if (!alive) return;
@@ -377,6 +450,18 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
   }
 
   // ---- data
+  // P3: the person is never asked to ask. The moment a slide has a design to judge, lumi goes and photographs it from
+  // the other angles, so the four pictures are already there when he looks. Once per slide per scene; the server refuses
+  // a second sheet for the same scene anyway, so a second tab costs nothing.
+  function askCameras() {
+    for (const v of Object.values(views)) {
+      const k = `${v.id}|${(v.cameras && v.cameras.stale) ? 'stale' : ''}|${(v.previews || []).length}`;
+      if (!camAsk(v) || camAsked.has(k)) continue;
+      camAsked.add(k);
+      camHid.delete(v.id);
+      api.blender.cameras(deckId, v.id).then(r => { if (alive && r && r.ok !== false) poll(true); });
+    }
+  }
   function hot() { return Object.values(views).some(v => v.job || ACTIVE.includes(v.status)); }
   async function poll(now = false) {
     clearTimeout(pollT);
@@ -402,6 +487,7 @@ export function mountBlenderCard(host, { deckId, build = false, sfx = () => {}, 
       }
       first = false;
       paint();
+      askCameras();
       try { onState(); } catch (e) { /* optional */ }
     } else idle++;
     pollT = setTimeout(poll, hot() ? 1200 : api.pace(5000, idle, { max: 15000, hidden: 8000 }));

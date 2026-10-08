@@ -176,7 +176,7 @@ perfectly still drawing — the right answer for a still slide.
 | `arrow(THREE, from, to)` | the only way this look says "move this": a shaft and a solid head |
 | `climb(THREE, n, o)` | **S4**: a staircase of `n` rising treads, goal on top; returns `{ group, tops }` |
 | `pair(THREE, a, b, gap)` | **S5**: two objects, whole, side by side, same camera, same scale |
-| `pins(S, el, anchors)` | numbered discs and callout boxes that follow their part every frame |
+| `pins(S, el, anchors)` | numbered discs and callout boxes that follow their part every frame. **Never over the figure** (LOOK-BASE 4.4): each lands in clear space with an ink leader back to the part, at this look's own line weight |
 | `steps(t, P, n, move)` | the manual's rhythm: `n` states per loop, each **still, then one move** |
 
 ### 3.4 Motion in the drawing
