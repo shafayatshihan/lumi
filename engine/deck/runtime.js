@@ -730,7 +730,11 @@
     const fit = media ? LumiLabel.containBox(media.naturalWidth || media.videoWidth, media.naturalHeight || media.videoHeight, w, hh)
                       : { x: 0, y: 0, w, h: hh };
     const now = Date.now();
-    if (media && (!h._occ || now - h._occAt > 180 || h._occW !== w || h._occH !== hh)) {
+    /* The silhouette is only read while the labels are still UNSOLVED. Once place() is holding slots the grid
+       cannot change where anything sits, so a canvas readback several times a second is pure jank on a weak
+       machine mid-presentation. A resize still refreshes it, because the slots are re-solved then too. */
+    const unsolved = !(h._auraSlots instanceof Map) || !h._auraSlots.size;
+    if (media && (!h._occ || h._occW !== w || h._occH !== hh || (unsolved && now - h._occAt > 180))) {
       h._occ = LumiLabel.pictureGrid(media, w, hh); h._occAt = now; h._occW = w; h._occH = hh;
     }
     const items = [];

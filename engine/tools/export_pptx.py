@@ -4,6 +4,10 @@ final state) with the speaker notes in PowerPoint's notes pane.
 import io, json, shutil, subprocess, sys
 from pathlib import Path
 
+# A console app launched from a windowless parent opens its OWN console window on Windows.
+# Lumi runs this during an export, so without this flag a black box flashes over the app.
+NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+
 TOOLS = Path(__file__).resolve().parent
 try:
     sys.stdout.reconfigure(encoding='utf-8')
@@ -25,7 +29,8 @@ def render(deck: Path):
     node = shutil.which('node')
     if not node:
         raise SystemExit('Node.js is missing, so the slides cannot be rendered. Run "Update Lumi".')
-    r = subprocess.run([node, str(TOOLS / 'shoot_slides.js'), str(deck), str(out)], capture_output=True, text=True, encoding='utf-8', errors='replace')
+    r = subprocess.run([node, str(TOOLS / 'shoot_slides.js'), str(deck), str(out)], capture_output=True, text=True,
+                       encoding='utf-8', errors='replace', stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
     if r.returncode != 0:
         raise SystemExit((r.stderr or r.stdout).strip() or 'Rendering the slides failed.')
     return out, json.loads((out / 'slides.json').read_text(encoding='utf-8'))

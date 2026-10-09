@@ -8,8 +8,12 @@ as it is. An older deck with the same name (and its PDF / PowerPoint /
 notes backups) is moved to "4 - Your slides/Older versions" with its date first. Fails if anything needs the internet.
 --replace (small edits from the app's editor): overwrite the deck in place and leave its backups where they are; nothing
 moves to Older versions. Every attribute is kept as written, including the data-edit text ids the editor relies on."""
-import base64, datetime, html as htmllib, io, json, mimetypes, os, re, shutil, sys, time
+import base64, datetime, html as htmllib, io, json, mimetypes, os, re, shutil, subprocess, sys, time
 from pathlib import Path
+
+# A console app launched from a windowless parent opens its OWN console window on Windows.
+# Lumi packs a deck on every save, so without this flag a black box flashes over the app each time.
+NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 ENGINE = Path(__file__).resolve().parents[1]
 THREE_DIR = ENGINE / 'node_modules' / 'three' / 'build'
@@ -445,7 +449,8 @@ class Packer:
         out = cache / 'three.min.js'
         try:
             r = subprocess.run([node, str(Path(__file__).resolve().parent / 'three_min.js'), str(out)],
-                               capture_output=True, text=True, timeout=120)
+                               capture_output=True, text=True, timeout=120,
+                               stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
             if r.returncode == 0 and out.is_file():
                 return out.read_text(encoding='utf-8')
         except Exception:

@@ -392,8 +392,12 @@
    exists while the window really has no title bar - a maximized or normal window keeps its own X. */
 .sh-exit-wrap{position:fixed;right:12px;top:10px;z-index:70;display:flex;align-items:center;gap:8px}
 .sh-exit-wrap[hidden]{display:none}
+/* The resting opacity is a legibility floor, not a taste call. At .35 this measured 2.36:1 against the
+   lavender shell - under the 4.5:1 minimum, so effectively invisible - and in fullscreen it is the ONLY way
+   out with a mouse, which is the one thing shell.js says must never happen. .72 clears the bar and is still
+   quiet; hover and keyboard focus take it to full. */
 .sh-exit{height:30px;padding:0 14px;border-radius:100px;background:rgba(255,255,255,.55);color:var(--mute);font-size:14px;
-  box-shadow:var(--sh-soft);opacity:.35;transition:opacity .2s,background .2s}
+  box-shadow:var(--sh-soft);opacity:.72;transition:opacity .2s,background .2s}
 .sh-exit:hover,.sh-exit:focus-visible{opacity:1;background:#fff;color:var(--ink)}
 /* shown only when the browser refused window.close(): the button must never be a dead control. */
 .sh-exit-tip{padding:4px 12px;border-radius:100px;background:#fff;color:var(--ink);font-size:14px;box-shadow:var(--sh-soft)}

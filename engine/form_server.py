@@ -2769,7 +2769,8 @@ def _usage_probe_work():
         args = cmd + ['-p', '--settings', str(settings), '--output-format', 'stream-json', '--verbose',
                       '--model', 'haiku', '--max-turns', '1']
         proc = subprocess.run(args, input='say ok', capture_output=True, text=True, timeout=90,
-                              cwd=str(ROOT), encoding='utf-8', errors='replace')
+                              cwd=str(ROOT), encoding='utf-8', errors='replace',
+                              creationflags=NO_WINDOW, env=child_env())
         for line in (proc.stdout or '').splitlines():
             line = line.strip()
             if not line.startswith('{'): continue
@@ -3265,48 +3266,52 @@ def _save_uploads():
 def launch(target):
     """Open a file or folder with its default app (browser for .html, Explorer for folders).
 
-    Lumi's window is a FULLSCREEN Edge app window, and Windows will not let a process that does not own the
-    foreground steal it. So Explorer opened behind Lumi and the person saw nothing happen - the app looked like it
-    had swallowed the folder, the way a fullscreen game does. After opening, the new window is pulled to the front
-    explicitly. Failure here is never fatal: the folder is open either way.
+    Two separate things go wrong on Windows, and both are handled here.
+
+    1. Lumi's window is a FULLSCREEN Edge app window, and Windows will not let a process that does not own the
+       foreground steal it. So Explorer opened BEHIND Lumi and the person saw nothing happen - the app looked
+       like it had swallowed the folder, the way a fullscreen game does.
+    2. `explorer.exe <folder>` opens a NEW window every time, even when that exact folder is already open. Three
+       exports in a row left three identical "4 - Your slides" windows stacked up behind the app.
+
+    So for a folder we first look for a window already showing it and raise that one; only when there is none do
+    we open a new one and then raise it. Failure here is never fatal - the folder is open either way.
     """
     if NO_LAUNCH: return
     if Path(target).is_dir():
-        subprocess.Popen(['explorer.exe', str(target)])
+        if _front(target, reuse=True):            # already open somewhere: raise it instead of stacking another
+            return
+        subprocess.Popen(['explorer.exe', str(target)], creationflags=NO_WINDOW)
+        _front(target)
     else:
         os.startfile(str(target))
-    _front(target)
+        _front(target)
 
 
-_FRONT_PS = r'''
-Add-Type @"
-using System; using System.Runtime.InteropServices;
-public class Fg {
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
-  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-}
-"@
-$deadline = (Get-Date).AddSeconds(6)
-while ((Get-Date) -lt $deadline) {
-  $p = Get-Process explorer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } |
-       Sort-Object StartTime -Descending | Select-Object -First 1
-  if ($p) { [Fg]::ShowWindow($p.MainWindowHandle, 9) | Out-Null; [Fg]::SetForegroundWindow($p.MainWindowHandle) | Out-Null; break }
-  Start-Sleep -Milliseconds 250
-}
-'''
+def _front(target, reuse=False):
+    """Bring the window showing `target` in front of Lumi (engine/tools/raise_window.ps1 does the Win32 part).
 
-
-def _front(target):
-    """Pull the window we just opened in front of Lumi. Best effort, in the background, never raises."""
-    if os.name != 'nt': return
+    With reuse=True the call is synchronous and returns True only when a window was ALREADY showing the folder,
+    so the caller can skip opening a second one. Otherwise it is fire-and-forget: the script waits for the window
+    that is being opened to appear. Never raises; a failure just means the person has to click the taskbar.
+    """
+    if os.name != 'nt': return False
+    script = ENGINE / 'tools' / 'raise_window.ps1'
+    if not script.is_file():
+        log('raise_window.ps1 is missing, so an opened folder may stay behind Lumi')
+        return False
+    args = ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script), '-Target', str(target)]
+    if reuse: args.append('-ReuseOnly')
     try:
-        subprocess.Popen(['powershell', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', _FRONT_PS],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-    except Exception as e:
+        if reuse:
+            r = subprocess.run(args, capture_output=True, timeout=20, stdin=subprocess.DEVNULL,
+                               creationflags=NO_WINDOW)
+            return r.returncode == 0
+        subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
+    except (OSError, subprocess.TimeoutExpired) as e:
         log('could not bring the opened window forward', repr(e)[:120])
-
+    return False
 
 # ---------------------------------------------------------------- v0.5: work folders, the slide plan, slide-by-slide build
 # Every deck made from v0.5 on keeps its editable files in .aura/decks/<id>/ (plan.json, the packed editable deck).

@@ -174,6 +174,15 @@ if (!title) {
     '       node new_deck.js --ids <build folder> [--check]');
   process.exit(1);
 }
+/* A FOLDER PATH IS NOT A TITLE. `node new_deck.js .aura/temp/build/<slug>` (the --ids call with --ids left off)
+   used to slug the whole path into a name and quietly create
+   .aura/temp/build/clumiauratempbuildfire-resistance-of-nigerian-ti - an empty deck nobody asked for, which then
+   sits in the build folder forever. Four of them were found on a working install. Say what was meant instead. */
+if (/[\\/]/.test(title) || /^[A-Za-z]:/.test(title) || fs.existsSync(title)) {
+  console.error('That looks like a folder, not a deck title: ' + title);
+  console.error('To add missing text ids to a deck you already built, use:  node new_deck.js --ids ' + title);
+  process.exit(1);
+}
 if (!THEMES[theme]) { console.error('Unknown theme "' + theme + '". Use one of: ' + Object.keys(THEMES).join(', ')); process.exit(1); }
 const root = findAuraRoot(process.cwd());
 if (!root) { console.error('Run this from the Lumi folder (the one that contains .aura).'); process.exit(1); }

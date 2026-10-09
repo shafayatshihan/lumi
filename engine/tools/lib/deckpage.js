@@ -29,8 +29,14 @@ function resolveDeck(arg) {
 // the folder to serve: the Aura root when the deck is inside it (build decks reach ../../../engine), else the deck's folder
 function serveRootFor(deck) {
   const root = findAuraRoot(deck);
-  const rel = root ? path.relative(root, deck) : '..';
-  return root && !rel.startsWith('..') ? root : path.dirname(deck);
+  if (!root) return path.dirname(deck);
+  const rel = path.relative(root, deck);
+  /* On Windows path.relative() across DRIVE LETTERS returns an absolute path ('C:\\Users\\...'), which does not
+     start with '..' - so the old containment test said 'inside the root' for a deck on another drive, and we
+     served a folder that did not contain it. Every request 404'd and the deck opened blank. isAbsolute is the
+     missing half of the test. This is reachable for real: Lumi on C: exporting a deck kept on D:. */
+  const inside = !!rel && !path.isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + path.sep);
+  return inside ? root : path.dirname(deck);
 }
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
