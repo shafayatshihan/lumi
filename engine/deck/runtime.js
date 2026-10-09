@@ -579,11 +579,41 @@
     // measure after every label is at the origin, so one layout pass serves all of them
     live.forEach(it => { it.ew = it.el.offsetWidth; it.eh = it.el.offsetHeight; });
 
+    /* ------------------------------------------------------------------ A LABEL IS PLACED ONCE AND STAYS PUT.
+       This runs on every animation frame while a loop plays. Solving from scratch each time is what made labels
+       jump: the solver is greedy, so a few pixels of anchor movement reorders the candidates and two labels
+       swap slots - and with six labels on one figure that happens somewhere in the frame almost every frame.
+       It cannot be damped with hysteresis, because the capture contract forbids reading the previous frame
+       (seek(t) and the recorded loop must agree).
+       So the box is solved ONCE per arrangement and held; only the LEADER follows the moving part. That is also
+       how a human annotates a moving figure - the callout is still, the line tracks. A re-solve happens only
+       when the arrangement genuinely changes: the holder resized, or a label appeared or disappeared.
+       `sig` is built from ALL items, not just the visible ones, so an anchor flickering across the edge of the
+       frame hides its own label without moving anyone else's. */
+    const sig = w + 'x' + h + '|' + items.map(it => (it.el.dataset.anchor || it.el.textContent || '').slice(0, 24)).join('');
+    const held = holder._auraSlots instanceof Map && holder._auraSig === sig
+      && live.every(it => holder._auraSlots.has(it.el)) ? holder._auraSlots : null;
+
     holder._auraGrid = grid;                   // the last occupancy, so a test page can see what the placer saw
     const box = grid && grid.box, taken = [], segs = [];
-    let crowded = false;
+    const slots = held || new Map();
+    let crowded = held ? !!holder._auraCrowded : false;
+    const drawLeader = (rect, ax, ay) => {
+      if (!wantLeaders) return;
+      const e = edgePoint(rect, ax, ay), len = Math.hypot(e.x - ax, e.y - ay);
+      if (len <= 14) return;
+      const ux = (e.x - ax) / len, uy = (e.y - ay) / len;
+      segs.push({ x1: ax + ux * 7, y1: ay + uy * 7, x2: e.x - ux * 3, y2: e.y - uy * 3, dx: ax, dy: ay });
+    };
     live.forEach(it => {
       const ew = it.ew, eh = it.eh, ax = it.x, ay = it.y;
+      if (held) {                               // the box was solved already: move only the leader
+        const s0 = slots.get(it.el), rect = { x: s0.x, y: s0.y, w: ew, h: eh };
+        it.el.style.transform = 'translate(' + s0.x.toFixed(1) + 'px, ' + s0.y.toFixed(1) + 'px)';
+        it.el.dataset.placed = '1';
+        drawLeader(rect, ax, ay);
+        return;
+      }
       /* the author's old hard offset is now a HINT: data-align / data-dx / data-dy say which way the label
          wanted to sit, and that direction wins every tie, but it can no longer park the label on the figure. */
       const align = it.el.dataset.align || 'left';
@@ -641,16 +671,12 @@
       // a covered figure.
       if (grid && grid.coverage(best.x, best.y, ew, eh) > 0.12) crowded = true;
       taken.push(best);
+      slots.set(it.el, { x: best.x, y: best.y });
       it.el.style.transform = 'translate(' + best.x.toFixed(1) + 'px, ' + best.y.toFixed(1) + 'px)';
       it.el.dataset.placed = '1';
-      if (wantLeaders) {
-        const e = edgePoint(best, ax, ay), len = Math.hypot(e.x - ax, e.y - ay);
-        if (len > 14) {
-          const ux = (e.x - ax) / len, uy = (e.y - ay) / len;
-          segs.push({ x1: ax + ux * 7, y1: ay + uy * 7, x2: e.x - ux * 3, y2: e.y - uy * 3, dx: ax, dy: ay });
-        }
-      }
+      drawLeader(best, ax, ay);
     });
+    holder._auraSlots = slots; holder._auraSig = sig; holder._auraCrowded = crowded;
     if (crowded) holder.setAttribute('data-labels-crowded', ''); else holder.removeAttribute('data-labels-crowded');
     if (!wantLeaders) return;
     const svg = leaderLayer(holder);
@@ -669,7 +695,10 @@
     });
   }
 
-  window.LumiLabel = { version: '1.0', grid: occGrid, sceneGrid, pictureGrid, containBox, safeBox, place: placeLabels };
+  /* Force the next place() to solve again. Called when the thing the solve was based on really changed -
+     a resize, or a new picture in the holder. Everything else holds its slots on purpose. */
+  function resetLabels(holder) { if (holder) { holder._auraSlots = null; holder._auraSig = null; } }
+  window.LumiLabel = { version: '1.1', grid: occGrid, sceneGrid, pictureGrid, containBox, safeBox, place: placeLabels, reset: resetLabels };
 
   /* ---------------- Blender holders: a render that is already a picture or a recorded loop ---------------- */
   function blenderHolders(slide) { return Array.from(slide.querySelectorAll('.bb-blender[data-filled]:not([data-baked])')); }
@@ -828,7 +857,19 @@
   function markRecording(slide) {
     slides.forEach(x => { if (x !== slide) x.classList.remove('aura-rec'); });
     slide.classList.add('aura-rec');
-    slide.querySelectorAll(REC_KEEP).forEach(el => el.setAttribute('data-aura-rec-keep', ''));
+    slide.querySelectorAll(REC_KEEP).forEach(el => {
+      el.setAttribute('data-aura-rec-keep', '');
+      // every ancestor between the picture and the slide that actually PAINTS is recorded with it, so the loop
+      // carries the surface the picture sits on rather than whatever happened to be behind it.
+      for (let a = el.parentElement; a && a !== slide; a = a.parentElement) {
+        const cs = getComputedStyle(a);
+        const bg = cs.backgroundColor || '';
+        const m = bg.match(/rgba?\(([^)]+)\)/);
+        const alpha = m ? (m[1].split(/[ ,\/]+/).filter(Boolean).map(parseFloat)[3]) : 1;
+        const paints = (m && (alpha === undefined || alpha > 0.01)) || (cs.backgroundImage && cs.backgroundImage !== 'none');
+        if (paints) a.setAttribute('data-aura-rec-bg', '');
+      }
+    });
   }
   function buildCapture() {
     const out = { ready: null, slides: {}, recorded: {} };

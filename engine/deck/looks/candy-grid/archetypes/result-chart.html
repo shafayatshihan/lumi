@@ -1,0 +1,39 @@
+<!-- archetype: result-chart | the chart board: the stacked title and up to three chips on white | a white chart card floating on a full-height yellow cell | a black base bar | main visual: chart | companions: <=3 finding chips -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="The result">
+  <div class="safe">
+    <div class="cg-board b-chart">
+      <div class="cg-cell txt" style="grid-area:text">
+        <p class="kicker" data-edit="s{{N}}-1">The result</p>
+        <h2 class="headline" data-edit="s{{N}}-2">Smooth, then <span class="em">suddenly not.</span></h2>
+        <ul class="cg-chips">
+          <li class="cg-chip" data-edit="s{{N}}-3">Flat for 40 min</li>
+          <li class="cg-chip key" data-edit="s{{N}}-4">Lets go at 41</li>
+          <li class="cg-chip" data-edit="s{{N}}-5">Never recovers</li>
+        </ul>
+      </div>
+      <div class="cg-cell yellow c-panel" style="grid-area:panel"><div class="cg-chart" id="s{{N}}-chart"></div></div>
+      <div class="cg-cell black" style="grid-area:base"></div>
+    </div>
+    <footer class="cg-foot" data-nonclaim><span class="cg-mark" data-edit="s{{N}}-6">Deck mark</span><span class="cg-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Read the axes first.</strong> Say what is measured and in what units, then follow the rose line: it is the result the slide is about.</p>
+    <p><strong>Point at the picture.</strong> The figure on the colour block is the subject itself, modelled from its
+    real parts and shown as a clean product shot; say which proportions are to scale and which are schematic.</p>
+    <p><strong>Then say the one thing this slide must leave behind</strong>, in a single sentence, and move on. Give the
+    source of every number as you say it.</p>
+  </aside>
+</section>
+<script>
+/* Replace with the user's real data and its source line, or keep illustrative: true and say so in the notes. */
+CGChart.line('#s{{N}}-chart', {
+  x: { min: 0, max: 60, ticks: [0, 20, 40, 60], title: 'time elapsed, min' },
+  y: { min: 0, max: 100, ticks: [0, 50, 100], title: 'load held, %' },
+  series: [
+    { name: 'new', points: [[0, 92], [10, 91], [20, 90], [30, 90], [40, 88], [50, 86], [60, 85]], markers: true },
+    { name: 'old', points: [[0, 90], [10, 89], [20, 88], [30, 87], [40, 84], [42, 46], [50, 40], [60, 37]] },
+  ],
+  band: { from: 40, to: 60 }, event: { x: 41, y: 60, label: 'old design lets go' },
+  illustrative: true,
+});
+</script>

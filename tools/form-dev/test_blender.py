@@ -167,7 +167,7 @@ def locator_suite(T):
               and se({'main': '3d', 'motion': 'timed', 'engine': 'blender'}, True) == {'engine': 'blender', 'kind': 'animation', 'note': None, 'chosen': True})
         check('engine: no Blender -> three.js (a chosen blender says blender-missing)', se({'main': '3d', 'motion': 'still'}, False)['engine'] == 'threejs'
               and se({'main': '3d', 'motion': 'still', 'engine': 'blender'}, False)['note'] == 'blender-missing')
-        check('engine: other looks never auto-pick Blender', se({'main': '3d', 'motion': 'still'}, True, 'Pink Punch')['engine'] == 'threejs')
+        check('engine: other looks never auto-pick Blender', se({'main': '3d', 'motion': 'still'}, True, 'An Unlisted Look')['engine'] == 'threejs')
         check('engine: no 3D -> no engine', se({'main': 'chart'}, True)['engine'] is None)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

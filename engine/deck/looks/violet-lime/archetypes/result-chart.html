@@ -1,0 +1,42 @@
+<!-- archetype: result-chart | dial-row: three donut dials with the figure in the middle of each, the ONE the slide is about in lime. The headline INVERTS (.inv) because the lime is the key dial. VIOLET ground | main visual: chart | companions: <=3 finding chips -->
+<section class="slide on-violet" data-kind="content" data-minutes="1.5" data-title="What we measured">
+  <div class="vl-deco-layer" aria-hidden="true"><i class="vl-deco d2"></i></div>
+  <div class="safe">
+    <div class="vl-main">
+      <div class="vl-l w4">
+        <p class="kicker" data-edit="s{{N}}-1">Results</p>
+        <h2 class="headline inv" data-edit="s{{N}}-2">Three numbers, <span class="em">one answer.</span></h2>
+        <ul class="vl-chips">
+          <li class="vl-chip" data-edit="s{{N}}-3">Measured over 40 runs</li>
+          <li class="vl-chip" data-edit="s{{N}}-4">Same rig, same operator</li>
+        </ul>
+      </div>
+      <div class="vl-r w8">
+        <!-- the dials are the slide's ONE main visual. EXACTLY ONE dial is key: true - it is the lime one, and
+             nothing else on this slide is lime. Real values with a source, or illustrative: true and no figures. -->
+        <div class="vl-chart" id="s{{N}}-chart" style="height:620px"></div>
+      </div>
+    </div>
+    <footer class="vl-foot" data-nonclaim><span class="vl-mark" data-edit="s{{N}}-6">Deck mark</span><span class="vl-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Read the lime dial first</strong> and say what it is a fraction of - a bare percentage means nothing
+    until the room knows the denominator. Then the other two, quickly; they are context for the first.</p>
+    <p><strong>Give the source and the spread.</strong> Say how many runs, over what period, and how much the number
+    moved between the best and the worst. A dial shows a single figure, so the variation has to come from you.</p>
+    <p><strong>Then say what the number means for the decision</strong> this talk is asking the room to make.
+    Honesty caveat: if any figure is modelled rather than measured, say so as you read it. Prepare the question "what
+    would make that number worse?", and answer with the condition, not the caveat.</p>
+  </aside>
+  <script>
+  VLChart.dials('#s{{N}}-chart', {
+    dials: [
+      { value: 77, label: 'held at load', key: true },     // the ONE lime mark
+      { value: 94, label: 'recovered' },
+      { value: 24, label: 'lost to leakage' },
+    ],
+    unit: '%',
+    source: 'Source: replace with the real source, or set illustrative: true',
+  });
+  </script>
+</section>

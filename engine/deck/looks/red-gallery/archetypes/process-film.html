@@ -1,0 +1,59 @@
+<!-- archetype: process-film | one monochrome model through N states, each part arriving in turn; the dark numbered band under it lights the step on screen in red | main visual: 3D (live: it drives the band) | companions: the band only (3 or 4 columns; set --n) -->
+<section class="slide" data-kind="content" data-minutes="2" data-title="How it works">
+  <div class="safe">
+    <div class="rg-main stack">
+      <div class="rg-head">
+        <h2 class="headline wide" data-edit="s{{N}}-2">Three moves, <span class="em">in order</span></h2>
+        <p class="kicker" data-edit="s{{N}}-1">How it works</p>
+      </div>
+      <div class="rg-stage">
+        <div class="aura-3d rg-3d" data-scene="s{{N}}-scene" data-period="18" aria-hidden="true"></div>
+      </div>
+      <ol class="rg-band" style="--n:3" id="s{{N}}-band">
+        <li class="on"><span class="no">01</span><strong data-edit="s{{N}}-3">Set the base</strong><p data-edit="s{{N}}-4">It goes down first.</p></li>
+        <li><span class="no">02</span><strong data-edit="s{{N}}-5">Seat the core</strong><p data-edit="s{{N}}-6">It finds its axis.</p></li>
+        <li><span class="no">03</span><strong data-edit="s{{N}}-7">Close it</strong><p data-edit="s{{N}}-8">The cap locks the stack.</p></li>
+      </ol>
+    </div>
+    <footer class="rg-foot" data-nonclaim><span class="rg-mark" data-edit="s{{N}}-9">Deck mark</span><span class="rg-label" data-edit="s{{N}}-lb">Deck label</span><span class="rg-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Let the picture run once before you speak.</strong> The band under it says which step is on screen; the
+    number turns red as each part arrives.</p>
+    <p><strong>Say each step as it lands</strong>, in one sentence, in the same words as the band. If you need longer than
+    the step holds, the step has too much in it - split it.</p>
+    <p><strong>End on the whole thing.</strong> The last state is the assembled object; point at it and say what it can do
+    now that it could not before.</p>
+  </aside>
+</section>
+<script>
+/* The film: each step holds, then ONE part drops in and settles (RG3D.land). Replace the parts with the subject's own and
+   the band texts with the real steps (3 or 4; set --n on the band to match). Live three.js on purpose: it drives the band. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const P = ctx.period;
+  const S = RG3D.studio(ctx, { target: [0, 0.9, 0], distance: 9, azimuth: -28, elevation: 20 });
+  const base = S.add(RG3D.block(THREE, 3.2, 0.5, 2.2, { color: 'white' }));  base.position.y = 0.25;
+  const core = S.add(RG3D.puck(THREE, 0.8, 0.9, { color: 'ink' }));
+  const cap  = S.add(RG3D.block(THREE, 2.4, 0.4, 1.8, { color: 'grey' }));
+  S.contact(base, 2.0);
+  const H = 2.4;                                         // the drop height
+  const cols = document.getElementById('s{{N}}-band').children;
+  const placeAt = (obj, rest, k) => { const l = RG3D.land(k); obj.position.y = rest + H * l.y; obj.scale.set(l.sx, l.sy, l.sx); obj.visible = k > 0; };
+  let shown = -1;
+  return S.api({ update(t) {
+    S.sway(t, { deg: 3 });
+    const s = RG3D.steps(t, P, 3, 0.35);                 // i = the step on screen, k = 0..1 across the move into the next
+    placeAt(core, 0.95, s.i >= 1 ? 1 : s.i === 0 ? s.k : 0);
+    placeAt(cap, 1.6, s.i >= 2 ? 1 : s.i === 1 ? s.k : 0);
+    if (s.i === 2 && s.k > 0) {                          // the last move: the stack clears and the loop restarts
+      const q = 1 - RG3D.easeStep(s.k);
+      [core, cap].forEach(o => { o.scale.multiplyScalar(q); o.visible = q > 0.01; });
+    }
+    if (s.i !== shown) {
+      shown = s.i;
+      Array.prototype.forEach.call(cols, (c, n) => c.classList.toggle('on', n === s.i));
+    }
+  } });
+}, { period: 18 });
+</script>

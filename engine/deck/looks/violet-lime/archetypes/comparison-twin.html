@@ -1,0 +1,62 @@
+<!-- archetype: comparison-twin | pair-boards: both objects WHOLE and side by side in ONE scene (S5), in one frame, with a single lime tab naming the difference. The headline INVERTS (.inv) because the lime is the tab. VIOLET ground | main visual: picture | companions: 2 stats, one close line -->
+<section class="slide on-violet" data-kind="content" data-minutes="1.5" data-title="Before and after">
+  <div class="vl-deco-layer" aria-hidden="true"><i class="vl-deco d1"></i></div>
+  <div class="safe">
+    <div class="vl-main">
+      <div class="vl-l w5">
+        <p class="kicker" data-edit="s{{N}}-1">Side by side</p>
+        <h2 class="headline inv" data-edit="s{{N}}-2">Same job, <span class="em">half the parts.</span></h2>
+        <ul class="vl-stats col">
+          <li><span class="vl-stat" data-edit="s{{N}}-3">41 &#8594; 19</span><p data-edit="s{{N}}-4">parts in the assembly</p></li>
+          <li><span class="vl-stat" data-edit="s{{N}}-5">+12%</span><p data-edit="s{{N}}-6">more load held, <b>same envelope</b></p></li>
+        </ul>
+        <p class="close-line" data-edit="s{{N}}-7">Everything else is <b>identical</b> - the staging, the scale and the light.</p>
+      </div>
+      <div class="vl-r w7">
+        <!-- S5: both objects whole, in ONE scene, at one scale under one light. Never two holders, never a morph,
+             never one ghosted behind the other. With real photographs of both, this becomes ONE frame holding a
+             photograph that shows both - or two frames in a .vl-pics group, both photographs, never one of each. -->
+        <figure class="vl-frame wide is-drawn">
+          <div class="aura-3d vl-3d" data-scene="s{{N}}-scene" data-period="14" aria-hidden="true">
+            <div class="vl-tag" data-follow="hero"><b data-edit="s{{N}}-8">The change</b><span data-edit="s{{N}}-9">what is different here</span></div>
+          </div>
+          <!-- the ONE lime thing on this slide -->
+          <figcaption class="vl-tab" data-edit="s{{N}}-10">Old left, new right</figcaption>
+        </figure>
+      </div>
+    </div>
+    <footer class="vl-foot" data-nonclaim><span class="vl-mark" data-edit="s{{N}}-11">Deck mark</span><span class="vl-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Say what is the same before you say what is different.</strong> Both objects are drawn at one scale
+    under one light precisely so the room can trust the comparison; point that out, because it is the reason the
+    picture is honest.</p>
+    <p><strong>Then name the one difference</strong> and let the lime tab carry it. Give the two numbers with their
+    sources as you say them - whose measurement, on what sample, when.</p>
+    <p><strong>Say what the difference costs.</strong> A halved part count usually buys something and spends
+    something; name both. Honesty caveat: if the two were measured under different conditions, say so plainly here
+    rather than letting the picture imply they were not. Prepare the question "is that a fair test?".</p>
+  </aside>
+  <script>
+  Aura.scene('s{{N}}-scene', (ctx) => {
+    const { THREE } = ctx;
+    const S = VL3D.stage(ctx, { target: [0, 0.9, 0], distance: 11, azimuth: -18, elevation: 14 });
+    const mk = (parts) => {
+      const g = new THREE.Group();
+      const body = VL3D.block(THREE, 1.7, 1.2, 1.3, { color: 'white' }); body.position.y = 0.7; g.add(body);
+      for (let i = 0; i < parts; i++) {
+        const p = VL3D.block(THREE, 0.3, 0.3, 0.3, { color: 'deep' });
+        p.position.set(-0.55 + (i % 3) * 0.55, 1.55, -0.3 + Math.floor(i / 3) * 0.5);
+        g.add(p);
+      }
+      return g;
+    };
+    const left = mk(6), right = mk(3);
+    const hero = VL3D.puck(THREE, 0.34, 0.26, { color: 'lime' });   // the ONE lime part: the change itself
+    hero.position.set(0, 1.9, 0.3); right.add(hero);
+    S.add(VL3D.pair(THREE, left, right, 3.2));
+    VL3D.tags(S, ctx.el, { hero: hero });
+    return S.api({ update(t) { S.sway(t, { deg: 5 }); } });
+  }, { period: 14 });
+  </script>
+</section>

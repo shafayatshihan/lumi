@@ -30,7 +30,7 @@ export function blenderNotice(r) {
   const orphLine = `${s1(orphNums) ? 'one slide asks' : `${orphNums.length} slides ask`} for a studio render that lumi can never make, `
     + `because ${s1(orphNums) ? 'that slide is' : 'those slides are'} live 3d. open ${s1(orphNums) ? 'it' : 'them'} and change the `
     + 'picture: ask for the figure to be drawn live, or for a studio render instead.';
-  const pendLine = 'finalize puts finished renders into the deck; it never makes them. approve each design and let lumi render it, then finalize again.';
+  const pendLine = 'saving puts finished renders into the deck; it never makes them. approve each design and let lumi render it, then save again.';
   const line = !pending
     ? `${one ? 'this slide' : 'these slides'} changed after the last full render, so the deck still shows the older picture. render again, or finalize with the older render.`
     : onlyOrph ? orphLine : someOrph ? pendLine + ' ' + orphLine : pendLine;
@@ -41,8 +41,8 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
   const sfx = n => { try { audio && audio.sfx && audio.sfx(n); } catch (e) { /* optional */ } };
   let alive = true, pollT = 0, armed = 0, started = false, final = null, idle = 0, offTries = 0, since = 0;
 
-  const badge = h('span', { class: 'badge' }, 'finalize');
-  const head = h('h1', { class: 'q fz-h' }, 'finalizing your deck');
+  const badge = h('span', { class: 'badge' }, 'save and export');
+  const head = h('h1', { class: 'q fz-h' }, 'saving and exporting your deck');
   const line = h('p', { class: 'fz-line', 'aria-live': 'polite' }, 'getting ready…');
   const bar = h('i');
   const meter = h('div', { class: 'fz-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100' }, bar);
@@ -87,7 +87,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
       showDone(st.final || final, 'all done');
     } else {
       sfx(st.phase === 'cancelled' ? 'deselect' : 'error');
-      head.textContent = st.phase === 'cancelled' ? 'finalizing stopped' : 'that didn’t work';
+      head.textContent = st.phase === 'cancelled' ? 'saving stopped' : 'that didn’t work';
       line.textContent = st.phase === 'cancelled' ? 'nothing changed. your previous final deck (if any) is still there.' : `${(st.message || 'something went wrong.').toLowerCase()}`;
       note.textContent = '';
       acts.replaceChildren(btn('try again', () => { reset(); start({ retry: true }); }, true), btn('back to the deck', () => onEdit && onEdit(deckId)), btn('my decks', () => onHome && onHome()));
@@ -96,7 +96,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
   // The finished state, also shown when a finalized deck is opened again (W-05): nothing is re-recorded unless asked.
   function showDone(fin, title, again) {
     final = fin;
-    head.textContent = title; badge.textContent = 'finalized';
+    head.textContent = title; badge.textContent = 'saved';
     bar.style.transform = 'scaleX(1)';
     const size = fin && fin.htmlBytes ? ` (${mb(fin.htmlBytes)} deck${fin.pdfBytes ? ', ' + mb(fin.pdfBytes) + ' pdf' : ''})` : '';
     line.textContent = `your final deck and its pdf are in “4 - Your slides”.${size}`;
@@ -125,7 +125,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
       btn('present it', async () => { sfx('launch'); await api.openSlides(final && final.html); }),
       btn('make a powerpoint copy', makePptx),
       btn('smaller file', () => { reset(); start({ light: true }); }),
-      btn(again ? 'finalize again' : 'back to my decks', again ? () => { reset(); start({ force: true }); } : () => { sfx('back'); onHome && onHome(); })];
+      btn(again ? 'save again' : 'back to my decks', again ? () => { reset(); start({ force: true }); } : () => { sfx('back'); onHome && onHome(); })];
     if (again) row.push(btn('back to my decks', () => { sfx('back'); onHome && onHome(); }));
     acts.replaceChildren(...row);
     saveLine.textContent = '';
@@ -158,7 +158,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
     const [pl, bv] = await Promise.all([api.plan.get(deckId), api.blender.deck(deckId)]);
     if (!alive) return;
     const slides = (pl && pl.plan && pl.plan.slides) || [], views = Object.values((bv && bv.slides) || {});
-    badge.textContent = 'finalize';
+    badge.textContent = 'save and export';
     head.textContent = headText;
     line.textContent = lineText;
     bar.style.transform = 'scaleX(.02)';
@@ -178,7 +178,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
       : [btn('use it anyway', () => { reset(); start({ ...opts, retry: true, acceptStale: true }); }, true), btn('my decks', () => { sfx('back'); onHome && onHome(); })]));
   }
   function reset() {
-    head.textContent = 'finalizing your deck'; badge.textContent = 'finalize';
+    head.textContent = 'saving and exporting your deck'; badge.textContent = 'save and export';
     line.textContent = 'getting ready…'; bar.style.transform = 'scaleX(.02)';
     note.textContent = '';
     cancelB.disabled = false; cancelB.textContent = 'cancel'; acts.replaceChildren(cancelB); pptxLine.remove(); clearTimeout(pptxT);
@@ -207,7 +207,7 @@ export function mountFinalizing(el, { deckId, audio, onHome, onEdit } = {}) {
       const d = await api.decks.get(deckId);
       if (!alive) return;
       const rec = d && d.deck;
-      if (rec && rec.finalized && !rec.changedSinceFinalize && rec.final) return showDone(rec.final, 'already finalized', true);
+      if (rec && rec.finalized && !rec.changedSinceFinalize && rec.final) return showDone(rec.final, 'already saved', true);
     }
     const r = await api.finalize.start(deckId, { ...(opts.light ? { light: true } : {}), ...(opts.acceptStale ? { acceptStale: true } : {}) });
     if (!alive) return;

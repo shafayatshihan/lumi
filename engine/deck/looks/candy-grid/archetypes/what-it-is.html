@@ -1,0 +1,46 @@
+<!-- archetype: what-it-is | the side board: a full-height yellow panel holding the object (its parts floating out), a pink disc across its seam, a black seam bar, the stacked title and numbered parts on white | main visual: 3D (or a .cg-shots render collage) | companions: <=3 facts, 2-4 projected tags -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="What it is">
+  <div class="safe">
+    <div class="cg-board b-side">
+      <div class="cg-cell yellow" style="grid-area:fig">
+        <div class="cg-disc pink" style="width:300px; height:300px; right:-150px; bottom:110px"></div>
+        <div class="aura-3d cg-3d pad" data-scene="s{{N}}-scene" data-period="14" aria-hidden="true">
+          <div class="cg-tag" data-follow="core" data-dx="90"><b data-edit="s{{N}}-9">The core</b><span data-edit="s{{N}}-10">~40 mm across</span></div>
+          <div class="cg-tag" data-follow="cap" data-align="right" data-dx="90"><b data-edit="s{{N}}-11">The cap</b><span data-edit="s{{N}}-12">lifted off</span></div>
+        </div>
+      </div>
+      <div class="cg-cell black" style="grid-area:bar"></div>
+      <div class="cg-cell txt" style="grid-area:text; padding-left:120px">
+        <h2 class="headline" data-edit="s{{N}}-2">Three parts, <span class="em">one job.</span></h2>
+        <p class="kicker" data-edit="s{{N}}-1">What it is</p>
+        <ul class="cg-steps">
+          <li><span class="cg-n on">1</span><div><strong data-edit="s{{N}}-3">The body</strong><p data-edit="s{{N}}-4">holds everything in line</p></div></li>
+          <li><span class="cg-n">2</span><div><strong data-edit="s{{N}}-5">The core</strong><p data-edit="s{{N}}-6">does the work</p></div></li>
+          <li><span class="cg-n">3</span><div><strong data-edit="s{{N}}-7">The cap</strong><p data-edit="s{{N}}-8">seals it shut</p></div></li>
+        </ul>
+      </div>
+    </div>
+    <footer class="cg-foot" data-nonclaim><span class="cg-mark" data-edit="s{{N}}-13">Deck mark</span><span class="cg-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Name the parts in the order they matter.</strong> The tags on the picture and the numbered list say the same thing; read the list while pointing at the tags.</p>
+    <p><strong>Point at the picture.</strong> The figure on the colour block is the subject itself, modelled from its
+    real parts and shown as a clean product shot; say which proportions are to scale and which are schematic.</p>
+    <p><strong>Then say the one thing this slide must leave behind</strong>, in a single sentence, and move on. Give the
+    source of every number as you say it.</p>
+  </aside>
+</section>
+<script>
+/* The object whole, its own parts floating out along the axis they came out of. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const S = CG3D.studio(ctx, { target: [0, 2.0, 0], distance: 13, azimuth: -30, elevation: 14 });
+  const body = S.add(CG3D.puck(THREE, 1.1, 1.6, { color: 'white', bevel: 0.28 }));  body.position.y = 0.8;
+  const core = S.add(CG3D.puck(THREE, 0.55, 0.9, { color: 'rose' }));               core.position.set(0, 2.4, 0);
+  const cap  = S.add(CG3D.puck(THREE, 0.95, 0.24, { color: 'cyan', bevel: 0.1 }));  cap.position.set(0, 3.4, 0);
+  S.contact(body, 1.5);
+  S.float(core, { amp: 0.08 }); S.float(cap, { amp: 0.1, phase: 1.2 });
+  CG3D.tags(S, ctx.el, { core: core, cap: cap });
+  return S.api({ update(t) { S.sway(t, { deg: 5 }); } });
+}, { period: 14 });
+</script>

@@ -23,7 +23,7 @@ CLAUDE_MD = REPO / 'workspace' / '.claude' / 'CLAUDE.md'
 DOCS = [CLAUDE_MD] + [SKILL / n for n in ('SKILL.md', 'planning.md', 'interviewing.md', 'building.md', 'editing.md',
                                           'deck-toolkit.md', 'aura-blend.md', 'story-arcs.md',
                                           'enforcement.md')] + [SKILL / 'looks' / '_shared' / 'LOOK-BASE.md',
-                                          SKILL / 'looks' / 'bold-blue' / 'LOOK.md', SKILL / 'looks' / 'flat-pack' / 'LOOK.md']
+                                          SKILL / 'looks' / 'bold-blue' / 'LOOK.md', SKILL / 'looks' / 'clay-pop' / 'LOOK.md']
 
 
 def read(p):

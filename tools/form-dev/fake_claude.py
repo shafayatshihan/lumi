@@ -509,7 +509,7 @@ else:
          'No report found in "Report". Using the brief only.', error=True)
     if trigger('ask-me'):
         q = ('Quick question before I start.\n'
-             '[[aura:choice id="q1" question="Which look?" options="Bold Blue|Flat-Pack|Claude chooses"]]\n[[aura:ask]]')
+             '[[aura:choice id="q1" question="Which look?" options="Bold Blue|Clay Pop|Claude chooses"]]\n[[aura:ask]]')
         say(q); result(q); sys.exit(0)
 
 if trigger('take-your-time'):

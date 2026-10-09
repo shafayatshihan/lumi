@@ -1,12 +1,12 @@
 // "Make it" scene: a live mini title slide in the chosen look, showing the talk title, the presenters and the event.
-// Each look is drawn in its own colours, shapes and display font (Pink Punch, Bold Blue, Flat-Pack,
-// Happy Headspace, Clay Pop); "Claude chooses" gently cycles through all five. Under the slide, the plan: either a pill saying
+// Each look is drawn in its own colours, shapes and display font (Bold Blue, Clay Pop, Red Gallery,
+// Candy Grid); "Claude chooses" gently cycles through all of them. Under the slide, the plan: either a pill saying
 // Claude plans the slides, or a strip of the slides the user listed.
 
 import { C, SPRING, h, get, clean, currentScreen, short, star, pill, makeStage, DOT, ELL } from './talk.js';
 
 const W = 440, H = 248, X0 = 110, Y0 = 34;
-const LOOKS = ['Pink Punch', 'Bold Blue', 'Flat-Pack', 'Happy Headspace', 'Clay Pop'];
+const LOOKS = ['Bold Blue', 'Clay Pop', 'Red Gallery', 'Candy Grid', 'Violet Lime'];
 const FONT_CSS = `
 @font-face{font-family:AuraAnton;src:url('/fonts/Anton-400.woff2') format('woff2');font-weight:400;font-display:swap}
 @font-face{font-family:AuraJakarta;src:url('/fonts/PlusJakartaSans-200-800.woff2') format('woff2');font-weight:200 800;font-display:swap}
@@ -68,28 +68,6 @@ function namesLine(d) {
 }
 
 // ---- the five looks. Each returns a <g> drawn in a 440 x 248 box.
-function pinkPunch(d) {
-  const g = h('g');
-  const t = fitF(d.title.toUpperCase(), { sizes: [36, 31, 27, 23, 20, 17, 15], fam: 'anton', weight: 400, width: 226, lines: 4 });
-  const lh = Math.round(t.size * 1.06), ty = 66 + t.size * 0.82;
-  const lastY = ty + lh * (t.lines.length - 1);
-  const hiW = Math.min(232, tw(t.lines[t.lines.length - 1] || '', t.size, 'anton', 400) + 10);
-  g.append(
-    h('rect', { width: W, height: H, fill: '#f4f4f0' }),
-    h('rect', { x: 276, y: 30, width: 140, height: 172, rx: 4, fill: C.ink }),
-    h('rect', { x: 268, y: 22, width: 140, height: 172, rx: 4, fill: '#ff90e8', stroke: C.ink, 'stroke-width': 2.5 }),
-    h('g', { transform: 'translate(338,92)' }, [h('g', { class: 'breathe fb' }, [h('circle', { r: 40, fill: '#ffc900', stroke: C.ink, 'stroke-width': 2.5 })])]),
-    h('g', { transform: 'translate(372,154)' }, [h('g', { class: 'spin fb', style: { animationDuration: '14s' } }, [
-      h('path', { d: 'M0,-20L5,-6L20,-6L8,3L12,18L0,9L-12,18L-8,3L-20,-6L-5,-6Z', fill: '#23a094', stroke: C.ink, 'stroke-width': 2.2, 'stroke-linejoin': 'round' })])]),
-    h('circle', { cx: 296, cy: 166, r: 10, fill: '#ff5a5f', stroke: C.ink, 'stroke-width': 2.2 }),
-    h('rect', { x: 22, y: 22, width: Math.min(200, tw(d.kicker.toUpperCase(), 13, 'work', 600) + 22), height: 24, rx: 12, fill: C.white, stroke: C.ink, 'stroke-width': 2 }),
-    textF(33, 38.5, [short(d.kicker.toUpperCase(), 13, 176)], { size: 13, fam: 'work', weight: 600, fill: C.ink }),
-    h('rect', { x: 20, y: lastY - t.size * 0.5, width: hiW, height: t.size * 0.55, fill: '#ff90e8' }),
-    textF(24, ty, t.lines, { size: t.size, fam: 'anton', weight: 400, fill: d.empty ? '#9c9a94' : C.ink, lh: 1.06 }),
-    textF(24, 212, [short(namesLine(d), 14, 240)], { size: 14, fam: 'work', weight: 600, fill: C.ink }),
-    textF(24, 232, [short(d.foot, 13, 380)], { size: 13, fam: 'work', weight: 400, fill: '#55534e' }));
-  return g;
-}
 function boldBlue(d) {
   const g = h('g');
   const t = fitF(d.title, { sizes: [30, 26, 23, 20, 17, 15], fam: 'jak', weight: 800, width: 246, lines: 4 });
@@ -108,58 +86,6 @@ function boldBlue(d) {
   g.append(tt,
     textF(26, 212, [short(namesLine(d), 14, 248)], { size: 14, fam: 'work', weight: 600, fill: C.ink }),
     textF(26, 232, [short(d.foot, 13, 248)], { size: 13, fam: 'work', weight: 400, fill: '#5b616e' }));
-  return g;
-}
-function flatPack(d) {
-  const g = h('g');
-  const t = fitF(d.title, { sizes: [28, 25, 22, 19, 17, 15], fam: 'noto', weight: 800, width: 236, lines: 4 });
-  const ty = 76 + t.size * 0.8;
-  const kw = Math.min(190, tw(d.kicker, 13, 'noto', 700) + 30);
-  g.append(
-    h('rect', { width: W, height: H, fill: C.white }),
-    h('path', { d: `M22,24H${22 + kw - 10}L${22 + kw},36L${22 + kw - 10},48H22Z`, fill: '#ffdb00' }),
-    h('circle', { cx: 32, cy: 36, r: 3.5, fill: C.white }),
-    textF(42, 40.5, [short(d.kicker, 13, kw - 32)], { size: 13, fam: 'noto', weight: 700, fill: C.ink }),
-    h('rect', { x: 284, y: 22, width: 136, height: 178, rx: 6, fill: '#f5f5f5' }),
-    h('circle', { cx: 304, cy: 42, r: 12, fill: C.ink }),
-    textF(304, 47, ['1'], { size: 14, fam: 'noto', weight: 800, fill: C.white, anchor: 'middle' }),
-    h('g', { transform: 'translate(352,104)' }, [h('g', { class: 'sway fb' }, [
-      h('path', { d: 'M-26,-30V12H22', stroke: C.ink, 'stroke-width': 7, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })])]),
-    ...[0, 1, 2].map(i => h('g', { transform: `translate(${312 + i * 22},164)` }, [
-      h('rect', { x: -5, y: -4, width: 10, height: 6, rx: 1.5, fill: '#0058a3' }), h('rect', { x: -2, y: 2, width: 4, height: 16, fill: '#0058a3' })])),
-    textF(392, 178, ['6x'], { size: 15, fam: 'noto', weight: 800, fill: C.ink, anchor: 'middle' }),
-    h('rect', { y: 236, width: W, height: 12, fill: '#0058a3' }),
-    h('rect', { x: 400, y: 232, width: 20, height: 20, fill: '#ffdb00' }));
-  const tt = textF(24, ty, t.lines, { size: t.size, fam: 'noto', weight: 800, fill: d.empty ? '#b5b5b5' : C.ink, lh: 1.12 });
-  if (!d.empty && t.lines.length > 1) tt.lastChild.setAttribute('fill', '#0058a3');
-  g.append(tt,
-    textF(24, 202, [short(namesLine(d), 14, 250)], { size: 14, fam: 'noto', weight: 700, fill: C.ink }),
-    textF(24, 222, [short(d.foot, 13, 250)], { size: 13, fam: 'noto', weight: 400, fill: '#484848' }));
-  return g;
-}
-function headspace(d) {
-  const g = h('g');
-  const t = fitF(d.title, { sizes: [30, 26, 23, 20, 17, 15], fam: 'quick', weight: 700, width: 236, lines: 4 });
-  const lh = Math.round(t.size * 1.12), ty = 76 + t.size * 0.8;
-  const ly = ty + lh * (t.lines.length - 1) + 14;
-  const uw = Math.min(200, Math.max(60, tw(t.lines[0] || '', t.size, 'quick', 700) * 0.7));
-  let sq = `M24,${ly}`;
-  for (let x = 24; x < 24 + uw; x += 16) sq += `q4,-6 8,0t8,0`;
-  const kw = Math.min(190, tw(d.kicker, 13, 'quick', 700) + 24);
-  g.append(
-    h('rect', { width: W, height: H, fill: C.white }),
-    h('g', { transform: 'translate(388,196)' }, [h('g', { class: 'breathe fb', style: { animationDuration: '5s' } }, [
-      h('path', { d: 'M-96,10C-100,-50 -46,-96 10,-90C70,-84 104,-40 98,18C92,76 40,100 -14,96C-62,92 -92,58 -96,10Z', fill: '#ff7300' })])]),
-    h('g', { transform: 'translate(334,52)' }, [h('g', { class: 'bob' }, [h('circle', { r: 30, fill: '#ffce00' })])]),
-    h('circle', { cx: 404, cy: 40, r: 12, fill: '#ffa400' }),
-    h('circle', { cx: 290, cy: 120, r: 8, fill: '#7a5af8' }),
-    h('circle', { cx: 268, cy: 214, r: 5, fill: '#ff8fb1' }),
-    h('rect', { x: 22, y: 24, width: kw, height: 24, rx: 12, fill: '#ffce00' }),
-    textF(34, 40.5, [short(d.kicker, 13, kw - 22)], { size: 13, fam: 'quick', weight: 700, fill: '#2d2c2c' }),
-    textF(24, ty, t.lines, { size: t.size, fam: 'quick', weight: 700, fill: d.empty ? '#bdb8b5' : '#2d2c2c', lh: 1.12 }),
-    h('path', { d: sq, stroke: '#ff7300', 'stroke-width': 3.5, fill: 'none', 'stroke-linecap': 'round' }),
-    textF(24, 212, [short(namesLine(d), 14, 240)], { size: 14, fam: 'dm', weight: 400, fill: '#2d2c2c' }),
-    textF(24, 232, [short(d.foot, 13, 240)], { size: 13, fam: 'dm', weight: 400, fill: '#6b6766' }));
   return g;
 }
 function clayPop(d) {
@@ -188,7 +114,73 @@ function clayPop(d) {
     textF(24, 232, [short(d.foot, 13, 240)], { size: 13, fam: 'jak', weight: 400, fill: '#5a5a66' }));
   return g;
 }
-const DRAW = { 'Pink Punch': pinkPunch, 'Bold Blue': boldBlue, 'Flat-Pack': flatPack, 'Happy Headspace': headspace, 'Clay Pop': clayPop };
+// Red Gallery: warm paper, the strip down the left, a framed monochrome print with the red block behind its corner, the
+// title in red condensed capitals on the right, the names right-aligned at the foot, the red page badge.
+function redGallery(d) {
+  const g = h('g');
+  const t = fitF(d.title.toUpperCase(), { sizes: [34, 30, 26, 22, 19, 16], fam: 'anton', weight: 400, width: 196, lines: 4 });
+  g.append(
+    h('rect', { width: W, height: H, fill: '#ecebe4' }),
+    h('rect', { width: 22, height: H, fill: '#f6f5f0' }),
+    h('rect', { x: 22, width: 1, height: H, fill: '#d6d3ca' }),
+    h('rect', { x: 7, y: 96, width: 8, height: 8, fill: '#e31b23' }),                              // the strip's red square
+    h('rect', { x: 30, y: 150, width: 72, height: 78, fill: '#e31b23' }),                          // the red block, behind
+    h('rect', { x: 40, y: 20, width: 166, height: 192, fill: '#ffffff' }),                         // the print border
+    h('rect', { x: 47, y: 27, width: 152, height: 178, fill: '#c9c6c0' }),                         // the grey photograph
+    h('ellipse', { cx: 123, cy: 176, rx: 46, ry: 6, fill: '#111111', opacity: 0.22 }),             // the contact shadow
+    h('rect', { x: 92, y: 96, width: 62, height: 78, fill: '#2a2a2a' }),                           // the dark hero
+    h('rect', { x: 92, y: 96, width: 62, height: 8, fill: '#4a4947' }),
+    h('g', { transform: 'translate(170,66)' }, [h('g', { class: 'bob' }, [h('circle', { r: 7, fill: '#edebe6' })])]),
+    textF(222, 42 + t.size * 0.8, t.lines, { size: t.size, fam: 'anton', weight: 400, fill: d.empty ? '#b9b6b0' : '#e31b23', lh: 0.98 }),
+    textF(418, 196, [short(namesLine(d).toUpperCase(), 12, 190)], { size: 12, fam: 'jak', weight: 800, fill: '#111111', anchor: 'end' }),
+    textF(418, 214, [short(d.foot, 12, 190)], { size: 12, fam: 'jak', weight: 400, fill: '#555555', anchor: 'end' }),
+    h('circle', { cx: 424, cy: 234, r: 8, fill: '#e31b23' }));
+  return g;
+}
+// Candy Grid: a white board cut by a black bar, a yellow block with a glossy figure, a cyan block, a pink disc on the
+// seam, the stacked tracked title on white, a floating pill with a rose dot.
+function candyGrid(d) {
+  const g = h('g');
+  const t = fitF(d.title.toUpperCase(), { sizes: [22, 19, 17, 15, 13], fam: 'jak', weight: 800, width: 150, lines: 4 });
+  g.append(
+    h('rect', { width: W, height: H, fill: '#ffffff' }),
+    h('rect', { width: 26, height: H, fill: '#1f1f23' }),
+    h('rect', { x: 26, width: 200, height: 140, fill: '#ffc72c' }),
+    h('rect', { x: 226, y: 140, width: 214, height: 108, fill: '#29c4e6' }),
+    h('rect', { x: 386, width: 54, height: 140, fill: '#ff8a00' }),
+    h('circle', { cx: 226, cy: 140, r: 34, fill: '#f9a8c9' }),
+    h('ellipse', { cx: 126, cy: 118, rx: 44, ry: 6, fill: '#1b1b1f', opacity: 0.15 }),
+    h('rect', { x: 92, y: 52, width: 68, height: 64, rx: 12, fill: '#ffffff' }),
+    h('rect', { x: 112, y: 40, width: 28, height: 16, rx: 6, fill: '#ec4a7b' }),
+    h('g', { transform: 'translate(190,40)' }, [h('g', { class: 'bob' }, [h('circle', { r: 9, fill: '#29c4e6' })])]),
+    textF(240, 34 + t.size, t.lines, { size: t.size, fam: 'jak', weight: 800, fill: d.empty ? '#b9b9c4' : '#1b1b1f', lh: 1.15, spacing: '0.14em' }),
+    textF(44, 176, [short(namesLine(d), 13, 170)], { size: 13, fam: 'jak', weight: 700, fill: '#1b1b1f' }),
+    textF(44, 194, [short(d.foot, 12, 170)], { size: 12, fam: 'jak', weight: 400, fill: '#5e5e68' }),
+    h('rect', { x: 120, y: 126, width: 92, height: 24, rx: 12, fill: '#ffffff' }),
+    h('circle', { cx: 134, cy: 138, r: 4, fill: '#ec4a7b' }));
+  return g;
+}
+// Violet Lime: a white ground, the title in violet, the ONE lime CTA pill, the picture in a rounded frame with its
+// bottom-left corner squared, a violet band along the foot and a thin outlined frame bleeding off the top corner.
+function violetLime(d) {
+  const g = h('g');
+  const t = fitF(d.title, { sizes: [30, 26, 23, 20, 17], fam: 'jak', weight: 800, width: 212, lines: 4 });
+  g.append(
+    h('rect', { width: W, height: H, fill: '#ffffff' }),
+    h('rect', { x: 318, y: -26, width: 96, height: 92, rx: 14, fill: 'none', stroke: '#e4e3ef', 'stroke-width': 2 }),
+    h('rect', { y: 214, width: W, height: 34, fill: '#3d2ee6' }),
+    h('rect', { x: 266, y: 26, width: 150, height: 176, rx: 14, fill: '#3d2ee6' }),
+    h('rect', { x: 266, y: 186, width: 16, height: 16, fill: '#3d2ee6' }),
+    h('g', { transform: 'translate(341,96)' }, [h('g', { class: 'bob' }, [h('circle', { r: 17, fill: '#d2f53c' })])]),
+    textF(26, 44, ['IN TWO COLOURS'], { size: 11, fam: 'jak', weight: 700, fill: '#5a5a66', spacing: '0.14em' }),
+    textF(26, 72 + t.size * 0.5, t.lines, { size: t.size, fam: 'jak', weight: 800, fill: d.empty ? '#b9b9c4' : '#3d2ee6', lh: 1.04, spacing: '-0.035em' }),
+    h('rect', { x: 26, y: 162, width: 104, height: 30, rx: 15, fill: '#d2f53c' }),
+    textF(50, 182, ['Start here'], { size: 12, fam: 'jak', weight: 700, fill: '#15151a' }),
+    textF(26, 232, [short(namesLine(d), 13, 190)], { size: 13, fam: 'jak', weight: 700, fill: '#ffffff' }),
+    textF(418, 232, [short(d.foot, 12, 150)], { size: 12, fam: 'jak', weight: 500, fill: '#d4d0f7', anchor: 'end' }));
+  return g;
+}
+const DRAW = { 'Bold Blue': boldBlue, 'Clay Pop': clayPop, 'Red Gallery': redGallery, 'Candy Grid': candyGrid, 'Violet Lime': violetLime };
 
 export default {
   mount(el, ctx) {

@@ -55,7 +55,7 @@ const FOLDERS = ['Report', 'Images and photos', 'Data (csv, excel, graphs)', 'Lo
 const TYPES = ['Thesis defence', 'Thesis progress / interim', 'Project presentation', 'Class presentation', 'Seminar', 'Conference talk', 'Proposal', 'Lecture', 'Other'];
 const WHO = ['Examiners / teachers', 'Classmates', 'Researchers / experts', 'Industry', 'General public', 'School students'];
 const INCLUDE = ['Equations', 'Tables', 'Charts from my data', 'My photos', 'Videos', 'References slide', 'Acknowledgements slide', 'Thank you and questions slide', 'Contact details'];
-const LOOKS = ['Claude chooses', 'Pink Punch', 'Bold Blue', 'Flat-Pack', 'Happy Headspace'];
+const LOOKS = ['Claude chooses', 'Bold Blue', 'Clay Pop', 'Red Gallery', 'Candy Grid'];
 
 // Field specs per scene: [key, kind, options]. kinds: text, area, date, num, select, checks, people, results, slides, bool.
 const T = [['basics.type', 'select', ['', ...TYPES]], ['basics.typeOther', 'text'], ['basics.title', 'area'], ['basics.subtitle', 'text'], ['basics.date', 'date'], ['basics.event', 'text']];
@@ -84,7 +84,7 @@ const SAMPLE = () => ({
     problem: 'Electronics run hot and passive cooling is cheap.', method: 'Thermocouples, an Arduino logger and FFT analysis.',
     results: [{ what: 'Lower thermal resistance', value: '38%' }, { what: 'Startup power', value: '7.5 W' }, { what: 'Dominant frequency', value: '0.12 Hz' }, { what: 'Runs logged', value: '42' }],
     message: 'A deeper vacuum makes the heat pipe start sooner and run cooler.', status: 'Finished', next: 'Try nanofluids' },
-  look: { theme: 'Pink Punch' }, style: { amount: 60, threeD: 'yes', twoD: 'yes' }, plan: { auto: false, slides: [{ title: 'Why heat pipes' }, { title: 'The rig' }, { title: 'Results' }, { title: 'Spectra' }, { title: 'What next' }] },
+  look: { theme: 'Clay Pop' }, style: { amount: 60, threeD: 'yes', twoD: 'yes' }, plan: { auto: false, slides: [{ title: 'Why heat pipes' }, { title: 'The rig' }, { title: 'Results' }, { title: 'Spectra' }, { title: 'What next' }] },
   content: { include: ['Equations', 'Charts from my data', 'My photos', 'References slide', 'Thank you and questions slide'], citations: 'IEEE' },
   delivery: { where: ['Projector in a room', 'Online meeting'], offline: 'Internet available', backups: ['PDF', 'PowerPoint'], help: ['Speaker notes', 'Timed speaker script'], clicker: 'Yes' },
   extra: { avoid: 'no jokes', deadline: '2026-10-10', notes: 'keep it calm' },

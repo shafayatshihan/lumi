@@ -178,6 +178,11 @@ html.aura-still .bb-blender > video.bb-blender-video { display: none; }
    show, so slide text is never baked into the loop video. visibility keeps the layout (and the 3D framing) unchanged. */
 .aura-capture .slide.aura-rec * { visibility: hidden !important; }
 .aura-capture .slide.aura-rec [data-aura-rec-keep], .aura-capture .slide.aura-rec [data-aura-rec-keep] * { visibility: visible !important; }
+/* The SURFACE the picture is painted on is recorded with it. Without this the loop is captured against the bare
+   page: a look whose picture sits in a coloured frame records its picture on white, and because H.264 carries no
+   alpha the opaque video then covers the real frame colour on playback. Note there is no ` *` here - the surface
+   gets its own background back, but its other children stay hidden, so nothing is baked in twice. */
+.aura-capture .slide.aura-rec [data-aura-rec-bg] { visibility: visible !important; }
 .aura-capture .slide.aura-rec [data-aura-notes], .aura-capture .slide.aura-rec .notes { visibility: hidden !important; }
 /* a slide that plays a recorded loop freezes its decorative background loops (their copy is baked into the video) */
 .slide.aura-has-loop [data-aura-rec-keep] *, .slide.aura-has-loop .bb-blobs i, .slide.aura-has-loop .bb-grid-bg { animation: none !important; }

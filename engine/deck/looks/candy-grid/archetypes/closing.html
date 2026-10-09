@@ -1,0 +1,43 @@
+<!-- archetype: closing | the close board: the statement on white | a black bar | a violet-to-pink gradient cell, with a pink disc holding the subject laid across the bar. A skeleton: design the message per deck (LOOK-BASE section 2) | main visual: a small figure of the subject -->
+<!-- Replace the message with what fits THIS talk (key takeaway / a final question / next steps / contact; "Thank you." is
+     only one of the four) and the disc's figure with THIS subject's own shape. Variants: A statement left + disc (this
+     file), B centred question (drop the bar and the gradient), C next steps (three .cg-cols under the statement),
+     D contact card (.cg-card on the gradient). Two decks must never end with the same composition. -->
+<section class="slide" data-kind="closing" data-minutes="0.5" data-title="Closing">
+  <div class="safe">
+    <div class="cg-board b-close">
+      <div class="cg-cell txt" style="grid-area:text">
+        <h1 class="cg-thanks cg-msg" aria-label="Closing message" data-edit="s{{N}}-0">One line for <span class="em">this talk.</span></h1>
+        <p class="cg-q" data-edit="s{{N}}-1">A last line: question, next step or contact</p>
+        <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. -->
+        <ul class="cg-people">
+          <li data-optional="identity"><span class="lb" data-edit="s{{N}}-2">Presented by</span><strong data-edit="s{{N}}-3">Presenter Name</strong><em data-edit="s{{N}}-4">ID or role</em></li>
+        </ul>
+      </div>
+      <div class="cg-cell black" style="grid-area:bar"></div>
+      <div class="cg-cell grad" style="grid-area:grad"></div>
+      <div class="cg-disc pink d-fig">
+        <div class="aura-3d cg-3d" data-scene="s{{N}}-close" data-period="12" aria-hidden="true"></div>
+      </div>
+    </div>
+    <footer class="cg-foot" data-nonclaim><span class="cg-mark" data-edit="s{{N}}-8">Deck mark</span><span class="cg-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p>Say the closing message in your own words, then thank the people named and open the floor.</p>
+    <p>Leave this slide up during questions: the names stay on screen. If a question needs a figure, type its slide
+    number and press Enter to jump to it, then press End to come back here.</p>
+    <p>Likely question: how sure are the numbers? Answer with the source line on the chart slide, and say plainly
+    which shapes are illustrative.</p>
+  </aside>
+</section>
+<script>
+/* Replace with a small model of THIS subject, echoing the cover. */
+Aura.scene('s{{N}}-close', (ctx) => {
+  const { THREE } = ctx;
+  const S = CG3D.studio(ctx, { target: [0, 0.8, 0], distance: 7.5, azimuth: -30, elevation: 18 });
+  const body = S.add(CG3D.block(THREE, 1.8, 1.4, 1.2, { color: 'white' }));  body.position.y = 0.7;
+  S.contact(body, 1.4);
+  const sat = S.add(CG3D.ball(THREE, 0.26, { color: 'yellow' }));  sat.position.set(1.4, 1.9, 0.3);  S.float(sat, { amp: 0.1 });
+  return S.api({ update(t) { S.sway(t, { deg: 4 }); } });
+}, { period: 12 });
+</script>

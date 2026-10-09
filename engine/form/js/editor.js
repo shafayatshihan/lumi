@@ -42,6 +42,9 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   const sfx = n => { try { audio && audio.sfx && audio.sfx(n); } catch (e) { /* optional */ } };
   const store = openPlan(deckId);          // the ONE plan for this deck (plan-store.js); this page keeps no copy of it
   let alive = true, deck = null, cur = Math.max(1, slide | 0), count = 0, page = 0, thumbs = [], runtime = false, shim = null;
+  // The packed deck's mtime the preview frame is currently showing. Both pages poll the deck anyway; this is what
+  // turns that poll into "the preview is never older than the file".
+  let shownMtime = 0;
   let aimAt = null;              // the slide the chat says its next message is about (0: the whole deck, null: unknown yet)
   let loadT = 0, scene = null, chat = null, editing = null, thumbsT = 0, thumbsVer = 0;
   // F-10: no private copy of "claude is running": it is read from the one shared answer (bus.js), which both the events poll
@@ -76,7 +79,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
   const slideName = h('span', { class: 'ed-sname' });
   const presentB = h('button', { type: 'button', class: 'ed-act ed-ink', 'data-cursor-label': 'present' }, h('span', { html: SVG.play }), 'present');
   const folderB = h('button', { type: 'button', class: 'ed-act', 'aria-label': 'open the slides folder', title: 'open the slides folder', 'data-cursor-label': 'folder', html: SVG.folder });
-  const finB = h('button', { type: 'button', class: 'ed-act ed-fin', 'data-cursor-label': 'finalize' }, h('span', { html: ICON.tick }), h('span', {}, 'finalize'));
+  const finB = h('button', { type: 'button', class: 'ed-act ed-fin', 'data-cursor-label': 'save and export' }, h('span', { html: ICON.tick }), h('span', {}, 'save and export'));
   // N4: the ONLY place a slide's main picture could be chosen was the plan page, and the plan page is gone the moment
   // building starts - so a slide built as 2D could never become 3D again (and the chat cannot do it: it edits the HTML
   // while plan.json keeps saying 'text', which is exactly the plan-vs-built drift of post-mortem problem 2). This button
@@ -155,6 +158,20 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
       }
     }, VEIL_WAIT_MS);
     frame.src = deckUrl(v);
+  }
+  // A repack is the only thing that changes what the preview should show, and it bumps the packed file's mtime.
+  // Watching that is what makes the preview self-correcting: `mediaChanged()` gives a new render about 11 seconds
+  // to land (12 x 900 ms), but a preview that arrives mid-build is packed when the build STEP ends, which can be
+  // minutes later. When that happened the watcher had already given up and the frame kept showing a load from
+  // before the picture existed - a slide drawn with an empty space where its render is.
+  // The first mtime seen is recorded, not acted on: that is the one the frame was mounted with.
+  function syncFrame(m) {
+    m = +m || 0;
+    if (!m || !alive) return;
+    if (!shownMtime) { shownMtime = m; return; }
+    if (m <= shownMtime) return;
+    shownMtime = m;
+    loadFrame(m); thumbs = []; paintStrip(); loadThumbs();
   }
   const veilDown = () => { veil.hidden = true; clearTimeout(veilT); const r = veil.querySelector('.ed-veil-retry'); if (r) r.remove(); };
   frame.addEventListener('load', () => {
@@ -478,21 +495,22 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     }
     if (deckFails) { deckFails = 0; veilTxt.textContent = 'loading your slides…'; if (!build) loadFrame(); else veilDown(); }
     deck = r.deck;
+    syncFrame(deck.mtime);
     title.textContent = deck.title || 'untitled deck';
     title.title = deck.title || '';
     const look = deck.look && deck.look !== 'Claude chooses' ? deck.look.toLowerCase() : 'claude’s look';
     stats.replaceChildren(...[h('span', { class: 'ed-stat' }, look), h('span', { class: 'ed-stat' }, qualityWord(deck)),
       deck.exists ? null : h('span', { class: 'ed-stat bad' }, 'file missing')].filter(Boolean));
     presentB.disabled = !deck.final;
-    presentB.title = deck.final ? 'present the finalized deck' : 'finalize the deck first, then present it';
-    finB.lastChild.textContent = deck.finalizing ? 'finalizing…' : !deck.finalized ? 'finalize' : deck.changedSinceFinalize ? 'finalize again' : 'finalized';
+    presentB.title = deck.final ? 'present the finalized deck' : 'save and export it first, then present it';
+    finB.lastChild.textContent = deck.finalizing ? 'saving…' : !deck.finalized ? 'save and export' : deck.changedSinceFinalize ? 'save again' : 'saved';
     finB.classList.toggle('is-due', !deck.finalized || !!deck.changedSinceFinalize);
     finB.disabled = !deck.exists;
     if (!deck.exists && !build) { veil.hidden = false; veilTxt.textContent = 'this deck’s file is missing'; }
     if (build) paintBuild();
   }
   presentB.addEventListener('click', async () => { if (!deck || !deck.final) return; sfx('launch'); const r = await api.openSlides(deck.final.html); if (alive && r && r.ok === false) say('couldn’t open it. try the folder.', true); });
-  finB.addEventListener('click', () => { if (isBusy()) { say('wait until claude is done, then finalize.', true); return; } sfx('launch'); onFinalize && onFinalize(deckId); });
+  finB.addEventListener('click', () => { if (isBusy()) { say('wait until claude is done, then save and export.', true); return; } sfx('launch'); onFinalize && onFinalize(deckId); });
   folderB.addEventListener('click', async () => { const r = await api.openSlides(); if (alive && r && r.ok === false) say('couldn’t open the folder.', true); });
   // W-04: leaving while claude works is safe: the run lives on the server, the library shows "claude is working" on the
   // deck, and opening it again comes straight back to this page.
@@ -626,9 +644,9 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
     const target = slides.find(s => s.id === pay.buildTarget);
     // save and export is reachable from the moment there is something worth saving - not only at the last slide
     finB.disabled = b < 1 || running;
-    finB.lastChild.textContent = allDone ? 'finalize' : 'save and export';
+    finB.lastChild.textContent = allDone ? 'save and export' : 'save and export';
     finB.title = b < 1 ? 'build a slide first' : allDone ? 'make the final file' : `save and export the ${b} slide${b === 1 ? '' : 's'} built so far`;
-    bdMain.querySelector('.lbl').textContent = allDone ? 'i’m happy, finalize' : b === 0 ? 'build deck' : 'make next slide';
+    bdMain.querySelector('.lbl').textContent = allDone ? 'i’m happy, save and export' : b === 0 ? 'build deck' : 'make next slide';
     bdMain.classList.toggle('is-final', allDone);
     bdMain.disabled = running || acting || (waiting && !allDone);
     bdMore.hidden = allDone || b === 0;
@@ -650,7 +668,8 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
       : `slide ${b} of ${n} is ready.`;
     bdSay.classList.toggle('is-busy', running);
     if (!pay.exists) { veil.hidden = false; buildVeil = true; veilTxt.textContent = running ? 'claude is building slide 1…' : 'press “build deck” to make slide 1'; }
-    else if (buildVeil) { buildVeil = false; veilTxt.textContent = 'loading your slides…'; loadFrame(pay.mtime || Date.now()); }     // the file is back (a repack): show it again
+    else if (buildVeil) { buildVeil = false; veilTxt.textContent = 'loading your slides…'; shownMtime = +pay.mtime || shownMtime; loadFrame(pay.mtime || Date.now()); }     // the file is back (a repack): show it again
+    else syncFrame(pay.mtime);                                                 // a repack while building: the preview follows it
     paintUp();
   }
   // "coming up": the next 3 unbuilt slides, then "+N more" (a calm list of the rest in a dialog)
@@ -834,7 +853,7 @@ export function mountEditor(el, { deckId, slide = 1, audio, bus, sceneCtx, mount
       const r = await api.decks.get(deckId);
       if (!alive) return;
       const m = r && r.deck && r.deck.mtime;
-      if (m && m > base) { deck = { ...(deck || {}), ...r.deck }; loadFrame(m); thumbs = []; paintStrip(); loadThumbs(); if (!build) loadDeck(); return; }
+      if (m && m > base) { deck = { ...(deck || {}), ...r.deck }; shownMtime = +m || shownMtime; loadFrame(m); thumbs = []; paintStrip(); loadThumbs(); if (!build) loadDeck(); return; }
     }
     if (force && alive) { loadFrame(Date.now()); thumbs = []; paintStrip(); loadThumbs(); if (!build) loadDeck(); }
   }

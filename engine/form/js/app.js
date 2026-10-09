@@ -36,7 +36,7 @@ function loadLocal() {
 
 // ---------------------------------------------------------------- optional modules
 const PATHS = { audio: './audio.js', gaze: './gaze.js', cursor: './cursor.js',
-  loading: './loading.js', home: './home.js', start: './start.js', editor: './editor.js', plan: './plan.js',
+  loading: './loading.js', home: './home.js', look: './lookpick.js', start: './start.js', editor: './editor.js', plan: './plan.js',
   build: './editor.js', finalize: './finalizing.js' };
 const mods = {}, loading = {};
 function need(name) {
@@ -287,13 +287,13 @@ async function boot() {
   need('gaze').then(m => {
     try { gaze = m && m.initGaze ? m.initGaze($('#charVideo'), { framesUrl: '/assets/gaze-frames.json' }) : null; } catch (e) { console.warn('[aura] gaze', e); }
   });
-  ['home', 'start', 'editor'].forEach((n, i) => setTimeout(() => need(n), 600 + i * 300));
+  ['home', 'look', 'start', 'editor'].forEach((n, i) => setTimeout(() => need(n), 600 + i * 300));
 }
 
 // ---------------------------------------------------------------- routes
-const ROUTE_MODE = { loading: 'full', home: 'home', start: 'home', editor: 'edit', plan: 'home', build: 'work', finalize: 'full' };
+const ROUTE_MODE = { loading: 'full', home: 'home', look: 'home', start: 'home', editor: 'edit', plan: 'home', build: 'work', finalize: 'full' };
 function paintChrome() {
-  if (usagePill) usagePill.show(route === 'home' || route === 'start' || route === 'editor' || route === 'plan' || route === 'build');
+  if (usagePill) usagePill.show(route === 'home' || route === 'look' || route === 'start' || route === 'editor' || route === 'plan' || route === 'build');
 }
 async function fadeRoute(el, out) {
   if (reduced() || !el.animate) return;
@@ -329,8 +329,9 @@ async function mountRoute(name, opts = {}) {
   if (!m) { routeDown(host, name, opts); fadeRoute(host, false); return; }
   try {
     if (name === 'loading' && m) routeView = m.mountLoading(host, { audio, onDone: afterLoading });
-    else if (name === 'home' && m) routeView = m.mountHome(host, { audio, update: updateInfo, onNew: () => setRoute('start', {}), onOpen: openFromHome,
+    else if (name === 'home' && m) routeView = m.mountHome(host, { audio, update: updateInfo, onNew: () => setRoute('look', {}), onOpen: openFromHome,
       onFinalize: dk => openFinalize(dk.id), onSignin: () => setRoute('loading', {}) });
+    else if (name === 'look' && m) routeView = m.mountLookPick(host, { audio, onNext: () => setRoute('start', {}), onHome: goHome });
     else if (name === 'start' && m) routeView = m.mountStart(host, { audio, setMode,
       onScene: n => { switchScene(n).catch(e => console.warn('[aura] scene', e)); },
       onStarted: id => { buildDeck = id; persistLocal(); return openPlan(id); }, onHome: goHome });
@@ -348,7 +349,7 @@ async function mountRoute(name, opts = {}) {
 }
 // F-14: every screen change updates the tab title and tells a screen reader where it is (focus lands on the screen itself)
 const ROUTE_TITLE = { loading: 'getting ready', home: 'your decks', start: 'tell lumi about your talk', editor: 'edit your deck',
-  plan: 'plan your deck', build: 'build your deck', finalize: 'finalize your deck' };
+  plan: 'plan your deck', build: 'build your deck', finalize: 'save and export your deck' };
 function titleFor(name, text) {
   const t = text || ROUTE_TITLE[name] || '';
   document.title = t ? `${t} · Lumi` : 'Lumi';

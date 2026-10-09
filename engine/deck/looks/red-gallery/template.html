@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-look="red-gallery">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<!-- Lumi deck in the Red Gallery look: the editorial exhibition deck. The authority is
+       .claude/skills/aura-slide/looks/_shared/LOOK-BASE.md   (the rules every look obeys)
+       .claude/skills/aura-slide/looks/red-gallery/LOOK.md    (this look's palette, type, frames and figure idiom)
+     Read BOTH before writing a slide. Add slides from the archetype menu with
+       node .aura/engine/tools/new_deck.js --snippet <archetype> --theme red-gallery --slide <n>   (list: --snippet list)
+     and paste each one before the closing slide. Rules in one breath: 1920 x 1080, the .safe box (the left 80 px is the
+     strip), Anton + Poppins and nothing else, sizes 24 / 30 / 40 / 56 / 88 / 140 / 200, red Anton capitals for
+     headlines with ONE ink .em phrase, ONE main visual per slide, every picture a MONOCHROME print (.rg-stage: white
+     border, red block behind a corner) on the #ECEBE4 page, live three.js (RG3D) only - no Blender, the footer is the
+     strip (deck mark, red square, deck label) plus the red page badge, speaker notes 60-300 words in
+     <aside class="notes" data-aura-notes>, stable data-edit ids.
+     STAGING NOTE: the slide-1 figure at the bottom is a NEUTRAL placeholder (a block and three balls), not a design.
+     Decide what the subject really is (LOOK-BASE 4.0) and model IT, in grey. -->
+<link rel="stylesheet" href="{{ENGINE}}/deck/runtime.css">
+<link rel="stylesheet" href="{{ENGINE}}/deck/themes/red-gallery.css">
+<script type="importmap">{"imports":{"three":"{{ENGINE}}/node_modules/three/build/three.module.js"}}</script>
+<script src="{{ENGINE}}/deck/runtime.js"></script>
+{{LOOK_HEAD}}<style>
+  /* deck-specific layout goes here; red-gallery.css already sets type, colour, the strip footer, the page badge, the
+     print frames (.rg-stage), the stat stack, the label tags, the cover (.rg-cover) and the motion */
+</style>
+</head>
+<body>
+<main class="deck" data-mode="presenter">
+
+  <!-- ============ 01 the cover: a big monochrome print left, the title huge and red right (archetype: title-hero) ============ -->
+  <section class="slide" data-kind="title" data-minutes="0.75" data-title="Title">
+    <div class="safe">
+      <div class="rg-cover">
+        <div class="rg-stage bl">
+          <div class="aura-3d rg-3d" data-scene="s1-hero" data-period="12" aria-hidden="true"></div>
+        </div>
+        <div class="rg-cover-text">
+          <div>
+            <h1 class="title" data-edit="s1-2">{{TITLE}}</h1>
+            <p class="kicker" data-edit="s1-1">{{KICKER}}</p>
+          </div>
+          <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. Never invent a role the interview did not establish. -->
+          <ul class="rg-meta">
+            <li data-optional="identity" data-edit="s1-3"><span class="lb">Presented by</span><b>Presenter Name</b></li>
+            <li data-optional="identity" data-edit="s1-4"><span class="lb">For</span><b>Course or event</b>, Institution</li>
+          </ul>
+        </div>
+      </div>
+      <footer class="rg-foot" data-nonclaim><span class="rg-mark" data-edit="s1-5">Deck mark</span><span class="rg-label" data-edit="s1-lb">Deck label</span><span class="rg-pageno"></span></footer>
+    </div>
+    <aside class="notes" data-aura-notes>
+      <p><strong>Name the thing on the screen first.</strong> Say what it is in one plain sentence, then why this room
+      should care about it today.</p>
+      <p><strong>Point at the print.</strong> It is the real object, shown in black and white so its shape reads before
+      anything else does; the red is the deck's, not the object's.</p>
+      <p><strong>Frame the talk in three beats</strong>: why it matters, how it works, what we found. If asked, say the
+      model is a schematic and which proportions are to scale.</p>
+    </aside>
+  </section>
+
+  <!-- paste archetype slides here (node .aura/engine/tools/new_deck.js --snippet list) -->
+
+  <!-- ============ closing: design it for THIS deck (LOOK-BASE section 2): message, subject figure, layout variant ============ -->
+  <section class="slide" data-kind="closing" data-minutes="0.5" data-title="Closing">
+    <div class="safe">
+      <div class="rg-main">
+        <div class="rg-l w7">
+          <h1 class="rg-thanks rg-msg" aria-label="Closing message" data-edit="s99-0">One line that fits <span class="em">this talk.</span></h1>
+          <p class="rg-q" data-edit="s99-1">A last line: question, next step or contact</p>
+          <div class="rg-rule"></div>
+          <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. A deck with no supervisor must have no "With thanks" line - never invent a role the interview did not establish. -->
+          <ul class="rg-people">
+            <li data-optional="identity"><span class="lb" data-edit="s99-2">Presented by</span><strong data-edit="s99-3">Presenter Name</strong><em data-edit="s99-4">ID or role</em></li>
+            <li class="gap" data-optional="identity"><span class="lb" data-edit="s99-5">With thanks</span><strong data-edit="s99-6">Supervisor Name</strong><em data-edit="s99-7">Title, institution</em></li>
+          </ul>
+        </div>
+        <div class="rg-r w5">
+          <div class="rg-stage tr">
+            <div class="aura-3d rg-3d" data-scene="s99-close" data-period="12" aria-hidden="true"></div>
+          </div>
+        </div>
+      </div>
+      <footer class="rg-foot" data-nonclaim><span class="rg-mark" data-edit="s99-8">Deck mark</span><span class="rg-label" data-edit="s99-lb">Deck label</span><span class="rg-pageno"></span></footer>
+    </div>
+    <aside class="notes" data-aura-notes>
+      <p>Say the closing message in your own words, then thank the people named and open the floor.</p>
+      <p>Leave this slide up during questions: the names stay on screen. If a question needs a figure, type its slide
+      number and press Enter to jump to it, then press End to come back here.</p>
+      <p>Likely question: how sure are the numbers? Answer with the source line on the chart slide, and say plainly
+      which shapes are illustrative.</p>
+    </aside>
+  </section>
+
+</main>
+<script>
+/* The hero tier (LOOK-BASE 4.6): the deck's best figure, framed like a gallery photograph. Replace the block and balls
+   with the real subject's own parts, real counts, real proportions (LOOK-BASE 4.1). Monochrome only: 'ink' is the hero
+   tone, 'stone' / 'white' / 'grey' the rest of the object. The frame is portrait-ish: keep the subject centred. */
+Aura.scene('s1-hero', (ctx) => {
+  const { THREE } = ctx;
+  const S = RG3D.studio(ctx, { target: [0, 1.3, 0], distance: 11, azimuth: -26, elevation: 16 });
+  const body = S.add(RG3D.block(THREE, 2.4, 1.8, 1.6, { color: 'ink' }));       body.position.y = 0.9;
+  const knob = S.add(RG3D.puck(THREE, 0.42, 0.3, { color: 'stone' }));          knob.position.set(-0.5, 1.95, 0.1);
+  S.contact(body, 1.9);
+  [[-1.4, 2.6, 0.6, 0.24], [0.2, 3.0, 0.3, 0.18], [1.3, 2.5, -0.1, 0.14]].forEach(([x, y, z, r], i) => {
+    const b = S.add(RG3D.ball(THREE, r, { color: i === 1 ? 'grey' : 'white' })); b.position.set(x, y, z);
+    S.float(b, { amp: 0.08, phase: i * 1.7 });                                   // its own parts, pulled out: they drift
+  });
+  return S.api({ update(t) { S.sway(t, { deg: 4 }); } });
+}, { period: 12 });
+
+/* Replace with a small monochrome model of THIS subject - its own outline or its key quantity - echoing the title print. */
+Aura.scene('s99-close', (ctx) => {
+  const { THREE } = ctx;
+  const S = RG3D.studio(ctx, { target: [0, 0.8, 0], distance: 7.5, azimuth: -30, elevation: 18 });
+  const body = S.add(RG3D.block(THREE, 1.8, 1.4, 1.2, { color: 'ink' }));  body.position.y = 0.7;
+  S.contact(body, 1.4);
+  const sat = S.add(RG3D.ball(THREE, 0.24, { color: 'stone' }));          sat.position.set(1.4, 1.9, 0.3);
+  S.float(sat, { amp: 0.1 });
+  return S.api({ update(t) { S.sway(t, { deg: 4 }); } });
+}, { period: 12 });
+</script>
+</body>
+</html>

@@ -113,126 +113,6 @@
       "bodyMinIsError": true,
       "bodyMinExemptNote": "20 px is allowed only for the footer mark, the page number, captions / source lines and the chart's step labels and event pill (BBChart marks them .bb-steplbl / .bb-cap). Everything else is at least 28 px."
     },
-    "flat-pack": {
-      "name": "Flat-Pack",
-      "source": "Built from the IKEA brand DNA (workspace/.claude/skills/aura-slide/brands/ikea/brand-style.md, Firecrawl 2026-10-01) and the assembly-manual drawing language: body 32 px, kicker 32 px, stat 60/84 px, headline 84 px, title 120 px, closing word 180 px; footer mark, page number, captions, part counts ('6x') and chart step labels 24 px. One typeface (Noto Sans). Type scale 24/32/44/60/84/120/180.",
-      "minFontPx": 24,
-      "svgTolerancePx": 0.3,
-      "bodyMinPx": 32,
-      "bodyMinExempt": ".fp-foot, .fp-mark, .fp-pageno, .cap, .source, figcaption, .fp-count, .fp-cap, .fp-steplbl, .fp-cyc .step, .fp-rail .tr b, .fp-meta .lb",
-      "typeScale": [
-        24,
-        32,
-        44,
-        60,
-        84,
-        120,
-        180
-      ],
-      "wordBudget": {
-        "title": 32,
-        "section": 10,
-        "content": 34,
-        "quote": 24,
-        "closing": 24,
-        "references": 140,
-        "document": 70
-      },
-      "whitespace": {
-        "title": 0.5,
-        "section": 0.7,
-        "quote": 0.7,
-        "closing": 0.65,
-        "content": 0.45,
-        "references": 0.3
-      },
-      "maxTypefaces": 1,
-      "maxSizesPerSlide": 4,
-      "maxSizesPerDeck": 6,
-      "safeZonePx": 96,
-      "bodyMinIsError": true,
-      "bodyMinExemptNote": "24 px is allowed only for the footer mark, the page number, captions / source lines, the \"6x\" part counts and the chart's step labels and event badge. Everything else is at least 32 px."
-    },
-    "pink-punch": {
-      "name": "Pink Punch",
-      "source": "Built from the Gumroad brand DNA (workspace/.claude/skills/aura-slide/brands/gumroad/brand-style.md, Firecrawl 2026-10-01) and the screen-print language: body 36 px, kicker 36 px, stat 48/64 px, headline 84 px, title 112 px, closing word 160 px; footer mark, page number, captions, count tags ('6x') and chart step labels 28 px. Two typefaces (Anton display, Work Sans text). Type scale 28/36/48/64/84/112/160. Measured at 1920x1080 on a ten-slide render, 2026-10-07.",
-      "minFontPx": 28,
-      "svgTolerancePx": 0.3,
-      "bodyMinPx": 36,
-      "bodyMinExempt": ".pp-foot, .pp-mark, .pp-pageno, .cap, .source, figcaption, .pp-count, .pp-cap, .pp-steplbl, .pp-cyc .step, .pp-rail .tr b, .pp-meta .lb, .pp-people .lb",
-      "typeScale": [
-        28,
-        36,
-        48,
-        64,
-        84,
-        112,
-        160
-      ],
-      "wordBudget": {
-        "title": 30,
-        "section": 8,
-        "content": 30,
-        "quote": 22,
-        "closing": 22,
-        "references": 140,
-        "document": 65
-      },
-      "whitespace": {
-        "title": 0.5,
-        "section": 0.7,
-        "quote": 0.7,
-        "closing": 0.6,
-        "content": 0.4,
-        "references": 0.3
-      },
-      "maxTypefaces": 2,
-      "maxSizesPerSlide": 5,
-      "maxSizesPerDeck": 7,
-      "safeZonePx": 96,
-      "bodyMinIsError": true,
-      "bodyMinExemptNote": "28 px is allowed only for the footer mark, the page number, captions / source lines, the \"6x\" count tags, the process card's step line, the step rail digits, the .lb labels and the chart's step labels, bar names and event badge. Everything else is at least 36 px."
-    },
-    "happy-headspace": {
-      "name": "Happy Headspace",
-      "source": "Built from the Headspace brand DNA (workspace/.claude/skills/aura-slide/brands/headspace/brand-style.md, Firecrawl 2026-10-01) and the soft-volume language: body 36 px, stat 48/64 px, headline 88 px, title 116 px, closing word 168 px; kicker, footer mark, page number, captions, count tags and chart step labels 28 px in Reno Mono. Three typefaces (Quicksand display, DM Sans text, Reno Mono labels). Type scale 28/36/48/64/88/116/168. Measured at 1920x1080 on a ten-slide render, 2026-10-07.",
-      "minFontPx": 28,
-      "svgTolerancePx": 0.3,
-      "bodyMinPx": 36,
-      "bodyMinExempt": ".hs-foot, .hs-mark, .hs-pageno, .kicker, .cap, .source, figcaption, .hs-count, .hs-cap, .hs-steplbl, .hs-cyc .step, .hs-rail .tr b, .hs-meta .lb, .hs-people .lb",
-      "typeScale": [
-        28,
-        36,
-        48,
-        64,
-        88,
-        116,
-        168
-      ],
-      "wordBudget": {
-        "title": 34,
-        "section": 10,
-        "content": 32,
-        "quote": 26,
-        "closing": 22,
-        "references": 140,
-        "document": 70
-      },
-      "whitespace": {
-        "title": 0.6,
-        "section": 0.72,
-        "quote": 0.72,
-        "closing": 0.65,
-        "content": 0.5,
-        "references": 0.3
-      },
-      "maxTypefaces": 3,
-      "maxSizesPerSlide": 5,
-      "maxSizesPerDeck": 7,
-      "safeZonePx": 96,
-      "bodyMinIsError": true,
-      "bodyMinExemptNote": "28 px is allowed only for the kicker (which is mono small caps in this look), the footer mark, the page number, captions / source lines, the count tags, the process card's step line, the step rail digits, the .lb labels and the chart's step labels and moment pill. Everything else is at least 36 px."
-    },
     "clay-pop": {
       "name": "Clay Pop",
       "source": "Built from the owner's claymation / vinyl-toy reference (workspace/.claude/skills/aura-slide/brands/clay-pop/brand-style.md, measured 2026-10-07): body 30 px, sub-lines, step and goal names 40 px, medium stats and the process card's step name 56 px, headline and big stats 80 px, title 120 px, closing word 168 px; kicker, footer mark, page number, captions, source lines, label-tag descriptions, chart ticks and axis titles 24 px DM Mono. Two typefaces (Plus Jakarta Sans, DM Mono). Type scale 24/30/40/56/80/120/168.",
@@ -272,6 +152,126 @@
       "safeZonePx": 96,
       "bodyMinIsError": true,
       "bodyMinExemptNote": "24 px (DM Mono) is allowed only for the kicker, the footer mark, the page number, captions / source lines, the description line of a label tag, chart ticks and axis titles, the process card's step counter and rail beads, and the small uppercase labels on the title and closing slides. Everything else is at least 30 px."
+    },
+    "red-gallery": {
+      "name": "Red Gallery",
+      "source": "Built from the owner's editorial exhibition-deck reference (a post-war art exhibition proposal, 2026-10-09): warm paper #ECEBE4, signal red #E31B23 for condensed display capitals (Anton) and solid blocks, Poppins for text, every picture a monochrome print in a white border. Body 30 px, sub-heads and step names 40 px, medium stats and band numbers 56 px, headlines and big stats 88 px, the title 140 px, a one-line closing statement 200 px. 24 px only for the strip, the page badge, captions, tag descriptions and chart ticks.",
+      "minFontPx": 24,
+      "svgTolerancePx": 0.3,
+      "bodyMinPx": 30,
+      "bodyMinExempt": ".rg-foot, .rg-mark, .rg-label, .rg-pageno, .cap, .source, figcaption, .rg-tag span, .rg-tick, .rg-cap, .rg-meta .lb, .rg-people .lb",
+      "typeScale": [
+        24,
+        30,
+        40,
+        56,
+        88,
+        140,
+        200
+      ],
+      "wordBudget": {
+        "title": 34,
+        "section": 14,
+        "content": 44,
+        "quote": 26,
+        "closing": 32,
+        "references": 140,
+        "document": 84
+      },
+      "whitespace": {
+        "title": 0.45,
+        "section": 0.65,
+        "quote": 0.65,
+        "closing": 0.6,
+        "content": 0.4,
+        "references": 0.3
+      },
+      "maxTypefaces": 2,
+      "maxSizesPerSlide": 5,
+      "maxSizesPerDeck": 7,
+      "safeZonePx": 24,
+      "bodyMinIsError": true,
+      "bodyMinExemptNote": "24 px is allowed only for the strip (deck mark and label), the page badge, captions / source lines, the description line of a label tag, chart ticks and axis titles, and the small uppercase labels on the title and closing slides. Everything else is at least 30 px. The safe zone is 24 px because the strip and the badge sit at the edge by design; the .safe box keeps every other text well inside."
+    },
+    "candy-grid": {
+      "name": "Candy Grid",
+      "source": "Built from the owner's bright creative-portfolio reference (2026-10-09): edge-to-edge boards of white text cells, saturated colour blocks (yellow #FFC72C, pink, cyan, orange) and black bars, discs across the seams, a floating pill tag; Poppins only, wide-tracked uppercase titles. Body 30 px, step / goal names and sub-heads 36 px, stats 48 px, headlines 64 px, the title 96 px, a one-line closing 132 px. 24 px only for the pill footer, captions, tag descriptions and chart ticks.",
+      "minFontPx": 24,
+      "svgTolerancePx": 0.3,
+      "bodyMinPx": 30,
+      "bodyMinExempt": ".cg-foot, .cg-mark, .cg-pageno, .cap, .source, figcaption, .cg-tag span, .cg-tick, .cg-cap, .cg-meta .lb, .cg-people .lb",
+      "typeScale": [
+        24,
+        30,
+        36,
+        48,
+        64,
+        96,
+        132
+      ],
+      "wordBudget": {
+        "title": 30,
+        "section": 12,
+        "content": 42,
+        "quote": 24,
+        "closing": 30,
+        "references": 140,
+        "document": 80
+      },
+      "whitespace": {
+        "title": 0.45,
+        "section": 0.65,
+        "quote": 0.65,
+        "closing": 0.6,
+        "content": 0.4,
+        "references": 0.3
+      },
+      "maxTypefaces": 1,
+      "maxSizesPerSlide": 5,
+      "maxSizesPerDeck": 7,
+      "safeZonePx": 56,
+      "bodyMinIsError": true,
+      "bodyMinExemptNote": "24 px is allowed only for the pill footer (deck mark and page number), captions / source lines, the description line of a label tag, chart ticks and axis titles, and the small uppercase labels on the title and closing slides. Everything else is at least 30 px. The safe zone is 56 px because the board runs edge to edge and the pill sits near the foot; text cells pad themselves well inside it."
+    },
+    "violet-lime": {
+      "name": "Violet Lime",
+      "source": "Built from the owner's education / marketing template reference (28 slides, 16 visible; measured 2026-10-09): two colours only - violet #3D2EE6 and acid lime #D2F53C - on alternating white and full-violet grounds, everything a rounded rectangle at one radius, thin outlined rounded rectangles bleeding off the canvas as decoration, pills for calls to action and year markers. Body 30 px, card titles / step and zone names / sub-lines 36 px, stats and dial figures 48 px, headlines and the big 01/02/03 numbers 72 px, the title 104 px, a one-line closing 144 px. 24 px only for the footer, the page number, captions and source lines, a label tag's description line and chart ticks. One typeface (Plus Jakarta Sans). Type scale 24/30/36/48/72/104/144.",
+      "minFontPx": 24,
+      "svgTolerancePx": 0.3,
+      "bodyMinPx": 30,
+      "bodyMinExempt": ".vl-foot, .vl-mark, .vl-pageno, .cap, .source, figcaption, .vl-tag span, .vl-tick, .vl-cap, .vl-meta .lb, .vl-people .lb, .vl-years .yr",
+      "typeScale": [
+        24,
+        30,
+        36,
+        48,
+        72,
+        104,
+        144
+      ],
+      "wordBudget": {
+        "title": 30,
+        "section": 10,
+        "content": 44,
+        "quote": 26,
+        "closing": 28,
+        "references": 140,
+        "document": 80
+      },
+      "whitespace": {
+        "title": 0.45,
+        "section": 0.65,
+        "quote": 0.65,
+        "closing": 0.6,
+        "content": 0.4,
+        "references": 0.3
+      },
+      "maxTypefaces": 1,
+      "maxSizesPerSlide": 5,
+      "maxSizesPerDeck": 7,
+      "safeZonePx": 96,
+      "bodyMinIsError": true,
+      "bodyMinExemptNote": "24 px is allowed only for the footer (deck mark and page number), captions / source lines, the description line of a label tag, chart ticks and axis titles, the year under a year pill, and the small uppercase labels on the title and closing slides. Everything else is at least 30 px. The safe zone stays 96 px: this look does not bleed type off the canvas - only its outlined decoration frames do, and they carry no text."
     }
   },
   "blender": {
@@ -304,7 +304,7 @@
     }
   },
   "pictureMix": {
-    "note": "The picture mix a plan should SUGGEST (owner, 2026-10-08), and it applies to EVERY look, not just the two that use Blender. The shares are about how many slides carry a rendered 3D figure - animated, still, or neither - and each look renders them with ITS OWN engine (form_server.LOOK_3D): Bold Blue and Clay Pop default a still to a Cycles studio render; Flat-Pack, Pink Punch and Happy Headspace are live three.js by design, because an assembly drawing, a screen print and a soft-lit form are not photographs. An earlier version of this block named Blender in the key names and so could not apply to three of the five looks at all. Suggestions, never a quota: a deck with no 3D subject must not grow one to hit a number, and time is deliberately NOT a reason to go lower.",
+    "note": "The picture mix a plan should SUGGEST (owner, 2026-10-08), and it applies to EVERY look, not just the two that use Blender. The shares are about how many slides carry a rendered 3D figure - animated, still, or neither - and each look renders them with ITS OWN engine (form_server.LOOK_3D): Bold Blue and Clay Pop default a still to a Cycles studio render; a look whose pictures are drawings or prints is live three.js by design, because a drawing is not a photograph. An earlier version of this block named Blender in the key names and so could not apply to the three.js looks at all. Suggestions, never a quota: a deck with no 3D subject must not grow one to hit a number, and time is deliberately NOT a reason to go lower.",
     "animated3dPct": 30,
     "still3dPct": 40,
     "illustrationPct": 30,

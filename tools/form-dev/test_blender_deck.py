@@ -216,7 +216,7 @@ def run(T=None, browser=True):
             fs.VENV_PY, fs.blender_available, fs.RUNNER = old_py, old_av, old_runner
 
     # ---------------------------------------------------------------- the engine mismatch of 0.5.3 / 0.5.4 (FIXLOG: finalize engine-mismatch)
-    # The owner's deck: a Flat-Pack (NOT Bold Blue) deck whose 3D slides carry no explicit engine. slide_engine resolved them to
+    # The owner's deck: an unlisted-look (NOT Bold Blue) deck whose 3D slides carry no explicit engine. slide_engine resolved them to
     # three.js, so the server made no Blender job, but the build wrote a .bb-blender holder on one of them anyway. finalize.js
     # only found that at the very end of a long run ("slide 14 still shows no render"); the gate had never looked at the slide,
     # because its engine was not blender.
@@ -226,7 +226,7 @@ def run(T=None, browser=True):
         fs.blender_available = lambda: True
         try:
             check('engine: a 3D STILL slide with no engine on a look that is not Bold Blue is live 3D',
-                  fs.slide_engine({'look': 'Flat-Pack'}, {'visual': {'main': '3d', 'motion': 'still'}}, True)['engine'] == 'threejs')
+                  fs.slide_engine({'look': 'An Unlisted Look'}, {'visual': {'main': '3d', 'motion': 'still'}}, True)['engine'] == 'threejs')
             check('engine: a 3D ANIMATION with no engine is live 3D on every look (auto never picks a 10-60 min render)',
                   fs.slide_engine({'look': 'Bold Blue'}, {'visual': {'main': '3d', 'motion': 'timed'}}, True)['engine'] == 'threejs')
             dk = 'dkmismatch'
@@ -234,7 +234,7 @@ def run(T=None, browser=True):
                 {'id': 's1', 'title': 'Live still', 'visual': {'main': '3d', 'motion': 'still'}},       # 3D, no engine, NO holder
                 {'id': 's16', 'title': 'Fin sheets', 'visual': {'main': '3d', 'motion': 'timed'}},      # 3D, no engine, WITH a holder
                 {'id': 's3', 'title': 'Words', 'visual': {'main': 'text'}}]}
-            C.deck_json(fs, root, dk, look='Flat-Pack', plan=plan, flow='plan')
+            C.deck_json(fs, root, dk, look='An Unlisted Look', plan=plan, flow='plan')
             eng = fs.plan_engines(fs.load_deck(dk))
             check('the deck that broke: both 3D slides resolve to three.js, so Lumi makes no Blender job for either',
                   eng['s1']['engine'] == 'threejs' and eng['s16']['engine'] == 'threejs', eng)

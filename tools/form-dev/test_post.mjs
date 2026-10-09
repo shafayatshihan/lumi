@@ -124,9 +124,11 @@ function loadPolicy(doc) {
         JSON.stringify(r.cfg));
   check('...and so is its body tier', PP.resolve({ el: doc._slides[2].holder }).cfg.dof === false);
 
-  // 4. Flat-Pack is a drawing: no post in any tier
-  doc.documentElement.dataset.look = 'flat-pack';
-  check('Flat-Pack refuses post in every tier',
+  // 4. a look that never registered a policy gets NO post in any tier (post-policy header, rule 4). This was
+  // checked through Flat-Pack, which registered `off` explicitly; that look is gone, and the DEFAULT is the
+  // thing actually worth protecting - a new look must opt IN to post, never inherit it.
+  doc.documentElement.dataset.look = 'an-unregistered-look';
+  check('an unregistered look gets no post in any tier',
         [0, 2, 4].every(i => PP.resolve({ el: doc._slides[i].holder }).enabled === false));
   doc.documentElement.dataset.look = 'bold-blue';
 
@@ -184,8 +186,6 @@ function loadPolicy(doc) {
   check('a deck built before the libraries existed renders without post instead of failing',
         /if \(!window\.LumiPost \|\| !window\.LumiPostPolicy\)/.test(studio) && /console\.warn/.test(studio));
 
-  const fp = fs.readFileSync(path.join(LIB, '..', 'looks', 'flat-pack', 'fp3d.js'), 'utf8');
-  check('Flat-Pack refuses a post option by name rather than ignoring it', /if \(o\.post\) throw new Error/.test(fp));
 
   const nd = fs.readFileSync(path.join(LIB, '..', '..', 'tools', 'new_deck.js'), 'utf8');
   check('every look loads the shared libraries, and loads them before its own scripts',

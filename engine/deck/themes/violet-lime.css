@@ -1,0 +1,344 @@
+/* Aura theme 9 - Violet Lime. The two-colour pitch deck, built from the owner's education / marketing template
+   reference (28 slides, 16 visible). One saturated violet-blue and one acid lime, and nothing else. The GROUND
+   ALTERNATES slide by slide - white, then full violet - and that alternation is the deck's rhythm; a run of three on
+   the same ground is a fault (violet-lime.js prints it). Everything is a rounded rectangle at ONE radius: cards,
+   picture frames, plates, pills, badges. Thin 2 px outlined rounded rectangles bleed off the canvas edge BEHIND the
+   content - they are what makes the empty space look designed. The lime touches exactly ONE element per slide.
+   The picture is the person's own photograph in a frame; when there is none the same frame holds a flat drawing or a
+   colour PLATE carrying the slide's one number (LOOK.md 2A) - never a placeholder.
+   Spec: .claude/skills/aura-slide/looks/_shared/LOOK-BASE.md then .../looks/violet-lime/LOOK.md.
+   Checker thresholds: engine/rules/hard-rules.json -> looks.violet-lime.
+   One typeface: Plus Jakarta Sans (500 text / 700 labels and numbers / 800 display).
+   Sizes: 24 / 30 / 36 / 48 / 72 / 104 / 144. */
+@font-face { font-family: "Plus Jakarta Sans"; src: url("../../fonts/PlusJakartaSans-200-800.woff2") format("woff2"); font-weight: 200 800; font-display: block; }
+
+:root {
+  --aura-look: violet-lime;                     /* the checker reads this to apply the Violet Lime thresholds */
+  --violet: #3D2EE6;                            /* the ground on half the slides, the headline on the other half */
+  --violet-deep: #2B1FB0;                       /* a recessed surface, on violet only */
+  --lime: #D2F53C;                              /* ONE thing per slide. Never a letter on white */
+  --white: #FFFFFF;
+  --ink: #15151A; --ink-2: #2A2A33; --muted: #5A5A66; --label: #6A6A78;
+  --on-violet-muted: #D4D0F7;                   /* secondary text on violet: 5.2:1 */
+  --hairline: #E4E3EF;                          /* the outlined decoration on white */
+  --violet-hair: rgba(255, 255, 255, .34);      /* the outlined decoration on violet */
+  --bg: var(--white);                           /* the slide ground; .on-violet swaps it */
+  --surface: var(--white);                      /* a card on the current ground */
+  --fg: var(--ink);                             /* the ground's own text colour */
+  --fg-muted: var(--muted);
+  --rule: var(--hairline);
+  --em: var(--violet);                          /* the one emphasis phrase: violet on white, lime on violet */
+  --leader: var(--ink); --leader-w: 3px;
+  --font-display: "Plus Jakarta Sans", "Segoe UI", sans-serif;
+  --font-text: "Plus Jakarta Sans", "Segoe UI", sans-serif;
+  --t-micro: 24px; --t-body: 30px; --t-lead: 36px; --t-sub: 48px; --t-head: 72px; --t-title: 104px; --t-close: 144px;
+  --radius: 24px; --radius-s: 16px;             /* one radius, and one small radius for the squared corner */
+  --vl-ease: cubic-bezier(.2, .8, .2, 1);
+  --aura-progress: #D2F53C;
+  --aura-letterbox: #15151A;
+}
+
+/* ---------------------------------------------------------------- the two grounds */
+.slide { font: 500 30px/1.5 var(--font-text); color: var(--fg); background: var(--bg); }
+.slide.on-violet {
+  --bg: var(--violet); --surface: var(--white); --fg: var(--white); --fg-muted: var(--on-violet-muted);
+  --rule: var(--violet-hair); --em: var(--lime); --leader: var(--white);
+}
+
+/* ---------------------------------------------------------------- type */
+.slide h1, .slide h2, .slide h3, .slide .title, .slide .headline {
+  font-family: var(--font-display); font-weight: 800; margin: 0; color: var(--fg);
+  letter-spacing: -.035em; line-height: 1.04;
+}
+.slide .title { font-size: 104px; max-width: 11ch; }
+.slide .headline { font-size: 72px; max-width: 13ch; }
+.slide .headline.wide { max-width: 100%; }
+.slide:not(.on-violet) :is(.title, .headline) { color: var(--violet); }   /* on white the headline is violet */
+.slide .sub { font: 700 36px/1.28 var(--font-text); color: var(--fg); max-width: 24ch; }
+.slide p { margin: 0; }
+.slide .lede { margin-top: 26px; font-size: 30px; line-height: 1.5; color: var(--fg-muted); max-width: 34ch; }
+.slide .close-line { margin-top: 30px; font-size: 30px; line-height: 1.5; color: var(--fg); max-width: 32ch; }
+.slide .close-line b, .slide .close-line strong { font-weight: 800; }
+.slide .cap, .slide .source { font: 500 24px/1.4 var(--font-text); color: var(--fg-muted); }
+.slide .big-num { font: 800 72px/1 var(--font-display); color: var(--fg); letter-spacing: -.04em; }
+/* kicker: a small rounded square + a short uppercase label */
+.slide .kicker { display: inline-flex; align-items: center; gap: 14px; margin: 0;
+  font: 700 30px/1.25 var(--font-text); color: var(--fg); letter-spacing: .02em; }
+.slide .kicker::before { content: ""; flex: none; width: 18px; height: 18px; border-radius: 6px; background: currentColor; }
+.slide .kicker + :is(h1, h2, .headline, .title) { margin-top: 26px; }
+.slide :is(h1, h2, .headline, .title) + .kicker { margin-top: 32px; }
+/* the ONE emphasis phrase: violet letters on white, lime letters on violet. Never a box - at display size a boxed
+   emphasis reads as a button. Start or end of the headline, never the middle. */
+.slide .em, .slide .em.text { color: var(--em); }
+.slide:not(.on-violet) .em { color: var(--violet); }
+/* On VIOLET the .em is lime, so it IS that slide's one lime thing. When the composition spends its lime somewhere
+   else - a stat pill, a dial segment, a lime card, a frame's tab - the headline inverts instead: the line is set in
+   the muted lavender (5.2:1) and the emphasis phrase is solid white (7.7:1). Still exactly one emphasis, still
+   exactly one lime thing. See LOOK.md section 1. */
+.slide.on-violet :is(.headline, .title, .vl-thanks).inv { color: var(--on-violet-muted); }
+.slide.on-violet :is(.headline, .title, .vl-thanks).inv .em { color: var(--white); }
+
+/* ---------------------------------------------------------------- the decoration: empty outlined rounded rectangles
+   bleeding off the canvas edge, BEHIND the content. They carry nothing and mean nothing. At most two per slide. */
+.vl-deco-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.vl-deco { position: absolute; display: block; border: 2px solid var(--rule); border-radius: var(--radius); }
+/* Each one bleeds off a CORNER, so what shows is a rounded corner - not a lone straight line, which is what a frame
+   bleeding off a single edge looks like (measured: it reads as a glitch). They stay out of the footer band and off
+   the left text column. */
+.vl-deco.d1 { width: 470px; height: 390px; right: -185px; top: -155px; }     /* top right */
+.vl-deco.d2 { width: 530px; height: 430px; right: -205px; bottom: -165px; }  /* bottom right */
+.vl-deco.d3 { width: 450px; height: 370px; left: -190px; top: -150px; }      /* top left */
+.slide > .safe { z-index: 1; display: flex; flex-direction: column; }
+
+/* ---------------------------------------------------------------- the 12-column split */
+.vl-main { display: grid; grid-template-columns: repeat(12, 1fr); column-gap: 56px; align-items: stretch;
+  flex: 1; min-height: 0; }
+.vl-main.top > :is(.vl-l, .vl-r) { justify-content: flex-start; }
+.vl-main.stack { display: flex; flex-direction: column; justify-content: center; gap: 40px; }
+.vl-l, .vl-r { min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: center; }
+/* a column child never SHRINKS: a flex column would squash a .vl-frame's aspect ratio and clip its tab and labels
+   (measured). The frame is bounded by max-height instead, against the column's definite stretched height. */
+.vl-l > *, .vl-r > * { flex: none; }
+.w4 { grid-column: span 4; } .w5 { grid-column: span 5; } .w6 { grid-column: span 6; }
+.w7 { grid-column: span 7; } .w8 { grid-column: span 8; } .w12 { grid-column: span 12; }
+.vl-head { display: flex; flex-direction: column; gap: 14px; }
+
+/* ---------------------------------------------------------------- the frame: EVERY picture lives in one.
+   One radius, with the bottom-left corner at the small radius - that squared corner is the look's signature.
+   It crops (cover), never letterboxes. No shadow, no border, no gradient, no filter: the look is flat. */
+.vl-frame { position: relative; margin: 0; overflow: hidden; background: var(--violet-deep);
+  border-radius: var(--radius) var(--radius) var(--radius) var(--radius-s); }
+:where(.slide:not(.on-violet)) .vl-frame { background: var(--hairline); }
+.vl-frame > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.vl-frame.tall { aspect-ratio: 3 / 4; max-height: 100%; } .vl-frame.wide { aspect-ratio: 4 / 3; max-height: 100%; }
+.vl-frame.sq { aspect-ratio: 1 / 1; max-height: 100%; }
+.vl-r > .vl-frame, .vl-l > .vl-frame { margin-inline: auto; }
+/* A frame that IS a column's main visual FILLS that column - which is what the reference does: the picture runs the
+   full height of its third. aspect-ratio is for a frame inside a grid (a people tile), and it cannot be relied on in
+   a flex column: with only absolutely-positioned children the box collapses to zero and clips its tab (measured). */
+.vl-l > .vl-frame, .vl-r > .vl-frame, .vl-l .vl-pair, .vl-r .vl-pair {
+  flex: 1 1 auto; width: 100%; min-height: 0; aspect-ratio: auto; }
+.vl-frame.fill { position: absolute; inset: 0; }
+/* a group of frames is ONE main visual (deck_check.js counts [data-visual] and large <img>) */
+.vl-pics { display: contents; }
+.vl-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; height: 100%; }
+/* one lime tab laid across a frame corner - and then it is the slide's lime thing */
+.vl-frame > .vl-tab { position: absolute; left: 0; bottom: 0; z-index: 2; padding: 12px 30px;
+  border-radius: 0 var(--radius) 0 var(--radius-s); background: var(--lime); color: var(--ink);
+  font: 700 30px/1.2 var(--font-text); white-space: nowrap; }
+/* .plain is for the slide whose ONE lime thing is somewhere else - a lime part inside the picture, say. A lime tab
+   beside a lime figure part is two lime things, which is a fault (LOOK.md section 1). */
+.vl-frame > .vl-tab.plain { background: var(--white); color: var(--ink); }
+.slide:not(.on-violet) .vl-frame > .vl-tab.plain { background: var(--violet); color: var(--white); }
+
+/* the PLATE (LOOK.md 2A form 3): no photograph, so the frame becomes a solid field carrying the slide's own number.
+   A deliberate composition, never a placeholder. Opposite ground, same geometry, ink on lime. */
+.vl-frame.is-plate { display: flex; flex-direction: column; justify-content: flex-end; padding: 48px 44px;
+  background: var(--violet); color: var(--white); }
+:where(.slide.on-violet) .vl-frame.is-plate { background: var(--white); color: var(--ink); }
+.vl-frame.is-plate.lime { background: var(--lime); color: var(--ink); }
+.vl-frame.is-plate.deep { background: var(--violet-deep); color: var(--white); }
+.vl-plate-num { font: 800 48px/1.05 var(--font-display); letter-spacing: -.035em; color: inherit; }
+.vl-plate-cap { margin-top: 10px; font: 500 30px/1.35 var(--font-text); color: inherit; opacity: .82; max-width: 14ch; }
+.vl-plate-line { font: 700 36px/1.25 var(--font-text); color: inherit; max-width: 13ch; }   /* a plate with no number */
+/* the drawn picture (LumiIllus / VL3D) sits in the same frame, on the opposite ground */
+.vl-frame.is-drawn { background: var(--violet); }
+:where(.slide.on-violet) .vl-frame.is-drawn { background: var(--white); }
+.vl-frame.is-drawn > :is(.aura-3d, .aura-illus, svg) { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* A drawn frame stands on the OPPOSITE ground from its slide, so everything drawn inside it - leader lines, dimension
+   arcs, notation, label text - must take the FRAME's contrast colour, not the slide's. Measured on the first real
+   deck: a white slide left --leader as ink, and the angle arc and leaders came out black on the violet frame. */
+.slide:not(.on-violet) .vl-frame.is-drawn { --leader: var(--white); --fg: var(--white); --fg-muted: var(--on-violet-muted); --rule: var(--violet-hair); }
+.slide.on-violet .vl-frame.is-drawn { --leader: var(--ink); --fg: var(--ink); --fg-muted: var(--muted); --rule: var(--hairline); }
+.slide .aura-3d.vl-3d { position: absolute; inset: 0; }
+
+/* ---------------------------------------------------------------- pills, cards and badges */
+.vl-pill { display: inline-flex; align-items: center; gap: 16px; padding: 18px 40px; border-radius: 999px;
+  font: 700 30px/1.2 var(--font-text); background: var(--surface); color: var(--ink); white-space: nowrap; }
+.vl-pill.lime { background: var(--lime); color: var(--ink); }
+.vl-pill.plain { background: transparent; color: var(--fg); border: 2px solid var(--rule); }
+.vl-pill .go { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--ink); color: var(--lime);
+  display: inline-flex; align-items: center; justify-content: center; padding: 10px; box-sizing: border-box; }
+.vl-pill.lime .go { background: var(--ink); color: var(--lime); }
+.vl-cta { margin-top: 44px; }
+.vl-card { background: var(--surface); color: var(--ink); border-radius: var(--radius); padding: 34px 36px; }
+:where(.slide:not(.on-violet)) .vl-card { background: var(--white); border: 2px solid var(--hairline); }
+.vl-card.lime, .vl-card.on { background: var(--lime); color: var(--ink); border-color: transparent; }
+.vl-card.deep { background: var(--violet-deep); color: var(--white); border-color: transparent; }
+.vl-card h3, .vl-card .ct { margin: 0; font: 700 36px/1.2 var(--font-text); color: inherit; letter-spacing: -.02em; }
+.vl-card p { margin: 10px 0 0; font: 500 30px/1.4 var(--font-text); color: inherit; opacity: .78; }
+
+/* ---------------------------------------------------------------- the big numbered blocks (numbered-blocks) */
+.vl-blocks { list-style: none; margin: 48px 0 0; padding: 0; display: grid; grid-template-columns: repeat(var(--n, 3), 1fr); gap: 32px; align-items: start; }
+.vl-blocks > li { border-radius: var(--radius); padding: 36px 34px 40px; background: var(--surface); color: var(--ink); }
+:where(.slide:not(.on-violet)) .vl-blocks > li { border: 2px solid var(--hairline); }
+.vl-blocks > li.lime { background: var(--lime); color: var(--ink); border-color: transparent; }
+.vl-blocks > li.deep { background: var(--violet-deep); color: var(--white); border-color: transparent; }
+.vl-blocks .no { display: block; font: 800 72px/1 var(--font-display); letter-spacing: -.05em; color: inherit; }
+.vl-blocks strong { display: block; margin-top: 18px; font: 700 36px/1.2 var(--font-text); color: inherit; }
+.vl-blocks p { margin: 8px 0 0; font: 500 30px/1.4 var(--font-text); color: inherit; opacity: .78; }
+
+/* ---------------------------------------------------------------- stats */
+.vl-stats { list-style: none; margin: 48px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 44px; }
+.vl-stats.col { grid-template-columns: 1fr; gap: 30px; }
+.vl-stat { display: block; font: 800 48px/1.05 var(--font-display); color: var(--fg); letter-spacing: -.035em; }
+.vl-stats p { margin: 8px 0 0; font-size: 30px; line-height: 1.4; color: var(--fg-muted); }
+.vl-stats p b { color: var(--fg); font-weight: 700; }
+.vl-bar { margin-top: 14px; height: 14px; max-width: 340px; border-radius: 999px; background: var(--rule); overflow: hidden; }
+.vl-bar > i { display: block; height: 100%; width: var(--v, 50%); border-radius: 999px; background: var(--fg); transform-origin: left center; }
+.vl-bar.lime > i { background: var(--lime); }
+
+/* ---------------------------------------------------------------- the stacked labelled cards (service-stack) */
+.vl-cards { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; gap: 20px; }
+.vl-cards > li { border-radius: var(--radius); padding: 26px 32px; background: var(--surface); color: var(--ink);
+  transition: background .3s var(--vl-ease), color .3s var(--vl-ease); }
+:where(.slide:not(.on-violet)) .vl-cards > li { border: 2px solid var(--hairline); }
+.vl-cards > li.on { background: var(--lime); color: var(--ink); border-color: transparent; }
+.vl-cards strong { display: block; font: 700 36px/1.2 var(--font-text); color: inherit; }
+.vl-cards p { margin: 6px 0 0; font: 500 30px/1.38 var(--font-text); color: inherit; opacity: .76; }
+
+/* ---------------------------------------------------------------- numbered steps and the arrow row (step-arrows) */
+.vl-steps { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; gap: 24px; }
+.vl-steps > li { display: grid; grid-template-columns: 62px 1fr; column-gap: 22px; align-items: start; }
+.vl-n { width: 62px; height: 62px; border-radius: var(--radius-s); display: flex; align-items: center; justify-content: center;
+  font: 700 30px/1 var(--font-text); color: var(--ink); background: var(--surface); }
+:where(.slide:not(.on-violet)) .vl-n { background: var(--hairline); }
+.vl-n.on { background: var(--lime); color: var(--ink); }
+.vl-steps strong { display: block; font: 700 36px/1.2 var(--font-text); color: var(--fg); }
+.vl-steps p { margin: 4px 0 0; font-size: 30px; line-height: 1.4; color: var(--fg-muted); }
+/* three cards with arrows between them */
+.vl-flow { list-style: none; margin: 0; padding: 0; display: flex; align-items: stretch; gap: 0; }
+.vl-flow > li { flex: 1 1 0; min-width: 0; }
+.vl-flow > li.arrow { flex: 0 0 76px; display: flex; align-items: center; justify-content: center; color: var(--fg); }
+.vl-flow .vl-card { height: 100%; box-sizing: border-box; }
+.vl-arrow { width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--rule); display: flex;
+  align-items: center; justify-content: center; padding: 13px; box-sizing: border-box; color: var(--fg); }
+
+/* ---------------------------------------------------------------- the year line (year-line) */
+.vl-years { list-style: none; margin: 0; padding: 0; position: relative; display: grid;
+  grid-template-columns: repeat(var(--n, 5), 1fr); align-items: center; }
+.vl-years::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: var(--rule); }
+.vl-years > li { position: relative; display: flex; flex-direction: column; align-items: center; }
+.vl-years .yr { position: relative; z-index: 1; padding: 12px 30px; border-radius: 999px; background: var(--surface);
+  color: var(--ink); font: 700 24px/1.2 var(--font-text); white-space: nowrap; }
+:where(.slide:not(.on-violet)) .vl-years .yr { background: var(--hairline); }
+.vl-years > li.key .yr { background: var(--lime); color: var(--ink); }
+.vl-years .note { position: absolute; width: 15ch; text-align: center; font: 500 30px/1.35 var(--font-text); color: var(--fg-muted); }
+.vl-years > li.up .note { bottom: calc(50% + 46px); }
+.vl-years > li.down .note { top: calc(50% + 46px); }
+.vl-years > li.key .note { color: var(--fg); font-weight: 700; }
+
+/* ---------------------------------------------------------------- zones, chips, goals */
+.vl-zones { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; gap: 26px; }
+.vl-zones > li { display: grid; grid-template-columns: 58px 1fr; column-gap: 20px; align-items: start; }
+.vl-zones .z { width: 58px; height: 58px; border-radius: var(--radius-s); display: flex; align-items: center; justify-content: center;
+  font: 700 30px/1 var(--font-text); color: var(--ink); background: var(--surface); }
+:where(.slide:not(.on-violet)) .vl-zones .z { background: var(--hairline); }
+.slide .vl-zones > li.key .z { background: var(--lime); color: var(--ink); }
+.vl-zones .n { display: block; font: 700 36px/1.2 var(--font-text); color: var(--fg); }
+.vl-zones .d { display: block; margin-top: 2px; font: 500 30px/1.4 var(--font-text); color: var(--fg-muted); }
+.vl-chips { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 18px; }
+.vl-chip { font: 700 30px/1.2 var(--font-text); color: var(--ink); background: var(--surface); border-radius: 999px; padding: 14px 30px; }
+:where(.slide:not(.on-violet)) .vl-chip { background: var(--hairline); }
+.vl-chip.lime { background: var(--lime); color: var(--ink); }
+.vl-goals { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; gap: 22px; }
+.vl-goal { display: grid; grid-template-columns: 58px 1fr; column-gap: 22px; align-items: center; }
+.vl-goal .ic { width: 58px; height: 58px; padding: 13px; box-sizing: border-box; border-radius: var(--radius-s);
+  color: var(--fg-muted); background: var(--surface); }
+.slide:not(.on-violet) .vl-goal .ic { background: var(--hairline); color: var(--muted); }
+.slide:not(.on-violet) .vl-goal.on .ic { color: var(--white); background: var(--violet); }
+.slide.on-violet .vl-goal.on .ic { color: var(--violet); background: var(--white); }
+.slide:not(.on-violet) .vl-goal.wip .ic { color: var(--violet); background: var(--hairline); }
+.slide.on-violet .vl-goal.wip .ic { color: var(--white); background: var(--violet-deep); }
+.slide .vl-goal.key .ic { color: var(--ink); background: var(--lime); }
+.vl-goal strong { display: block; font: 700 36px/1.2 var(--font-text); color: var(--fg); }
+.vl-goal span.d { display: block; margin-top: 2px; font: 500 30px/1.4 var(--font-text); color: var(--fg-muted); }
+.vl-goal.no strong { color: var(--fg-muted); }
+
+/* ---------------------------------------------------------------- people and voices (LOOK.md section 2) */
+.vl-people-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--n, 4), 1fr); gap: 28px; }
+.vl-people-grid > li { display: flex; flex-direction: column; gap: 16px; }
+.vl-people-grid .vl-frame { aspect-ratio: 1 / 1; }
+.vl-people-grid strong { font: 700 36px/1.2 var(--font-text); color: var(--fg); }
+.vl-people-grid em { font-style: normal; font: 500 30px/1.35 var(--font-text); color: var(--fg-muted); }
+.vl-voices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 24px; }
+.vl-voices > li { display: grid; grid-template-columns: 96px 1fr; column-gap: 24px; align-items: start;
+  background: var(--surface); color: var(--ink); border-radius: var(--radius); padding: 30px 34px; }
+.slide:not(.on-violet) .vl-voices > li { border: 2px solid var(--hairline); }
+.vl-voices .who { width: 96px; height: 96px; border-radius: 50%; overflow: hidden; background: var(--hairline);
+  display: flex; align-items: center; justify-content: center; font: 800 36px/1 var(--font-display); color: var(--ink); }
+.vl-voices .who.lime { background: var(--lime); }
+.vl-voices .who img { width: 100%; height: 100%; object-fit: cover; }
+.vl-voices blockquote { margin: 0; font: 500 30px/1.42 var(--font-text); color: inherit; }
+.vl-voices cite { display: block; margin-top: 10px; font: 700 24px/1.3 var(--font-text); font-style: normal; color: var(--muted); }
+
+/* ---------------------------------------------------------------- the chart, labels and pins */
+.vl-chart { position: relative; flex: 1; min-height: 0; }
+.vl-chart.short { flex: none; }
+.vl-tag { position: absolute; padding: 12px 26px 14px; background: var(--white); border-radius: var(--radius-s);
+  white-space: nowrap; pointer-events: none; z-index: 2; }
+.vl-tag b { display: block; font: 700 30px/1.15 var(--font-text); color: var(--ink); }
+.vl-tag span { display: block; margin-top: 2px; font: 500 24px/1.3 var(--font-text); color: var(--muted); }
+.vl-tag.lime { background: var(--lime); }
+.vl-pin { position: absolute; width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font: 700 30px/1 var(--font-text); color: var(--ink); background: var(--lime); pointer-events: none; z-index: 3; }
+.vl-pin.plain { background: var(--white); }
+.vl-map { display: flex; flex-direction: column; gap: 12px; padding: 26px 30px; border-radius: var(--radius); background: var(--surface); color: var(--ink); }
+.slide:not(.on-violet) .vl-map { border: 2px solid var(--hairline); }
+.vl-map .node { display: inline-flex; align-items: center; gap: 12px; padding: 6px 20px; border-radius: 999px;
+  font: 700 30px/1.25 var(--font-text); color: var(--ink); background: transparent; transition: background .3s var(--vl-ease); }
+.vl-map .node.on { background: var(--lime); }
+.vl-map ul { list-style: none; margin: 0; padding: 0 0 0 28px; display: flex; flex-direction: column; gap: 10px; }
+.vl-meta { list-style: none; margin: 40px 0 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.vl-meta li { font-size: 30px; line-height: 1.4; color: var(--fg-muted); }
+.vl-meta b { color: var(--fg); font-weight: 700; }
+.vl-meta .lb { display: block; font: 700 24px/1.3 var(--font-text); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-muted); }
+
+/* ---------------------------------------------------------------- closing */
+.vl-thanks { margin: 0; font: 800 144px/1.02 var(--font-display); color: var(--fg); letter-spacing: -.045em; }
+.vl-thanks.vl-msg { font-size: 104px; line-height: 1.06; max-width: 11ch; }
+.slide .vl-q { margin: 40px 0 0; font: 700 36px/1.3 var(--font-text); color: var(--fg); max-width: 24ch; }
+.vl-people { list-style: none; margin: 40px 0 0; padding: 0; display: grid; gap: 16px; }
+.vl-people li { display: grid; grid-template-columns: 240px auto 1fr; column-gap: 24px; align-items: baseline; font-size: 30px; }
+.vl-people .lb { font: 700 24px/1.4 var(--font-text); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-muted); }
+.vl-people strong { font-weight: 700; color: var(--fg); white-space: nowrap; }
+.vl-people em { font-style: normal; color: var(--fg-muted); }
+
+/* ---------------------------------------------------------------- the footer */
+.vl-foot { flex: none; margin-top: 26px; display: flex; align-items: center; justify-content: space-between;
+  padding-top: 22px; border-top: 2px solid var(--rule); }
+.vl-mark { display: inline-flex; align-items: center; gap: 14px; font: 500 24px/1.3 var(--font-text); color: var(--fg-muted); }
+.vl-mark::before { content: ""; width: 16px; height: 16px; border-radius: 5px; background: var(--fg); }
+.vl-pageno { font: 700 24px/1.3 var(--font-text); color: var(--fg); }
+
+/* ---------------------------------------------------------------- motion: it slides and settles. Nothing bounces,
+   nothing spins, nothing arrives from off-screen, nothing moves twice. */
+@keyframes vlRise { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+@keyframes vlFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes vlPop { from { opacity: 0; scale: .92; } to { opacity: 1; scale: 1; } }
+@keyframes vlPopScale { from { scale: .92; } to { scale: 1; } }
+@keyframes vlGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes vlDraw { from { opacity: 0; transform: scale(.97); } to { opacity: .999; transform: none; } }
+/* the dial arc sweeps from zero on its own dashoffset: its stroke-dasharray is the VALUE, so it cannot use the
+   runtime's data-anim="draw" (that sets stroke-dasharray: 1). violet-lime.js sets --c to the lit length. */
+@keyframes vlSweep { from { stroke-dashoffset: var(--c, 0); } to { stroke-dashoffset: 0; } }
+html:not(.aura-still) .slide.is-entering .vl-deco { animation: vlDraw .9s var(--vl-ease) both; }
+html:not(.aura-still) .slide.is-entering :is(h1, h2, .headline, .title, .vl-thanks) { animation: vlRise .6s var(--vl-ease) .1s both; }
+html:not(.aura-still) .slide.is-entering .kicker { animation: vlRise .5s var(--vl-ease) .04s both; }
+html:not(.aura-still) .slide.is-entering :is(.sub, .lede, .close-line, .vl-meta, .vl-q, .vl-people, .vl-map) { animation: vlRise .5s var(--vl-ease) .26s both; }
+html:not(.aura-still) .slide.is-entering :is(.vl-frame, .vl-chart) { animation: vlRise .62s var(--vl-ease) .18s both; }
+html:not(.aura-still) .slide.is-entering :is(.vl-stats, .vl-blocks, .vl-cards, .vl-steps, .vl-zones, .vl-goals, .vl-chips, .vl-flow, .vl-years, .vl-people-grid, .vl-voices) > li { animation: vlRise .46s var(--vl-ease) both; }
+html:not(.aura-still) .slide.is-entering :is(.vl-stats, .vl-blocks, .vl-cards, .vl-steps, .vl-zones, .vl-goals, .vl-chips, .vl-flow, .vl-years, .vl-people-grid, .vl-voices) > li:nth-child(1) { animation-delay: .3s; }
+html:not(.aura-still) .slide.is-entering :is(.vl-stats, .vl-blocks, .vl-cards, .vl-steps, .vl-zones, .vl-goals, .vl-chips, .vl-flow, .vl-years, .vl-people-grid, .vl-voices) > li:nth-child(2) { animation-delay: .38s; }
+html:not(.aura-still) .slide.is-entering :is(.vl-stats, .vl-blocks, .vl-cards, .vl-steps, .vl-zones, .vl-goals, .vl-chips, .vl-flow, .vl-years, .vl-people-grid, .vl-voices) > li:nth-child(3) { animation-delay: .46s; }
+html:not(.aura-still) .slide.is-entering :is(.vl-stats, .vl-blocks, .vl-cards, .vl-steps, .vl-zones, .vl-goals, .vl-chips, .vl-flow, .vl-years, .vl-people-grid, .vl-voices) > li:nth-child(4) { animation-delay: .54s; }
+html:not(.aura-still) .slide.is-entering :is(.vl-stats, .vl-blocks, .vl-cards, .vl-steps, .vl-zones, .vl-goals, .vl-chips, .vl-flow, .vl-years, .vl-people-grid, .vl-voices) > li:nth-child(5) { animation-delay: .62s; }
+html:not(.aura-still) .slide.is-entering :is(.vl-pill, .vl-tab, .vl-tag, .vl-pin) { animation: vlPop .42s var(--vl-ease) .66s both; }
+html:not(.aura-still) .slide.is-entering .vl-foot { animation: vlFade .5s var(--vl-ease) .8s both; }
+.vl-bar > i { animation: none; }
+html:not(.aura-still) .slide.is-entering .vl-bar > i { animation: vlGrow .8s var(--vl-ease) .45s both; }
+html:not(.aura-still) .slide.is-entering .vl-dial-arc { animation: vlSweep .9s var(--vl-ease) var(--d, .2s) both; }
+/* a label that follows a figure moves through transform every frame, so it may only animate scale */
+html:not(.aura-still) .slide.is-entering .aura-3d .vl-tag { animation: vlPopScale .42s var(--vl-ease) .66s both; }
+
+.aura-progress { height: 6px; border-radius: 0 999px 999px 0; }

@@ -1,0 +1,62 @@
+<!-- archetype: objectives-tour | the goals as a monochrome staircase that CLIMBS (S4); a ball hops up the treads and the checklist lights in step | main visual: 3D (live: Aura.sync-style DOM) | companions: checklist <=4 rows -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="Objectives">
+  <div class="safe">
+    <div class="rg-main">
+      <div class="rg-l w5">
+        <p class="kicker" data-edit="s{{N}}-1">08 · Objectives</p>
+        <h2 class="headline" data-edit="s{{N}}-2">Four steps, <span class="em">three climbed</span></h2>
+        <ul class="rg-goals">
+          <li class="rg-goal on"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-3">Measure it</strong><span class="d" data-edit="s{{N}}-4">done, 120 runs</span></div></li>
+          <li class="rg-goal on"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-5">Explain it</strong><span class="d" data-edit="s{{N}}-6">done, one model</span></div></li>
+          <li class="rg-goal on"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-7">Build it</strong><span class="d" data-edit="s{{N}}-8">done, two rigs</span></div></li>
+          <li class="rg-goal wip"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v6l4 2" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-9">Prove it</strong><span class="d" data-edit="s{{N}}-10">in progress</span></div></li>
+        </ul>
+      </div>
+      <div class="rg-r w7">
+        <div class="rg-stage">
+          <div class="aura-3d rg-3d" data-scene="s{{N}}-scene" data-period="16" aria-hidden="true">
+            <span class="rg-pill" data-follow="goal" data-align="center" data-dy="-110" data-edit="s{{N}}-11">The goal</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="rg-foot" data-nonclaim><span class="rg-mark" data-edit="s{{N}}-12">Deck mark</span><span class="rg-label" data-edit="s{{N}}-lb">Deck label</span><span class="rg-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Climb it out loud.</strong> The blocks rise because the objectives build on each other - say what each
+    one made possible for the next, not just what it was.</p>
+    <p><strong>Be honest about where you are.</strong> Point at the grey button and say what is left. A half-finished
+    objective said plainly is stronger than four ticks.</p>
+    <p><strong>Prepare the question</strong> "what if the last one fails?" - have the fallback ready in one sentence.</p>
+  </aside>
+</section>
+<script>
+/* S4 (LOOK-BASE 4.0): a sequence is a path that CLIMBS - plaster blocks rising left to right, the goal block in
+   ink. A ball hops tread to tread (an arc, then a small settle as it lands) and the checklist row it stands on lights up. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx, P = ctx.period, N = 4;
+  const S = RG3D.studio(ctx, { target: [0, 1.2, 0], distance: 10.5, azimuth: -24, elevation: 20 });
+  const stair = RG3D.climb(THREE, N, { tread: 1.15, rise: 0.55, depth: 1.1 });
+  S.add(stair.group);
+  stair.blocks.forEach(b => S.contact(b, 0.8, 0.7));
+  const bead = S.add(RG3D.ball(THREE, 0.24, { color: 'ink' }));
+  const rows = ctx.el.closest('.rg-main').querySelectorAll('.rg-goal');
+  RG3D.tags(S, ctx.el, { goal: stair.tops[N - 1].toArray() });
+  let at = -1;
+  return S.api({ update(t) {
+    S.sway(t, { deg: 3 });
+    const s = RG3D.steps(t, P, N, 0.3);
+    const a = stair.tops[s.i], b = s.next === 0 ? stair.tops[0] : stair.tops[s.next];
+    bead.position.lerpVectors(a, b, s.k);
+    bead.position.y += 0.24 + Math.sin(Math.PI * s.k) * 0.7;             // the hop
+    const sq = s.k > 0.85 ? Math.sin((s.k - 0.85) / 0.15 * Math.PI) * 0.12 : 0;   // the landing settle
+    bead.scale.set(1 + sq, 1 - sq, 1 + sq);
+    const here = s.k < 0.5 ? s.i : s.next;
+    if (here !== at) { at = here; rows.forEach((r, k) => r.classList.toggle('is-here', k === here)); }
+  } });
+}, { period: 16 });
+</script>

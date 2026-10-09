@@ -1,0 +1,52 @@
+<!-- archetype: objectives-tour | year-line: a horizontal run of year pills with their notes above and below, the one the talk is about in lime, and a checklist of the goals beneath. S4 - the sequence reads left to right and the goal is marked. WHITE ground | main visual: text | companions: year line, <=4 checklist rows -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="Where we are">
+  <div class="vl-deco-layer" aria-hidden="true"><i class="vl-deco d1"></i></div>
+  <div class="safe">
+    <div class="vl-main stack">
+      <div class="vl-head">
+        <p class="kicker" data-edit="s{{N}}-1">So far</p>
+        <h2 class="headline wide" data-edit="s{{N}}-2">Four goals, <span class="em">three delivered.</span></h2>
+      </div>
+      <!-- the year line: the ONE lime thing is the key pill. Never two. -->
+      <div class="vl-chart short" id="s{{N}}-line" style="height:230px"></div>
+      <ul class="vl-goals" style="display:grid; grid-template-columns:1fr 1fr; gap:18px 56px; margin-top:0">
+        <li class="vl-goal on">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div><strong data-edit="s{{N}}-3">The first goal</strong><span class="d" data-edit="s{{N}}-4">delivered, and when</span></div>
+        </li>
+        <li class="vl-goal on">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div><strong data-edit="s{{N}}-5">The second goal</strong><span class="d" data-edit="s{{N}}-6">delivered, and when</span></div>
+        </li>
+        <li class="vl-goal wip">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="3"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+          <div><strong data-edit="s{{N}}-7">The third goal</strong><span class="d" data-edit="s{{N}}-8">in progress</span></div>
+        </li>
+        <li class="vl-goal no">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+          <div><strong data-edit="s{{N}}-9">The fourth goal</strong><span class="d" data-edit="s{{N}}-10">not done, and why</span></div>
+        </li>
+      </ul>
+    </div>
+    <footer class="vl-foot" data-nonclaim><span class="vl-mark" data-edit="s{{N}}-11">Deck mark</span><span class="vl-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Walk the year line left to right</strong> and stop on the lime pill - that is the moment the talk is
+    about. Give each year one sentence; the line is there so nobody has to hold the chronology in their head.</p>
+    <p><strong>Then the goals, in order, and do not skip the last one.</strong> A checklist with one cross on it is
+    more credible than four ticks, so say plainly what was not delivered and why - a reason, not an excuse.</p>
+    <p><strong>Say what happens next for the unfinished one</strong>, with a date you can defend. Honesty caveat: if
+    a goal was redefined partway through, say so here rather than quietly counting it as delivered. Prepare the
+    question "what changed between the plan and now?".</p>
+  </aside>
+  <script>
+  VLChart.years('#s{{N}}-line', {
+    years: [
+      { year: '2022', note: 'first prototype', side: 'up' },
+      { year: '2023', note: 'rig and instruments', side: 'down' },
+      { year: '2024', note: 'the result shown here', side: 'up', key: true },   // the ONE lime mark
+      { year: '2025', note: 'field trial', side: 'down' },
+    ],
+  });
+  </script>
+</section>

@@ -632,10 +632,10 @@ BOLD_BLUE = 'Bold Blue'
 LOOK_BASE_SPEC = '.claude/skills/aura-slide/looks/_shared/LOOK-BASE.md'
 LOOK_SPECS = {
     'bold-blue': '.claude/skills/aura-slide/looks/bold-blue/LOOK.md',
-    'flat-pack': '.claude/skills/aura-slide/looks/flat-pack/LOOK.md',
-    'pink-punch': '.claude/skills/aura-slide/looks/pink-punch/LOOK.md',
-    'happy-headspace': '.claude/skills/aura-slide/looks/happy-headspace/LOOK.md',
     'clay-pop': '.claude/skills/aura-slide/looks/clay-pop/LOOK.md',
+    'red-gallery': '.claude/skills/aura-slide/looks/red-gallery/LOOK.md',
+    'candy-grid': '.claude/skills/aura-slide/looks/candy-grid/LOOK.md',
+    'violet-lime': '.claude/skills/aura-slide/looks/violet-lime/LOOK.md',
 }
 BOLD_BLUE_SPEC = LOOK_SPECS['bold-blue']                        # kept: older records and tests name it
 LOOK_OVERRIDES = ('style.threeD', 'style.twoD', 'style.amount', 'style.amountLabel', 'aura-blend', 'power-design')
@@ -645,10 +645,14 @@ BOLD_BLUE_OVERRIDES = LOOK_OVERRIDES
 # studio render when Blender is installed (animations stay live three.js); 'threejs' = this look never uses Blender,
 # its 3D is live three.js whatever the motion. A look that is not listed gets LOOK_3D_DEFAULT, so a 3D slide ALWAYS
 # resolves to an engine - a 3D slide with no engine at all is the slide-14 finalize bug (BACKLOG B1).
-# Pink Punch is a screen print and Happy Headspace is a soft-lit form: Cycles would render the picture both looks
-# refuse, at a hundred times the cost. Clay Pop is a render look, like Bold Blue.
-LOOK_3D = {'bold-blue': 'blender', 'flat-pack': 'threejs',
-           'pink-punch': 'threejs', 'happy-headspace': 'threejs', 'clay-pop': 'blender'}
+# A look whose pictures are drawings or prints is three.js by design: Cycles would render the picture that look
+# refuses, at a hundred times the cost. Clay Pop is a render look, like Bold Blue.
+# Red Gallery's pictures are monochrome prints of a simple studio figure; the frame and the red block make them read
+# as photographs, not the renderer, so it stays live three.js.
+# Violet Lime's pictures are the person's own photographs, or flat drawn notation. A Cycles still is a photoreal
+# subject on a studio floor - the one picture that look never shows - so it is live three.js, always.
+LOOK_3D = {'bold-blue': 'blender', 'clay-pop': 'blender', 'red-gallery': 'threejs', 'candy-grid': 'threejs',
+           'violet-lime': 'threejs'}
 LOOK_3D_DEFAULT = 'threejs'
 
 
@@ -1806,7 +1810,7 @@ def slide_hashes(build):
     return [hashlib.sha1(re.sub(r'\s+', ' ', x).encode('utf-8')).hexdigest() for x in parts]
 
 
-SHELL_THEMES = ('pink-punch', 'bold-blue', 'flat-pack', 'happy-headspace', 'clay-pop')     # new_deck.js THEMES
+SHELL_THEMES = ('bold-blue', 'clay-pop', 'red-gallery', 'candy-grid', 'violet-lime')     # new_deck.js THEMES
 
 
 def look_theme(look):
@@ -2739,6 +2743,64 @@ def usage_share():
     return {'pct': pct * 100 if pct <= 1 else pct, 'capturedAt': cap, 'resetsAt': resets or None}
 
 
+# ---------------------------------------------------------------- keeping the usage figure fresh
+# The figure only ever arrives inside a Claude stream, as a `rate_limit_event`. Between decks nothing streams, so
+# the pill stands still and shows the last capture - which is what 'it always shows old data' means. The CLI has no
+# command that reports the allowance (checked: no usage/limit subcommand, and `auth status` does not carry it), so
+# the only way to learn the current number is to open the cheapest possible stream and read the event off it.
+#
+# That spends a little of the allowance to measure the allowance, so it is deliberately conservative:
+#   * only when something is actually polling /api/usage, i.e. only while a window is open;
+#   * never while a real run is streaming, because that is already producing fresh readings;
+#   * at most once every USAGE_PROBE_MIN_S, and only one probe in flight at a time;
+#   * haiku, no tools, one word of output.
+USAGE_PROBE_MIN_S = 150
+_usage_probe = {'at': 0.0, 'busy': False}
+_usage_probe_lock = threading.Lock()
+
+
+def _usage_probe_work():
+    try:
+        cmd = claude_cmd()
+        if not cmd: return
+        settings = TEMP / 'usage-probe.settings.json'
+        TEMP.mkdir(parents=True, exist_ok=True)
+        write_atomic(settings, json.dumps({'permissions': {'allow': [], 'deny': ['WebFetch', 'WebSearch']}}, indent=2))
+        args = cmd + ['-p', '--settings', str(settings), '--output-format', 'stream-json', '--verbose',
+                      '--model', 'haiku', '--max-turns', '1']
+        proc = subprocess.run(args, input='say ok', capture_output=True, text=True, timeout=90,
+                              cwd=str(ROOT), encoding='utf-8', errors='replace')
+        for line in (proc.stdout or '').splitlines():
+            line = line.strip()
+            if not line.startswith('{'): continue
+            try: m = json.loads(line)
+            except ValueError: continue
+            if m.get('type') == 'rate_limit_event':
+                save_usage(m.get('rate_limit_info') or {})
+                log('usage refreshed by probe')
+                return
+    except Exception as e:                                   # a probe must never break the page it serves
+        log('usage probe failed', repr(e)[:160])
+    finally:
+        with _usage_probe_lock:
+            _usage_probe['busy'] = False
+
+
+def usage_refresh_async():
+    """Kick a background refresh if the stored reading is stale. Returns immediately; the next poll sees the result."""
+    u = read_usage() or {}
+    try: cap = int(u.get('capturedAt') or 0)
+    except (TypeError, ValueError): cap = 0
+    now = time.time()
+    if now - cap < USAGE_PROBE_MIN_S: return False           # still fresh enough
+    if RUNNER.running: return False                          # a real run is already producing readings
+    with _usage_probe_lock:
+        if _usage_probe['busy'] or now - _usage_probe['at'] < USAGE_PROBE_MIN_S: return False
+        _usage_probe['busy'] = True; _usage_probe['at'] = now
+    threading.Thread(target=_usage_probe_work, daemon=True).start()
+    return True
+
+
 # ---------------------------------------------------------------- loading-screen checks and fixes
 PY_MODULES = {'pillow': 'PIL', 'python-pptx': 'pptx', 'imageio-ffmpeg': 'imageio_ffmpeg', 'python-docx': 'docx',
               'beautifulsoup4': 'bs4', 'pyyaml': 'yaml'}
@@ -3201,12 +3263,49 @@ def _save_uploads():
 
 
 def launch(target):
-    """Open a file or folder with its default app (browser for .html, Explorer for folders)."""
+    """Open a file or folder with its default app (browser for .html, Explorer for folders).
+
+    Lumi's window is a FULLSCREEN Edge app window, and Windows will not let a process that does not own the
+    foreground steal it. So Explorer opened behind Lumi and the person saw nothing happen - the app looked like it
+    had swallowed the folder, the way a fullscreen game does. After opening, the new window is pulled to the front
+    explicitly. Failure here is never fatal: the folder is open either way.
+    """
     if NO_LAUNCH: return
     if Path(target).is_dir():
         subprocess.Popen(['explorer.exe', str(target)])
     else:
         os.startfile(str(target))
+    _front(target)
+
+
+_FRONT_PS = r'''
+Add-Type @"
+using System; using System.Runtime.InteropServices;
+public class Fg {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+}
+"@
+$deadline = (Get-Date).AddSeconds(6)
+while ((Get-Date) -lt $deadline) {
+  $p = Get-Process explorer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } |
+       Sort-Object StartTime -Descending | Select-Object -First 1
+  if ($p) { [Fg]::ShowWindow($p.MainWindowHandle, 9) | Out-Null; [Fg]::SetForegroundWindow($p.MainWindowHandle) | Out-Null; break }
+  Start-Sleep -Milliseconds 250
+}
+'''
+
+
+def _front(target):
+    """Pull the window we just opened in front of Lumi. Best effort, in the background, never raises."""
+    if os.name != 'nt': return
+    try:
+        subprocess.Popen(['powershell', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', _FRONT_PS],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    except Exception as e:
+        log('could not bring the opened window forward', repr(e)[:120])
 
 
 # ---------------------------------------------------------------- v0.5: work folders, the slide plan, slide-by-slide build
@@ -7438,6 +7537,10 @@ class H(BaseHTTPRequestHandler):
                 return self.send(200, json.loads(f.read_text(encoding='utf-8')) if f.exists() else {})
             except ValueError:
                 return self.send(200, {})
+        # The look is now picked BEFORE the deck exists (home -> look -> start), and the quality choice travels with
+        # it, so both need to be answerable without a deckId. Everything here is a pure function of the constants.
+        if path == '/api/quality':
+            return self.send(200, {'ok': True, 'options': quality_options(), 'default': DEFAULT_QUALITY})
         if path == '/api/claude/status':
             return self.send(200, RUNNER.status(q.get('refresh', ['0'])[0] not in ('0', '')))
         if path == '/api/claude/signin':
@@ -7449,6 +7552,7 @@ class H(BaseHTTPRequestHandler):
         if path == '/api/health': return self.send(200, health(q.get('part', [''])[0] or None))
         if path == '/api/fix/status': return self.send(200, FIXER.status())
         if path == '/api/usage':
+            usage_refresh_async()                       # stale reading -> refresh in the background for the next poll
             return self.send(200, {'ok': True, 'usage': read_usage(), 'subscriptionType': RUNNER.plan()})
         if path == '/api/decks': return self.send(200, {'ok': True, 'decks': list_decks()})
         if path == '/api/finalize': return self.send(200, dict(FINALIZER.status(), ok=True))

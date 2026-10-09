@@ -1,0 +1,235 @@
+/* Aura theme 7 - Red Gallery. The editorial exhibition deck, built from the owner's reference (a "post-war art
+   exhibition proposal": warm paper, signal-red condensed capitals, black-and-white pictures in white print borders).
+   One warm off-white page, ONE signal red that owns the type and the blocks, ink for the words, and every picture a
+   monochrome print: a white border, a soft shadow, and a solid red block offset behind one corner. A thin strip down
+   the left edge carries the deck mark and label, rotated; a red badge in the lower right carries the page number.
+   Spec: .claude/skills/aura-slide/looks/_shared/LOOK-BASE.md then .../looks/red-gallery/LOOK.md.
+   Checker thresholds: engine/rules/hard-rules.json -> looks.red-gallery.
+   Two typefaces: Anton (display, always uppercase) and Poppins (400 text / 600 labels / 700 sub-heads).
+   Sizes: 24 / 30 / 40 / 56 / 88 / 140 / 200. */
+@font-face { font-family: "Anton"; src: url("../../fonts/Anton-400.woff2") format("woff2"); font-weight: 400; font-display: block; }
+@font-face { font-family: "Poppins"; src: url("../../fonts/Poppins-400.woff2") format("woff2"); font-weight: 400; font-display: block; }
+@font-face { font-family: "Poppins"; src: url("../../fonts/Poppins-600.woff2") format("woff2"); font-weight: 600; font-display: block; }
+@font-face { font-family: "Poppins"; src: url("../../fonts/Poppins-700.woff2") format("woff2"); font-weight: 700; font-display: block; }
+
+:root {
+  --aura-look: red-gallery;                     /* the checker reads this to apply the Red Gallery thresholds */
+  /* the page: warm paper, a lighter strip, white only for prints and tiles */
+  --bg: #ECEBE4;
+  --strip: #F6F5F0;
+  --surface: #FFFFFF;
+  --groove: #E2E0D8;
+  --hairline: #D6D3CA;
+  /* ink and greys */
+  --ink: #111111; --ink-2: #2A2A2A; --muted: #555555; --label: #66645F;
+  --leader: #111111; --leader-w: 3px;           /* 4.4: the line from a part to its label */
+  /* THE red. Display type and blocks use --red (3.95:1 on the page: display sizes only); red as small text is --red-ink. */
+  --red: #E31B23; --red-ink: #B5121B;
+  --band: #1A1A1A;                              /* the dark band (process film) */
+  --font-display: "Anton", Impact, sans-serif; --font-text: "Poppins", "Segoe UI", sans-serif;
+  --t-micro: 24px; --t-body: 30px; --t-lead: 40px; --t-sub: 56px; --t-head: 88px; --t-title: 140px; --t-close: 200px;
+  --mat: 14px;                                  /* the white print border */
+  --print-shadow: 0 2px 0 rgba(0, 0, 0, .04), 0 18px 36px -18px rgba(0, 0, 0, .35);
+  --shot: radial-gradient(ellipse at 46% 38%, #EFEEEA 0%, #D3D1CB 58%, #ADABA5 100%);   /* the grey "photo" behind a figure */
+  --rg-ease: cubic-bezier(.2, .8, .2, 1);
+  --aura-progress: #E31B23;
+  --aura-letterbox: #111111;
+}
+
+/* ---------------------------------------------------------------- slide + type */
+.slide { font: 400 30px/1.5 var(--font-text); color: var(--ink); background: var(--bg); }
+.slide > .safe { inset: 88px 120px 88px 176px; display: flex; flex-direction: column; z-index: 1; }   /* the left 80 px is the strip */
+.slide h1, .slide h2, .slide h3, .slide .title, .slide .headline { font-family: var(--font-display); font-weight: 400; margin: 0;
+  color: var(--red); text-transform: uppercase; }
+.slide .title { font-size: 140px; line-height: .92; letter-spacing: -.005em; max-width: 11ch; }
+.slide .headline { font-size: 88px; line-height: .95; letter-spacing: 0; max-width: 15ch; }
+.slide .headline.wide { max-width: 100%; }
+.slide .sub { font: 700 40px/1.2 var(--font-text); color: var(--ink); max-width: 26ch; }
+.slide p { margin: 0; }
+.slide .lede { margin-top: 32px; font-size: 30px; line-height: 1.5; color: var(--muted); max-width: 34ch; }
+.slide .close-line { margin-top: 36px; font-size: 30px; line-height: 1.45; color: var(--ink); max-width: 30ch; }
+.slide .close-line b, .slide .close-line strong { color: var(--red-ink); font-weight: 700; }
+.slide .label { font: 600 30px/1.25 var(--font-text); }
+.slide .cap, .slide .source { font: 400 24px/1.4 var(--font-text); color: var(--muted); }
+.slide .big-num { font: 400 88px/1 var(--font-display); color: var(--red); }
+
+/* kicker: the bold black sub-head that sits right under (or over) a red headline - "The cultural shift". */
+.slide .kicker { margin: 0 0 24px; font: 700 30px/1.25 var(--font-text); color: var(--ink); }
+.slide :is(h1, h2, .headline, .title) + .kicker { margin: 28px 0 0; }
+.slide .title + .kicker { margin-top: 44px; }
+
+/* the ONE emphasis phrase: the headline is red, the phrase is INK - the same capitals, the other colour. */
+.slide .em { color: var(--ink); }
+.slide .em.text { color: var(--ink); }
+
+/* ---------------------------------------------------------------- layout: 12 columns, 48 px gutters */
+.rg-main { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(12, 1fr); gap: 48px; position: relative; }
+.rg-main.stack { display: flex; flex-direction: column; gap: 36px; }
+.rg-main.flip > .rg-l { order: 2; }            /* picture left, words right (the reference's "About" slide) */
+.rg-l { grid-column: span 5; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.rg-r { grid-column: span 7; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+.rg-l.w4 { grid-column: span 4; } .rg-r.w8 { grid-column: span 8; }
+.rg-l.w6 { grid-column: span 6; } .rg-r.w6 { grid-column: span 6; }
+.rg-l.w7 { grid-column: span 7; } .rg-r.w5 { grid-column: span 5; }
+
+/* the footer IS the strip: 80 px down the left edge, the deck mark rotated at the top, a red square, the deck label in
+   red at the foot; and the page number as a red badge in the lower right corner of the slide. */
+.rg-foot { position: absolute; left: -176px; top: -88px; bottom: -88px; width: 80px; z-index: 2;
+  display: flex; flex-direction: column; align-items: center; gap: 28px; padding: 40px 0;
+  background: var(--strip); border-right: 1px solid var(--hairline); box-sizing: border-box; }
+.rg-mark, .rg-label { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap;
+  font: 600 24px/1 var(--font-text); letter-spacing: .08em; text-transform: uppercase; color: var(--ink); }   /* mark + label fit the strip at ~22 characters each */
+.rg-mark { order: 1; }
+.rg-foot::before { content: ""; order: 2; flex: none; width: 16px; height: 16px; background: var(--red); }
+.rg-label { order: 3; color: var(--red-ink); }
+.rg-pageno { position: absolute; left: 1824px; bottom: 32px; width: 56px; height: 56px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; background: var(--red);
+  font: 600 24px/1 var(--font-text); color: #FFFFFF; }
+
+/* ---------------------------------------------------------------- the print: every picture is a monochrome photo in a
+   white border, with a soft shadow and ONE solid red block offset behind a corner (.tr default; .tl .bl .br; .bare = no
+   block). The block is decoration and owns no meaning. Its 36 px offset stays inside the 48 px gutter, so it never
+   reaches a text column; a bottom corner is only for a print with nothing under it (the cover, a closing). */
+.rg-stage { position: relative; flex: 1; min-height: 0; background: var(--shot); border: var(--mat) solid var(--surface);
+  box-shadow: var(--print-shadow); }
+.rg-stage::before { content: ""; position: absolute; z-index: -1; width: 34%; height: 40%; background: var(--red);
+  right: -36px; top: -36px; }
+.rg-stage.tl::before { right: auto; left: -36px; }
+.rg-stage.bl::before { right: auto; top: auto; left: -36px; bottom: -36px; }
+.rg-stage.br::before { top: auto; bottom: -36px; }
+.rg-stage.bare::before { display: none; }
+.slide .aura-3d.rg-3d, .slide .bb-blender.rg-3d { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.rg-head { flex: none; }
+.rg-head .headline { max-width: 100%; }
+
+/* ---------------------------------------------------------------- the stat stack: red Anton numbers, flat red bars */
+.rg-stats { list-style: none; margin: 40px 0 0; padding: 0; display: flex; flex-direction: column; gap: 32px; }
+.rg-stats > li { position: relative; }
+.rg-stat { font: 400 88px/1 var(--font-display); color: var(--red); }
+.rg-stat.md { font-size: 56px; }
+.rg-stat small { font: 700 30px var(--font-text); margin-left: 10px; color: var(--muted); }
+.rg-stats p { margin: 8px 0 0; font-size: 30px; line-height: 1.35; color: var(--muted); }
+.rg-stats p b { color: var(--ink); font-weight: 700; }
+.rg-bar { margin-top: 14px; height: 18px; max-width: 520px; background: var(--groove); }
+.rg-bar > i { display: block; height: 100%; width: var(--v, 50%); background: var(--red); transform-origin: left center; }
+.rg-bar.grey > i { background: #8F8D88; }
+
+/* numbered steps / the contents list: a red number, a bold name, one muted line */
+.rg-steps { list-style: none; margin: 40px 0 0; padding: 0; display: flex; flex-direction: column; gap: 28px; }
+.rg-steps > li { display: grid; grid-template-columns: 72px 1fr; column-gap: 20px; align-items: baseline; }
+.rg-n { font: 400 56px/1 var(--font-display); color: var(--label); }
+.rg-n.on { color: var(--red); }
+.rg-steps strong { display: block; font: 700 40px/1.15 var(--font-text); color: var(--ink); text-transform: uppercase; }
+.rg-steps p { margin: 4px 0 0; font-size: 30px; line-height: 1.35; color: var(--muted); }
+
+/* zone list (photo slides) */
+.rg-zones { list-style: none; margin: 40px 0 0; padding: 0; display: flex; flex-direction: column; gap: 30px; }
+.rg-zones > li { display: grid; grid-template-columns: 56px 1fr; column-gap: 20px; align-items: start; }
+.rg-zones .z { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center;
+  font: 600 30px/1 var(--font-text); color: #FFFFFF; background: var(--red); }
+.rg-zones .n { display: block; font: 700 40px/1.15 var(--font-text); color: var(--ink); }
+.rg-zones .d { display: block; font: 400 30px/1.4 var(--font-text); color: var(--muted); margin-top: 4px; }
+
+/* chips beside a chart: flat paper labels; .key is the red one */
+.rg-chips { list-style: none; margin: 40px 0 0; padding: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 20px; }
+.rg-chip { font: 600 30px/1.2 var(--font-text); color: var(--ink); background: var(--surface); padding: 14px 26px; box-shadow: var(--print-shadow); }
+.rg-chip.key { background: var(--red); color: #FFFFFF; }
+
+/* checklist: a square - filled red and ticked (done), grey (in progress), an empty outline (not yet) */
+.rg-goals { list-style: none; margin: 40px 0 0; padding: 0; display: flex; flex-direction: column; gap: 24px; }
+.rg-goal { display: grid; grid-template-columns: 60px 1fr; column-gap: 24px; align-items: center; }
+.rg-goal .ic { width: 60px; height: 60px; padding: 14px; box-sizing: border-box; color: var(--label);
+  border: 3px solid var(--ink); background: transparent; }
+.rg-goal.on .ic { color: #FFFFFF; background: var(--red); border-color: var(--red); }
+.rg-goal.wip .ic { color: #FFFFFF; background: #8F8D88; border-color: #8F8D88; }
+.rg-goal.no .ic { color: var(--red-ink); }
+.rg-goal strong { display: block; font: 700 40px/1.15 var(--font-text); color: var(--ink); }
+.rg-goal span.d { display: block; margin-top: 2px; font: 400 30px/1.35 var(--font-text); color: var(--muted); }
+.rg-goal.no strong { color: var(--muted); }
+.rg-goal.is-here strong { color: var(--red-ink); }
+
+/* ---------------------------------------------------------------- tiles, the user's photo, labels */
+.rg-card { background: var(--surface); padding: 40px; box-shadow: var(--print-shadow); }
+.rg-photo { position: relative; margin: 0; overflow: hidden; background: var(--surface); border: var(--mat) solid var(--surface); box-shadow: var(--print-shadow); }
+.rg-photo img { display: block; width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(1.05); }   /* the user's photo, printed black and white */
+.rg-inset { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.rg-inset img { display: block; object-fit: cover; border: 10px solid var(--surface); box-shadow: var(--print-shadow); filter: grayscale(1); }
+.rg-inset figcaption { font: 400 24px/1.35 var(--font-text); color: var(--muted); }
+/* a label on a figure: the reference's red name tag - a flat red bar with white words, and a short ink leader */
+.rg-tag { position: absolute; padding: 10px 20px 12px; background: var(--surface); white-space: nowrap; pointer-events: none; z-index: 2;
+  box-shadow: var(--print-shadow); }
+.rg-tag b { display: block; font: 700 30px/1.15 var(--font-text); color: var(--ink); }
+.rg-tag span { display: block; margin-top: 2px; font: 400 24px/1.3 var(--font-text); color: var(--muted); }
+.rg-tag.key { background: var(--red); }
+.rg-tag.key b, .rg-tag.key span { color: #FFFFFF; }
+.rg-pin { position: absolute; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center;
+  font: 600 30px/1 var(--font-text); color: #FFFFFF; background: var(--red); pointer-events: none; z-index: 3; }
+.rg-pill { position: absolute; padding: 10px 24px; white-space: nowrap; pointer-events: none; z-index: 2;
+  font: 700 30px/1.2 var(--font-text); color: #FFFFFF; background: var(--red); }
+.rg-pill.plain { color: var(--ink); background: var(--surface); box-shadow: var(--print-shadow); }
+
+/* the process film's band: the reference's dark curatorial band, one column per step; the step on screen goes red */
+.rg-band { flex: none; list-style: none; margin: 0 -120px 0 0; padding: 40px 120px 44px 48px; background: var(--band);
+  display: grid; grid-template-columns: repeat(var(--n, 3), 1fr); gap: 48px; }
+.rg-band > li { color: #C9C7C1; }
+.rg-band .no { display: block; font: 400 56px/1 var(--font-display); color: #FFFFFF; transition: color .3s var(--rg-ease); }
+.rg-band strong { display: block; margin-top: 14px; font: 700 30px/1.25 var(--font-text); color: #FFFFFF; }
+.rg-band p { margin: 6px 0 0; font: 400 30px/1.35 var(--font-text); color: #C9C7C1; }
+.rg-band > li.on .no { color: #FF5A5F; }        /* red that holds 4.6:1 on the band */
+
+/* the small system map */
+.rg-map { display: flex; flex-direction: column; gap: 12px; padding: 24px 28px; background: var(--surface); box-shadow: var(--print-shadow); }
+.rg-map .node { display: inline-flex; align-items: center; gap: 12px; padding: 6px 16px;
+  font: 600 30px/1.25 var(--font-text); color: var(--ink); background: var(--bg); transition: background .3s var(--rg-ease), color .3s var(--rg-ease); }
+.rg-map .node.on { background: var(--red); color: #FFFFFF; }
+.rg-map ul { list-style: none; margin: 0; padding: 0 0 0 30px; display: flex; flex-direction: column; gap: 10px; }
+
+.rg-chart { position: relative; flex: 1; min-height: 0; background: var(--surface); padding: 40px 44px 28px 48px; box-shadow: var(--print-shadow); }
+
+/* ---------------------------------------------------------------- the cover: a big print on the left (and the red
+   block), the title huge on the right, the sub-line small, black and right-aligned at the foot */
+.rg-cover { flex: 1; min-height: 0; display: grid; grid-template-columns: 7fr 6fr; gap: 72px; }
+.rg-cover .rg-stage { margin: 0 0 40px; }
+.rg-cover-text { display: flex; flex-direction: column; justify-content: space-between; min-width: 0; padding-top: 24px; }
+.rg-cover .title { max-width: 100%; }
+.rg-cover .sub { align-self: flex-end; text-align: right; text-transform: uppercase; max-width: 16ch; }
+
+/* ---------------------------------------------------------------- closing: one big statement, the last word ends on the red period */
+.rg-thanks { margin: 0; font: 400 200px/.9 var(--font-display); color: var(--red); text-transform: uppercase; white-space: nowrap; }
+.rg-thanks.rg-msg { white-space: normal; font-size: 140px; line-height: .92; max-width: 11ch; }
+.slide .rg-q { margin: 56px 0 0; font: 700 40px/1.2 var(--font-text); color: var(--ink); }
+.rg-rule { height: 4px; width: 120px; margin: 48px 0 36px; background: var(--red); }
+.rg-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+.rg-people li { display: grid; grid-template-columns: 260px auto 1fr; column-gap: 24px; align-items: baseline; font-size: 30px; }
+.rg-people li.gap { margin-top: 20px; }
+.rg-people .lb { font: 600 24px/1.4 var(--font-text); letter-spacing: .12em; text-transform: uppercase; color: var(--label); }
+.rg-people strong { font-weight: 700; color: var(--ink); white-space: nowrap; }
+.rg-people em { font-style: normal; color: var(--label); }
+.rg-meta { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 14px; text-align: right; }
+.rg-meta li { font-size: 30px; line-height: 1.35; color: var(--muted); }
+.rg-meta b { color: var(--ink); font-weight: 700; }
+.rg-meta .lb { display: block; font: 600 24px/1.3 var(--font-text); letter-spacing: .12em; text-transform: uppercase; color: var(--label); }
+
+/* ---------------------------------------------------------------- motion: prints are HUNG. Words rise a short way and
+   settle; a print fades up after them; the red block slides in last along its own edge. Nothing bounces, nothing spins. */
+@keyframes rgRise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+@keyframes rgFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rgGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+/* labels that FOLLOW a figure are moved every frame through an inline transform, so they only fade */
+html:not(.aura-still) .slide.is-entering :is(h1, h2, .headline, .title, .rg-thanks) { animation: rgRise .6s var(--rg-ease) .04s both; }
+html:not(.aura-still) .slide.is-entering .kicker { animation: rgRise .5s var(--rg-ease) .16s both; }
+html:not(.aura-still) .slide.is-entering :is(.sub, .lede, .close-line, .rg-meta, .rg-q, .rg-people) { animation: rgRise .5s var(--rg-ease) .24s both; }
+html:not(.aura-still) .slide.is-entering :is(.rg-stats, .rg-steps, .rg-zones, .rg-goals, .rg-chips, .rg-band) > li { animation: rgRise .46s var(--rg-ease) both; }
+html:not(.aura-still) .slide.is-entering :is(.rg-stats, .rg-steps, .rg-zones, .rg-goals, .rg-chips, .rg-band) > li:nth-child(1) { animation-delay: .3s; }
+html:not(.aura-still) .slide.is-entering :is(.rg-stats, .rg-steps, .rg-zones, .rg-goals, .rg-chips, .rg-band) > li:nth-child(2) { animation-delay: .38s; }
+html:not(.aura-still) .slide.is-entering :is(.rg-stats, .rg-steps, .rg-zones, .rg-goals, .rg-chips, .rg-band) > li:nth-child(3) { animation-delay: .46s; }
+html:not(.aura-still) .slide.is-entering :is(.rg-stats, .rg-steps, .rg-zones, .rg-goals, .rg-chips, .rg-band) > li:nth-child(4) { animation-delay: .54s; }
+/* the print itself never animates: an animated .rg-stage becomes a stacking context and its red block (z-index -1)
+   would jump in front of the photo. The picture inside it fades up instead. */
+html:not(.aura-still) .slide.is-entering :is(.rg-stage > .aura-3d, .rg-photo img, .rg-chart, .rg-card, .rg-map) { animation: rgFade .7s var(--rg-ease) .12s both; }
+html:not(.aura-still) .slide.is-entering :is(.rg-tag, .rg-pill, .rg-pin) { animation: rgFade .4s var(--rg-ease) .8s both; }
+.rg-bar > i { animation: none; }
+html:not(.aura-still) .slide.is-entering .rg-bar > i { animation: rgGrow .8s var(--rg-ease) .5s both; }
+
+/* chrome: a 6 px red progress line */
+.aura-progress { height: 6px; }

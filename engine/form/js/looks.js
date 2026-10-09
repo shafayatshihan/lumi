@@ -7,10 +7,10 @@ import { emit } from './bus.js';
 
 export const LOOKS = [
   { name: 'Bold Blue', slug: '2-bold-blue', desc: 'studio 3D and clear charts: warm canvas, one blue phrase, photoreal models', recommended: true },
-  { name: 'Pink Punch', slug: '1-pink-punch', desc: 'loud and playful: bold outlines, hard shadows, hot pink' },
-  { name: 'Flat-Pack', slug: '3-flat-pack', desc: 'friendly and clear: instruction-manual drawings in blue and yellow' },
-  { name: 'Happy Headspace', slug: '4-happy-headspace', desc: 'warm and calm: soft round shapes, orange first' },
   { name: 'Clay Pop', slug: '5-clay-pop', desc: 'tactile 3D: chunky clay models in one hot orange, soft studio light' },
+  { name: 'Red Gallery', slug: '7-red-gallery', desc: 'editorial exhibition: red condensed capitals, black-and-white framed prints' },
+  { name: 'Candy Grid', slug: '8-candy-grid', desc: 'bright portfolio: colour-block boards, black bars, glossy product shots' },
+  { name: 'Violet Lime', slug: '9-violet-lime', desc: 'two-colour pitch deck: violet and acid lime, rounded frames, your own photographs' },
   { name: 'Claude chooses', slug: null, desc: 'Claude picks the look that suits your topic and audience' },
 ];
 const AUTO = 'Claude chooses';
@@ -27,11 +27,11 @@ const SLIDE_MS = 2300;
 
 // Tiny flat swatches that hint at each look.
 const SWATCH = {
-  'Pink Punch': '<rect x="11" y="11" width="28" height="28" rx="5" fill="var(--ink)"/><rect x="6" y="6" width="28" height="28" rx="5" fill="#ff4fa3" stroke="var(--ink)" stroke-width="2.5"/><path d="M20 13l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5-3.6-3.5 5-.7z" fill="#ffe14d" stroke="var(--ink)" stroke-width="1.6" stroke-linejoin="round"/>',
   'Bold Blue': '<rect x="4" y="4" width="36" height="36" rx="8" fill="#1d4ed8"/><circle cx="29" cy="15" r="6" fill="var(--pill)"/><rect x="10" y="25" width="24" height="5" rx="2.5" fill="var(--ink)"/><rect x="10" y="33" width="14" height="3" rx="1.5" fill="var(--pill)"/>',
-  'Flat-Pack': '<rect x="4" y="4" width="36" height="36" rx="8" fill="var(--pill)" stroke="#1f5fbf" stroke-width="2"/><path d="M11 30l9-15 9 15z" fill="#ffd23f" stroke="#1f5fbf" stroke-width="2" stroke-linejoin="round"/><rect x="25" y="22" width="9" height="9" rx="1.5" fill="#1f5fbf"/><path d="M11 35h22" stroke="#1f5fbf" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 3"/>',
-  'Happy Headspace': '<rect x="4" y="4" width="36" height="36" rx="18" fill="#ffe6cc"/><circle cx="18" cy="20" r="10" fill="#ff8a3d"/><circle cx="30" cy="28" r="7" fill="#f4a6c0"/><circle cx="31" cy="13" r="3.5" fill="#ffcc4d"/>',
+  'Red Gallery': '<rect x="4" y="4" width="36" height="36" rx="8" fill="#ecebe4"/><rect x="4" y="4" width="6" height="36" fill="#f6f5f0"/><rect x="11" y="21" width="11" height="13" fill="#e31b23"/><rect x="14" y="10" width="15" height="20" fill="#ffffff"/><rect x="16" y="12" width="11" height="16" fill="#9a9894"/><rect x="18" y="17" width="6" height="9" fill="#2a2a2a"/><rect x="31" y="11" width="6" height="3" fill="#e31b23"/><rect x="31" y="16" width="6" height="3" fill="#e31b23"/><circle cx="35" cy="35" r="2.5" fill="#e31b23"/>',
+  'Candy Grid': '<rect x="4" y="4" width="36" height="36" rx="8" fill="#ffffff"/><rect x="4" y="4" width="6" height="36" fill="#1f1f23"/><rect x="10" y="4" width="16" height="18" fill="#ffc72c"/><rect x="26" y="22" width="14" height="18" fill="#29c4e6"/><circle cx="26" cy="22" r="7" fill="#f9a8c9"/><rect x="28" y="9" width="9" height="2.5" fill="#1b1b1f"/><rect x="28" y="13" width="7" height="2.5" fill="#1b1b1f"/><circle cx="15" cy="32" r="2.5" fill="#ec4a7b"/>',
   'Clay Pop': '<rect x="4" y="4" width="36" height="36" rx="8" fill="#f0f0f5"/><ellipse cx="20" cy="35.5" rx="11" ry="2" fill="#15151c" opacity=".16"/><rect x="9" y="16" width="22" height="19" rx="6" fill="#c93a05"/><rect x="9" y="14" width="22" height="18" rx="6" fill="#ff6a13"/><rect x="12" y="16" width="16" height="4" rx="2" fill="#ff9a3d"/><circle cx="33" cy="10.5" r="3.6" fill="#ff6a13"/><rect x="21" y="23" width="7" height="4" rx="1" fill="#f2c29a" transform="rotate(-18 24.5 25)"/>',
+  'Violet Lime': '<rect x="4" y="4" width="36" height="36" rx="8" fill="#ffffff"/><rect x="4" y="22" width="36" height="18" fill="#3d2ee6"/><rect x="22" y="8" width="15" height="19" rx="4" fill="#3d2ee6"/><rect x="7" y="9" width="12" height="7" rx="3.5" fill="#d2f53c"/><rect x="7" y="27" width="11" height="3" rx="1.5" fill="#ffffff"/><rect x="7" y="32" width="7" height="3" rx="1.5" fill="#d4d0f7"/><rect x="26" y="28" width="13" height="13" rx="4" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.6"/>',
   'Claude chooses': '<g class="lk-dice"><rect x="5" y="5" width="15" height="15" rx="4" fill="#ff4fa3"/><rect x="24" y="5" width="15" height="15" rx="4" fill="#1d4ed8"/><rect x="5" y="24" width="15" height="15" rx="4" fill="#ffd23f"/><rect x="24" y="24" width="15" height="15" rx="4" fill="#ff8a3d"/></g><circle cx="22" cy="22" r="5.5" fill="var(--ink)"/><path d="M22 19.2v5.6M19.2 22h5.6" stroke="var(--pill)" stroke-width="1.8" stroke-linecap="round"/>',
 };
 
@@ -114,17 +114,26 @@ export function mountLooks(el, illusEl, { getState, setKey, bus, audio } = {}) {
   function stopSlides() { clearTimeout(slideT); slideT = 0; }
   // Walk one look's four slides. Paused with the tab, and restarted from the first slide whenever the look changes,
   // so a look is always introduced by its title slide.
+  // A look is still INTRODUCED by its title slide - that is what makes it recognisable - but after that the walk
+  // is random, not 1-2-3-4. Three things change together and all three matter:
+  //   * the next slide is picked at random and never repeats the one showing, so the page never settles into a
+  //     loop a person can predict and stop watching;
+  //   * the beat is jittered +/- 30 %, so two looks on screen never fall into lockstep;
+  //   * each step slides in from a random side instead of cross-fading in place, which is what reads as movement.
   function startSlides(L, dir) {
     stopSlides();
     slideIdx = 0;
     showShot(L, 0, dir);
+    const beat = () => SLIDE_MS * (0.7 + Math.random() * 0.6);
     const step = () => {
       if (!alive || document.hidden) return;
-      slideIdx += 1;
-      showShot(L, slideIdx, 0);
-      slideT = setTimeout(step, SLIDE_MS);
+      let next = slideIdx;
+      if (SHOTS > 1) while (next === slideIdx) next = Math.floor(Math.random() * SHOTS);
+      slideIdx = next;
+      showShot(L, slideIdx, Math.random() < 0.5 ? -1 : 1);
+      slideT = setTimeout(step, beat());
     };
-    slideT = setTimeout(step, SLIDE_MS);
+    slideT = setTimeout(step, beat());
   }
   function stopShuffle() { clearTimeout(shuffleT); shuffleT = 0; stageEl.classList.remove('is-shuffle'); }
   function startShuffle() {
@@ -133,9 +142,13 @@ export function mountLooks(el, illusEl, { getState, setKey, bus, audio } = {}) {
     stageEl.classList.add('is-shuffle');
     const step = (first) => {
       if (!alive) return;
-      if (!first) shuffleIdx = (shuffleIdx + 1) % REAL.length;
-      // a different slide each beat, so the shuffle shows the range of the whole set rather than five title slides
-      showShot(REAL[shuffleIdx], shuffleIdx, first ? 0 : 1);
+      if (!first && REAL.length > 1) {
+        let nx = shuffleIdx;
+        while (nx === shuffleIdx) nx = Math.floor(Math.random() * REAL.length);
+        shuffleIdx = nx;
+      }
+      // a random slide each beat, so the shuffle shows the range of the whole set rather than a row of title slides
+      showShot(REAL[shuffleIdx], Math.floor(Math.random() * SHOTS), first ? 0 : (Math.random() < 0.5 ? -1 : 1));
       badge.textContent = REAL[shuffleIdx].name.toLowerCase();
       if (!first) sfx('tick');
       shuffleT = setTimeout(() => step(false), SHUFFLE_MS);
@@ -149,7 +162,7 @@ export function mountLooks(el, illusEl, { getState, setKey, bus, audio } = {}) {
     const L = LOOKS.find(x => x.name === name);
     const isPreview = name !== selected;
     stageEl.classList.toggle('is-preview', isPreview);
-    cap.textContent = name === AUTO ? 'claude shuffles the five and picks the best fit for your talk.'
+    cap.textContent = name === AUTO ? 'claude shuffles them all and picks the best fit for your talk.'
       : `${isPreview ? 'preview: ' : ''}${L.desc}.`;
     if (name === AUTO) { startShuffle(); return; }
     stopShuffle();

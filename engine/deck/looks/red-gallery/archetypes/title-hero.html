@@ -1,0 +1,47 @@
+<!-- archetype: title-hero | the cover: the subject as a big monochrome print on the left with the red block behind its corner; the title huge and red on the right; the sub-line small, black and right-aligned at the foot | main visual: 3D | companions: kicker, names -->
+<section class="slide" data-kind="title" data-minutes="0.75" data-title="Title">
+  <div class="safe">
+    <div class="rg-cover">
+      <div class="rg-stage bl">
+        <div class="aura-3d rg-3d" data-scene="s{{N}}-hero" data-period="12" aria-hidden="true"></div>
+      </div>
+      <div class="rg-cover-text">
+        <div>
+          <h1 class="title" data-edit="s{{N}}-2">A short title, <span class="em">in print</span></h1>
+          <p class="kicker" data-edit="s{{N}}-1">Course or event</p>
+        </div>
+        <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. Never invent a role the interview did not establish. -->
+        <ul class="rg-meta">
+          <li data-optional="identity" data-edit="s{{N}}-3"><span class="lb">Presented by</span><b>Presenter Name</b></li>
+          <li data-optional="identity" data-edit="s{{N}}-4"><span class="lb">For</span><b>Course or event</b>, Institution</li>
+        </ul>
+      </div>
+    </div>
+    <footer class="rg-foot" data-nonclaim><span class="rg-mark" data-edit="s{{N}}-5">Deck mark</span><span class="rg-label" data-edit="s{{N}}-lb">Deck label</span><span class="rg-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Name the thing on the screen first.</strong> Say what it is in one plain sentence, then why this room
+    should care about it today.</p>
+    <p><strong>Point at the print.</strong> It is the real object, shown in black and white so its shape reads before
+    anything else does; the red is the deck's, not the object's.</p>
+    <p><strong>Frame the talk in three beats</strong>: why it matters, how it works, what we found. If asked, say the
+    model is a schematic and which proportions are to scale.</p>
+  </aside>
+</section>
+<script>
+/* The hero tier (LOOK-BASE 4.6): the deck's best figure, framed like a gallery photograph. Replace the block and balls
+   with the real subject's own parts, real counts, real proportions (LOOK-BASE 4.1). Monochrome only: 'ink' is the hero
+   tone, 'stone' / 'white' / 'grey' the rest of the object. The frame is portrait-ish: keep the subject centred. */
+Aura.scene('s{{N}}-hero', (ctx) => {
+  const { THREE } = ctx;
+  const S = RG3D.studio(ctx, { target: [0, 1.3, 0], distance: 11, azimuth: -26, elevation: 16 });
+  const body = S.add(RG3D.block(THREE, 2.4, 1.8, 1.6, { color: 'ink' }));       body.position.y = 0.9;
+  const knob = S.add(RG3D.puck(THREE, 0.42, 0.3, { color: 'stone' }));          knob.position.set(-0.5, 1.95, 0.1);
+  S.contact(body, 1.9);
+  [[-1.4, 2.6, 0.6, 0.24], [0.2, 3.0, 0.3, 0.18], [1.3, 2.5, -0.1, 0.14]].forEach(([x, y, z, r], i) => {
+    const b = S.add(RG3D.ball(THREE, r, { color: i === 1 ? 'grey' : 'white' })); b.position.set(x, y, z);
+    S.float(b, { amp: 0.08, phase: i * 1.7 });                                   // its own parts, pulled out: they drift
+  });
+  return S.api({ update(t) { S.sway(t, { deg: 4 }); } });
+}, { period: 12 });
+</script>

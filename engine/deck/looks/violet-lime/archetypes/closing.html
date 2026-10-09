@@ -1,0 +1,51 @@
+<!-- archetype: closing | closing-thanks: the picture right, a lime tab across its corner, the closing line and the names left. DESIGN IT FOR THIS DECK (LOOK-BASE section 2): four variants below - A message-left, B a big question, C next steps, D contact card. Keep one, delete the rest. The headline INVERTS (.inv) because the lime is the tab. VIOLET ground | main visual: picture | companions: names / contact, one short line -->
+<section class="slide on-violet" data-kind="closing" data-minutes="0.5" data-title="Closing">
+  <div class="vl-deco-layer" aria-hidden="true"><i class="vl-deco d2"></i></div>
+  <div class="safe">
+    <div class="vl-main">
+      <div class="vl-l w7">
+        <!-- VARIANT A (keep ONE of the four; "Thank you." is one option among four, never the default) -->
+        <h1 class="vl-thanks vl-msg inv" aria-label="Closing message" data-edit="s{{N}}-0">The takeaway, <span class="em">in one line.</span></h1>
+        <!-- VARIANT B: <h1 class="vl-thanks inv" data-edit="s{{N}}-0">So: <span class="em">what now?</span></h1>
+             VARIANT C: the same heading plus <ul class="vl-steps"> with <=3 next steps
+             VARIANT D: <h1 class="vl-thanks inv">Thank <span class="em">you.</span></h1> plus contact in .vl-people -->
+        <p class="vl-q" data-edit="s{{N}}-1">A last line: the question you want, the next step, or where to find you</p>
+        <ul class="vl-people">
+          <li data-optional="identity"><span class="lb" data-edit="s{{N}}-2">Presented by</span><strong data-edit="s{{N}}-3">Presenter Name</strong><em data-edit="s{{N}}-4">ID or role</em></li>
+          <li data-optional="identity"><span class="lb" data-edit="s{{N}}-5">Supervisor</span><strong data-edit="s{{N}}-6">Name</strong><em data-edit="s{{N}}-7">Department</em></li>
+        </ul>
+      </div>
+      <div class="vl-r w5">
+        <!-- The closing picture is about THIS subject and echoes the title slide's - never a drawing carried over
+             from another deck. A photograph goes here if one was given; otherwise the drawn figure, or a plate
+             carrying the deck's one number. -->
+        <figure class="vl-frame tall is-drawn">
+          <div class="aura-3d vl-3d" data-scene="s{{N}}-close" data-period="12" aria-hidden="true"></div>
+          <!-- the ONE lime thing on this slide -->
+          <figcaption class="vl-tab" data-edit="s{{N}}-8">Questions welcome</figcaption>
+        </figure>
+      </div>
+    </div>
+    <footer class="vl-foot" data-nonclaim><span class="vl-mark" data-edit="s{{N}}-9">Deck mark</span><span class="vl-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Say the closing line in your own words</strong>, then stop talking. One sentence; the slide is already
+    saying it, and a closing that is read aloud twice loses the room.</p>
+    <p><strong>Thank the people named</strong> - briefly and by name - and open the floor. Leave this slide up during
+    questions so the names and the contact line stay on screen.</p>
+    <p><strong>If a question needs a figure</strong>, type that slide's number and press Enter to jump to it, then
+    press End to come back here. Likely questions: how sure are the numbers (answer with the source line on the
+    results slide, and say plainly which shapes are illustrative); what would you do next with more time; and what
+    is the weakest assumption - have an honest answer to that one ready before you start.</p>
+  </aside>
+  <script>
+  /* a small model of THIS subject, echoing the title slide. Exactly one lime part. */
+  Aura.scene('s{{N}}-close', (ctx) => {
+    const { THREE } = ctx;
+    const S = VL3D.stage(ctx, { target: [0, 0.75, 0], distance: 7.4, azimuth: -30, elevation: 16 });
+    const body = S.add(VL3D.block(THREE, 1.8, 1.3, 1.2, { color: 'white' })); body.position.y = 0.7;
+    const hero = S.add(VL3D.puck(THREE, 0.38, 0.26, { color: 'lime' }));      hero.position.set(0.1, 1.52, 0.1);
+    return S.api({ update(t) { S.sway(t, { deg: 4 }); } });
+  }, { period: 12 });
+  </script>
+</section>

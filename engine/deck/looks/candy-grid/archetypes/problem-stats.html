@@ -1,0 +1,43 @@
+<!-- archetype: problem-stats | the orbit board: the stacked title and two side-by-side stats on white; a black circle off the right edge and a pink disc holding the subject | main visual: 3D | companions: <=3 stats, one close line -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="The problem">
+  <div class="safe">
+    <div class="cg-board b-orbit">
+      <div class="cg-disc black d-back"></div>
+      <div class="cg-disc pink d-fig">
+        <div class="aura-3d cg-3d" data-scene="s{{N}}-scene" data-period="12" aria-hidden="true">
+          <div class="cg-tag key" data-follow="weak" data-dx="90"><b data-edit="s{{N}}-8">Where it fails</b><span data-edit="s{{N}}-9">the loaded joint</span></div>
+        </div>
+      </div>
+      <div class="cg-cell txt c-text">
+        <p class="kicker" data-edit="s{{N}}-1">The problem</p>
+        <h2 class="headline" data-edit="s{{N}}-2">The old way <span class="em">runs out.</span></h2>
+        <ul class="cg-stats">
+          <li><span class="cg-stat" data-edit="s{{N}}-3">3.4x</span><p data-edit="s{{N}}-4">longer than the <b>design life</b></p><div class="cg-bar" style="--v:78%"><i></i></div></li>
+          <li><span class="cg-stat" data-edit="s{{N}}-5">11 min</span><p data-edit="s{{N}}-6">lost at every changeover</p></li>
+        </ul>
+        <p class="close-line" data-edit="s{{N}}-7">Both numbers come from <b>one bottleneck</b>.</p>
+      </div>
+    </div>
+    <footer class="cg-foot" data-nonclaim><span class="cg-mark" data-edit="s{{N}}-10">Deck mark</span><span class="cg-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Start with the picture, not the numbers.</strong> Point at the dark label and say what goes wrong there in one sentence; then read the two numbers as the same problem counted two ways.</p>
+    <p><strong>Point at the picture.</strong> The figure on the colour block is the subject itself, modelled from its
+    real parts and shown as a clean product shot; say which proportions are to scale and which are schematic.</p>
+    <p><strong>Then say the one thing this slide must leave behind</strong>, in a single sentence, and move on. Give the
+    source of every number as you say it.</p>
+  </aside>
+</section>
+<script>
+/* The subject showing the pain: the failing part is the ONE bright thing; the rest stays white and grey. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const S = CG3D.studio(ctx, { target: [0, 1.1, 0], distance: 11, azimuth: -28, elevation: 16 });
+  const body = S.add(CG3D.block(THREE, 2.8, 0.9, 1.7, { color: 'white' }));  body.position.y = 0.45;
+  const weak = S.add(CG3D.puck(THREE, 0.45, 0.5, { color: 'rose' }));        weak.position.set(-0.7, 1.15, 0);
+  const arm = S.add(CG3D.block(THREE, 0.45, 1.5, 0.45, { color: 'grey' }));  arm.position.set(-0.7, 2.1, 0);
+  S.contact(body, 1.8);
+  CG3D.tags(S, ctx.el, { weak: weak });
+  return S.api({ update(t) { S.sway(t, { deg: 4 }); arm.rotation.z = 0.08 * Math.sin(CG3D.phase(t, ctx.period) * 2); } });
+}, { period: 12 });
+</script>

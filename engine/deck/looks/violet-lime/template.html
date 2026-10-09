@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en" data-look="violet-lime">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<!-- Lumi deck in the Violet Lime look: the two-colour pitch deck. The authority is
+       .claude/skills/aura-slide/looks/_shared/LOOK-BASE.md     (the rules every look obeys)
+       .claude/skills/aura-slide/looks/violet-lime/LOOK.md      (this look's palette, grounds, geometry, pictures)
+     Read BOTH before writing a slide, and read LOOK.md section 2A before you place a single picture. Add slides
+     from the archetype menu with
+       node .aura/engine/tools/new_deck.js --snippet <archetype> --theme violet-lime --slide <n>   (list: --snippet list)
+     and paste each one before the closing slide. Rules in one breath: 1920 x 1080; the GROUND ALTERNATES - white,
+     then full violet - and three slides in a row on one ground is a fault (VL.grounds() prints it); everything is a
+     rounded rectangle at ONE radius, with a picture frame's bottom-left corner squared; the LIME touches exactly ONE
+     element per slide; ink on lime, NEVER white on lime, and lime is never a letter on white; Plus Jakarta Sans
+     only, sizes 24 / 30 / 36 / 48 / 72 / 104 / 144; ONE .em phrase per headline, at the start or the end;
+     ONE main visual per slide; speaker notes 60-300 words in <aside class="notes" data-aura-notes>; stable
+     data-edit ids.
+     PICTURES (LOOK.md 2A): every picture is a .vl-frame. It holds the person's own PHOTOGRAPH, or a drawing, or a
+     colour PLATE carrying the slide's own number - and NEVER a stock, generated or placeholder image. Ask for
+     photographs in the first build question. Decide per slide: every frame on one slide is the same form, never a
+     mix. Several frames on one slide go in a .vl-pics group so the slide has ONE main visual.
+     STAGING NOTE: the slide-1 figure is a NEUTRAL placeholder. Decide what the subject really is (LOOK-BASE 4.0). -->
+<link rel="stylesheet" href="{{ENGINE}}/deck/runtime.css">
+<link rel="stylesheet" href="{{ENGINE}}/deck/themes/violet-lime.css">
+<script type="importmap">{"imports":{"three":"{{ENGINE}}/node_modules/three/build/three.module.js"}}</script>
+<script src="{{ENGINE}}/deck/runtime.js"></script>
+{{LOOK_HEAD}}<style>
+  /* deck-specific layout goes here; violet-lime.css already sets the two grounds, type, the rounded-rectangle kit,
+     the frames and plates, the pills, the cards, the dials, the footer and the motion */
+</style>
+</head>
+<body>
+<main class="deck" data-mode="presenter">
+
+  <!-- ============ 01 title-split (archetype: title-hero) - WHITE ground ============ -->
+  <section class="slide" data-kind="title" data-minutes="0.75" data-title="Title">
+    <div class="vl-deco-layer" aria-hidden="true"><i class="vl-deco d1"></i><i class="vl-deco d2"></i></div>
+    <div class="safe">
+      <div class="vl-main">
+        <div class="vl-l w7">
+          <p class="kicker" data-edit="s1-1">{{KICKER}}</p>
+          <h1 class="title" data-edit="s1-2">{{TITLE}}</h1>
+          <!-- the ONE lime thing on this slide -->
+          <p class="vl-cta"><span class="vl-pill lime" data-edit="s1-3">Start here <svg class="go" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h12M12 6l6 6-6 6" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span></p>
+          <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. Never invent a role the interview did not establish. -->
+          <ul class="vl-meta">
+            <li data-optional="identity" data-edit="s1-4"><span class="lb">Presented by</span><b>Presenter Name</b></li>
+            <li data-optional="identity" data-edit="s1-5"><span class="lb">For</span><b>Course or event</b>, Institution</li>
+          </ul>
+        </div>
+        <div class="vl-r w5">
+          <!-- THE PICTURE (LOOK.md 2A). If the person gave a photograph OF THIS TALK, this is
+                 a .vl-frame.tall holding an img whose src is assets/<their file>
+               With no photograph it stays a drawn figure, or becomes a plate carrying the deck's one number.
+               NEVER a stock or generated image. -->
+          <figure class="vl-frame tall is-drawn">
+            <div class="aura-3d vl-3d" data-scene="s1-hero" data-period="12" aria-hidden="true"></div>
+          </figure>
+        </div>
+      </div>
+      <footer class="vl-foot" data-nonclaim><span class="vl-mark" data-edit="s1-6">Deck mark</span><span class="vl-pageno"></span></footer>
+    </div>
+    <aside class="notes" data-aura-notes>
+      <p><strong>Name the thing on the screen first.</strong> Say what it is in one plain sentence, then why this room
+      should care about it today. Do not read the title back; the audience has already read it.</p>
+      <p><strong>Point at the picture.</strong> Say what it shows and where it comes from - your own photograph, or a
+      drawing of the real object with its real proportions. Say which proportions are to scale and which are schematic.</p>
+      <p><strong>Then say the one thing this slide must leave behind</strong>, in a single sentence, and move on.
+      Give the source of every number as you say it.</p>
+    </aside>
+  </section>
+
+  <!-- paste archetype slides here (node .aura/engine/tools/new_deck.js --snippet list)
+       Keep the ground alternating: this slide is white, so the next run of one or two is violet. -->
+
+  <!-- ============ closing: design it for THIS deck (LOOK-BASE section 2) - VIOLET ground ============ -->
+  <section class="slide on-violet" data-kind="closing" data-minutes="0.5" data-title="Closing">
+    <div class="vl-deco-layer" aria-hidden="true"><i class="vl-deco d2"></i></div>
+    <div class="safe">
+      <div class="vl-main">
+        <div class="vl-l w7">
+          <h1 class="vl-thanks vl-msg" aria-label="Closing message" data-edit="s99-0">One line for <span class="em">this talk.</span></h1>
+          <p class="vl-q" data-edit="s99-1">A last line: question, next step or contact</p>
+          <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. -->
+          <ul class="vl-people">
+            <li data-optional="identity"><span class="lb" data-edit="s99-2">Presented by</span><strong data-edit="s99-3">Presenter Name</strong><em data-edit="s99-4">ID or role</em></li>
+          </ul>
+        </div>
+        <div class="vl-r w5">
+          <!-- the closing picture echoes the title's. The .em above is already this slide's lime thing, so this
+               frame carries NO lime tab. -->
+          <figure class="vl-frame tall is-drawn">
+            <div class="aura-3d vl-3d" data-scene="s99-close" data-period="12" aria-hidden="true"></div>
+          </figure>
+        </div>
+      </div>
+      <footer class="vl-foot" data-nonclaim><span class="vl-mark" data-edit="s99-8">Deck mark</span><span class="vl-pageno"></span></footer>
+    </div>
+    <aside class="notes" data-aura-notes>
+      <p>Say the closing message in your own words, then thank the people named and open the floor. Keep it to one
+      sentence: the slide is already saying it.</p>
+      <p>Leave this slide up during questions: the names stay on screen. If a question needs a figure, type its slide
+      number and press Enter to jump to it, then press End to come back here.</p>
+      <p>Likely question: how sure are the numbers? Answer with the source line on the chart slide, and say plainly
+      which shapes are illustrative.</p>
+    </aside>
+  </section>
+
+</main>
+<script>
+/* The title figure. Violet Lime's 3D is deliberately plain: flat solids, no floor, no shadow, EXACTLY ONE lime
+   part. Replace the placeholder with the real subject's own parts (LOOK-BASE 4.0 / 4.10) - and if the slide is
+   better served by a drawing, use LumiIllus instead (LOOK.md 3.3). */
+Aura.scene('s1-hero', (ctx) => {
+  const { THREE } = ctx;
+  const S = VL3D.stage(ctx, { target: [0, 0.9, 0], distance: 8.6, azimuth: -22, elevation: 14 });
+  const body = S.add(VL3D.block(THREE, 2.2, 1.5, 1.4, { color: 'white' }));  body.position.y = 0.85;
+  const hero = S.add(VL3D.puck(THREE, 0.46, 0.3, { color: 'lime' }));        hero.position.set(-0.35, 1.78, 0.1);
+  const sat  = S.add(VL3D.ball(THREE, 0.3, { color: 'deep' }));              sat.position.set(1.45, 2.15, 0.35);
+  S.float(sat, { amp: 0.1 });
+  return S.api({ update(t) { S.sway(t, { deg: 5 }); } });
+}, { period: 12 });
+
+/* Replace with a small model of THIS subject, echoing the title. */
+Aura.scene('s99-close', (ctx) => {
+  const { THREE } = ctx;
+  const S = VL3D.stage(ctx, { target: [0, 0.75, 0], distance: 7.4, azimuth: -30, elevation: 16 });
+  const body = S.add(VL3D.block(THREE, 1.8, 1.3, 1.2, { color: 'white' }));  body.position.y = 0.7;
+  const hero = S.add(VL3D.puck(THREE, 0.38, 0.26, { color: 'lime' }));       hero.position.set(0.1, 1.52, 0.1);
+  return S.api({ update(t) { S.sway(t, { deg: 4 }); } });
+}, { period: 12 });
+</script>
+</body>
+</html>

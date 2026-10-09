@@ -1,0 +1,68 @@
+<!-- archetype: system-tour | a locked camera glides from part to part of a monochrome system; one label follows, a small map lights up in red | main visual: 3D (live: it drives the map) | companions: one following label + the map -->
+<section class="slide" data-kind="content" data-minutes="2" data-title="The whole system">
+  <div class="safe">
+    <div class="rg-main stack">
+      <div class="rg-head">
+        <p class="kicker" data-edit="s{{N}}-1">06 · The whole thing</p>
+        <h2 class="headline wide" data-edit="s{{N}}-2">Three parts, <span class="em">one path</span></h2>
+      </div>
+      <div class="rg-stage">
+        <div class="aura-3d rg-3d" data-scene="s{{N}}-scene" data-period="21" aria-hidden="true">
+          <div class="rg-tag key" data-follow="here" data-align="center" data-dy="-110"><b id="s{{N}}-lbl" data-edit="s{{N}}-3">The inlet</b><span id="s{{N}}-sub" data-edit="s{{N}}-4">where it starts</span></div>
+        </div>
+        <div class="rg-map" style="position:absolute; left:40px; bottom:36px; width:400px; z-index:2">
+          <span class="node root" data-edit="s{{N}}-5">The system</span>
+          <ul>
+            <li><span class="node" data-node="0" data-edit="s{{N}}-6">Inlet</span></li>
+            <li><span class="node" data-node="1" data-edit="s{{N}}-7">Core</span></li>
+            <li><span class="node" data-node="2" data-edit="s{{N}}-8">Outlet</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <footer class="rg-foot" data-nonclaim><span class="rg-mark" data-edit="s{{N}}-9">Deck mark</span><span class="rg-label" data-edit="s{{N}}-lb">Deck label</span><span class="rg-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Follow the red label.</strong> One part is named at a time and the map on the left lights up with
+    it. Say what each part does in one clause - the tour supplies the "where".</p>
+    <p><strong>End on the whole.</strong> When the view settles back, say the one sentence that makes the parts a
+    system rather than a list.</p>
+    <p><strong>Say the scale.</strong> Give the real size of the thing once, early. If asked about a part the tour
+    does not visit, name it and say it is outside this talk.</p>
+  </aside>
+</section>
+<script>
+/* The camera glides between parts and holds on each (RG3D.steps): a gallery set is shot on a locked, slow camera, never a
+   fly-through. The cable is the path between parts. Replace the three placeholders with the system's own parts. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const P = ctx.period;
+  const NAMES = [['The inlet', 'where it starts'], ['The core', 'where the work happens'], ['The outlet', 'where it leaves']];
+  const S = RG3D.studio(ctx, { target: [-2.4, 0.7, 0], distance: 9, azimuth: -20, elevation: 22, shift: -0.1 });
+  const parts = [
+    S.add(RG3D.block(THREE, 1.2, 1.0, 1.2, { color: 'white' })),
+    S.add(RG3D.puck(THREE, 0.9, 1.6, { color: 'ink' })),
+    S.add(RG3D.block(THREE, 1.0, 1.4, 1.0, { color: 'grey' })),
+  ];
+  parts[0].position.set(-2.8, 0.5, 0); parts[1].position.set(0, 0.8, 0); parts[2].position.set(2.8, 0.7, 0);
+  parts.forEach(p => S.contact(p, 1.0));
+  S.add(RG3D.cable(THREE, [[-2.2, 0.35, 0.2], [-1.4, 0.18, 0.7], [-0.8, 0.3, 0.4]], 0.09, { color: 'black' }));
+  S.add(RG3D.cable(THREE, [[0.8, 0.3, 0.4], [1.4, 0.18, 0.7], [2.3, 0.35, 0.2]], 0.09, { color: 'black' }));
+  const lbl = document.getElementById('s{{N}}-lbl'), sub = document.getElementById('s{{N}}-sub');
+  const nodes = ctx.el.closest('.rg-stage').querySelectorAll('.rg-map .node[data-node]');
+  let shown = -1, hereIdx = 0;
+  const tops = parts.map(p => { const o = new THREE.Object3D(); o.position.y = 0.9; p.add(o); return o; });
+  RG3D.tags(S, ctx.el, { here: () => tops[hereIdx].getWorldPosition(new THREE.Vector3()).toArray() });
+  return S.api({ update(t) {
+    const s = RG3D.steps(t, P, 3, 0.35);
+    hereIdx = s.k < 0.5 ? s.i : s.next;
+    S.target.lerpVectors(parts[s.i].position, parts[s.next].position, s.k).setY(0.7);
+    S.sway(t, { deg: 2 });
+    if (hereIdx !== shown) {
+      shown = hereIdx;
+      lbl.textContent = NAMES[hereIdx][0]; sub.textContent = NAMES[hereIdx][1];
+      nodes.forEach((n, k) => n.classList.toggle('on', k === hereIdx));
+    }
+  } });
+}, { period: 21 });
+</script>

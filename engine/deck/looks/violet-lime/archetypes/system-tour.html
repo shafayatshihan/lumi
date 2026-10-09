@@ -1,0 +1,64 @@
+<!-- archetype: system-tour | service-stack: the labelled cards stacked down the left, the picture on the right, and the card being visited turns lime in step with the tour. The headline INVERTS (.inv) because the lime is the live card. VIOLET ground | main visual: picture | companions: 4 stacked cards, a small map -->
+<section class="slide on-violet" data-kind="content" data-minutes="1.75" data-title="The parts">
+  <div class="vl-deco-layer" aria-hidden="true"><i class="vl-deco d1"></i></div>
+  <div class="safe">
+    <div class="vl-main">
+      <div class="vl-l w5">
+        <p class="kicker" data-edit="s{{N}}-1">The system</p>
+        <h2 class="headline inv" data-edit="s{{N}}-2">Four parts, <span class="em">one job.</span></h2>
+        <!-- the ONE lime thing: whichever card the tour is on. .on is set by Aura.sync, never on two at once. -->
+        <ul class="vl-cards" style="gap:16px; margin-top:34px">
+          <li><strong data-edit="s{{N}}-3">Intake</strong><p data-edit="s{{N}}-4">what it takes in</p></li>
+          <li><strong data-edit="s{{N}}-5">Core</strong><p data-edit="s{{N}}-6">where the work actually happens</p></li>
+          <li><strong data-edit="s{{N}}-7">Transfer</strong><p data-edit="s{{N}}-8">how it moves on</p></li>
+          <li><strong data-edit="s{{N}}-9">Exhaust</strong><p data-edit="s{{N}}-10">what leaves, and how</p></li>
+        </ul>
+      </div>
+      <div class="vl-r w7">
+        <figure class="vl-frame wide is-drawn">
+          <div class="aura-3d vl-3d" data-scene="s{{N}}-scene" data-period="24" aria-hidden="true">
+            <div class="vl-tag" data-follow="here"><b data-edit="s{{N}}-11">You are here</b><span data-edit="s{{N}}-12">the part being visited</span></div>
+          </div>
+        </figure>
+      </div>
+    </div>
+    <footer class="vl-foot" data-nonclaim><span class="vl-mark" data-edit="s{{N}}-13">Deck mark</span><span class="vl-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Follow the tour, do not lead it.</strong> The camera visits one part per six seconds and the matching
+    card turns lime; say each part's name as the card lights, then what it does in one sentence.</p>
+    <p><strong>Give the real quantities at each stop</strong> - what goes in, what comes out, at what rate - and say
+    where each figure came from. If a rate is nominal rather than measured, say "nominal" out loud.</p>
+    <p><strong>Close by naming the part that limits the whole.</strong> Every system has one, and the room will
+    remember it. Honesty caveat: say which parts are drawn to scale relative to each other and which are enlarged to
+    be visible. Prepare the question "what fails first?".</p>
+  </aside>
+  <script>
+  Aura.scene('s{{N}}-scene', (ctx) => {
+    const { THREE } = ctx;
+    const S = VL3D.stage(ctx, { target: [0, 0.9, 0], distance: 10.5, azimuth: -22, elevation: 15 });
+    const lane = [-2.4, -0.8, 0.8, 2.4], parts = [];
+    lane.forEach((x, i) => {
+      const p = S.add(VL3D.block(THREE, 1.2, 0.9 + i * 0.12, 1.1, { color: 'white' }));
+      p.position.set(x, 0.45 + i * 0.06, 0);
+      parts.push(p);
+    });
+    // the ONE lime part: the marker that travels from part to part
+    const here = S.add(VL3D.puck(THREE, 0.3, 0.22, { color: 'lime' }));
+    VL3D.tags(S, ctx.el, { here: here });
+    return S.api({ update(t) {
+      const st = VL3D.steps(t, ctx.period, 4, 0.3);
+      const a = parts[st.i].position, b = parts[st.next].position;
+      here.position.set(a.x + (b.x - a.x) * st.k, 1.7 + (b.y - a.y) * st.k, 0.2);
+      S.sway(t, { deg: 4 });
+    } });
+  }, { period: 24 });
+  Aura.sync('s{{N}}-scene', (t) => {
+    const n = 4, i = Math.floor(((t % 24) / 24) * n) % n;
+    document.querySelectorAll('[data-scene="s{{N}}-scene"]').forEach(h => {
+      const slide = h.closest('.slide'); if (!slide) return;
+      slide.querySelectorAll('.vl-cards > li').forEach((c, k) => c.classList.toggle('on', k === i));
+    });
+  });
+  </script>
+</section>

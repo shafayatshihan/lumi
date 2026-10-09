@@ -1,0 +1,44 @@
+<!-- archetype: title-hero | the cover board: black bar | the subject on a yellow block | the stacked tracked title on white | an orange and a cyan block; the pill on the seam | main visual: 3D (or a .cg-shots render collage) | companions: kicker, names -->
+<section class="slide" data-kind="title" data-minutes="0.75" data-title="Title">
+  <div class="safe">
+    <div class="cg-board b-cover">
+      <div class="cg-cell black" style="grid-area:bar"></div>
+      <div class="cg-cell yellow" style="grid-area:fig">
+        <div class="aura-3d cg-3d" data-scene="s{{N}}-hero" data-period="12" aria-hidden="true"></div>
+        <span class="cg-dot" style="right:36px; top:36px"></span>
+      </div>
+      <div class="cg-cell txt" style="grid-area:title"><h1 class="title" data-edit="s{{N}}-2">A short title, <span class="em">in colour.</span></h1></div>
+      <div class="cg-cell orange" style="grid-area:orange"></div>
+      <div class="cg-cell txt c-meta" style="grid-area:meta">
+        <p class="kicker" data-edit="s{{N}}-1">Course or event</p>
+        <!-- STAGING NOTE: one <li> per identity field the brief lists (brief.identity); delete the rest. Never invent a role the interview did not establish. -->
+        <ul class="cg-meta">
+          <li data-optional="identity" data-edit="s{{N}}-3"><span class="lb">Presented by</span><b>Presenter Name</b></li>
+          <li data-optional="identity" data-edit="s{{N}}-4"><span class="lb">For</span><b>Course or event</b>, Institution</li>
+        </ul>
+      </div>
+      <div class="cg-cell cyan" style="grid-area:cyan"></div>
+    </div>
+    <footer class="cg-foot" data-nonclaim><span class="cg-mark" data-edit="s{{N}}-5">Deck mark</span><span class="cg-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Name the thing on the screen first.</strong> Say what it is in one plain sentence, then why this room should care about it today.</p>
+    <p><strong>Point at the picture.</strong> The figure on the colour block is the subject itself, modelled from its
+    real parts and shown as a clean product shot; say which proportions are to scale and which are schematic.</p>
+    <p><strong>Then say the one thing this slide must leave behind</strong>, in a single sentence, and move on. Give the
+    source of every number as you say it.</p>
+  </aside>
+</section>
+<script>
+/* The hero tier (LOOK-BASE 4.6). Replace the placeholder with the real subject's own parts. One bright hero colour against
+   the block behind it (rose on yellow, white on cyan...), white / stone / grey for the rest. */
+Aura.scene('s{{N}}-hero', (ctx) => {
+  const { THREE } = ctx;
+  const S = CG3D.studio(ctx, { target: [0, 1.0, 0], distance: 9, azimuth: -24, elevation: 16 });
+  const body = S.add(CG3D.block(THREE, 2.2, 1.6, 1.5, { color: 'white' }));  body.position.y = 0.8;
+  const knob = S.add(CG3D.puck(THREE, 0.45, 0.3, { color: 'rose' }));        knob.position.set(-0.4, 1.75, 0.1);
+  S.contact(body, 1.7);
+  const ball = S.add(CG3D.ball(THREE, 0.32, { color: 'cyan' }));  ball.position.set(1.5, 2.3, 0.4);  S.float(ball, { amp: 0.1 });
+  return S.api({ update(t) { S.sway(t, { deg: 5 }); } });
+}, { period: 12 });
+</script>

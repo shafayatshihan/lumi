@@ -1,0 +1,267 @@
+/* Aura theme 8 - Candy Grid. The bright portfolio deck, built from the owner's reference (a creative-studio portfolio).
+   Not a column layout with a picture beside the words: every slide is a BOARD of edge-to-edge cells - saturated colour
+   blocks, solid black bars, white text cells - with coloured discs laid across the seams and a floating pill tag
+   pinned on a seam. Titles are short words in wide-tracked capitals, stacked, ending on a full stop. Each archetype
+   has its own board (.cg-board.b-<name>): the composition changes slide to slide the way a portfolio does.
+   The picture is a glossy candy-coloured CG3D figure standing in a colour cell or a disc.
+   Spec: .claude/skills/aura-slide/looks/_shared/LOOK-BASE.md then .../looks/candy-grid/LOOK.md.
+   Checker thresholds: engine/rules/hard-rules.json -> looks.candy-grid.
+   One typeface: Poppins (400 text / 600 labels / 700 titles).
+   Sizes: 24 / 30 / 36 / 48 / 64 / 96 / 132. */
+@font-face { font-family: "Poppins"; src: url("../../fonts/Poppins-400.woff2") format("woff2"); font-weight: 400; font-display: block; }
+@font-face { font-family: "Poppins"; src: url("../../fonts/Poppins-600.woff2") format("woff2"); font-weight: 600; font-display: block; }
+@font-face { font-family: "Poppins"; src: url("../../fonts/Poppins-700.woff2") format("woff2"); font-weight: 700; font-display: block; }
+
+:root {
+  --aura-look: candy-grid;                      /* the checker reads this to apply the Candy Grid thresholds */
+  --bg: #FFFFFF;
+  --surface: #FFFFFF;
+  --groove: #EEEEF2;
+  --hairline: #E2E2E8;
+  --ink: #1B1B1F; --ink-2: #2C2C33; --muted: #5E5E68; --label: #6A6A74;
+  --black: #1F1F23;                             /* the bars */
+  --leader: #1B1B1F; --leader-w: 3px;
+  /* the cells: flat, saturated, never behind small text */
+  --yellow: #FFC72C; --yellow-2: #FFE08A; --orange: #FF8A00; --pink: #F9A8C9; --cyan: #29C4E6; --sky: #9FDDF0; --violet: #9B8CF2;
+  --grad: linear-gradient(160deg, #8E7CF0 0%, #C58BE0 45%, #F49AB8 100%);
+  /* the ONE accent that is text: rose. --rose at display size only (3.6:1 on white); small rose text is --rose-ink */
+  --rose: #EC4A7B; --rose-ink: #C2185B;
+  --font-display: "Poppins", "Segoe UI", sans-serif; --font-text: "Poppins", "Segoe UI", sans-serif;
+  --t-micro: 24px; --t-body: 30px; --t-lead: 36px; --t-sub: 48px; --t-head: 64px; --t-title: 96px; --t-close: 132px;
+  --radius: 28px;
+  --pill-shadow: 0 12px 30px -10px rgba(30, 30, 60, .35), 0 2px 6px rgba(30, 30, 60, .08);
+  --cg-ease: cubic-bezier(.2, .8, .2, 1);
+  --aura-progress: #EC4A7B;
+  --aura-letterbox: #1F1F23;
+}
+
+/* ---------------------------------------------------------------- slide + type */
+.slide { font: 400 30px/1.55 var(--font-text); color: var(--ink); background: var(--bg); }
+.slide > .safe { inset: 0; z-index: 1; }      /* the board IS the slide: cells run to the edges; text cells pad themselves */
+.slide h1, .slide h2, .slide h3, .slide .title, .slide .headline { font-family: var(--font-display); font-weight: 700; margin: 0;
+  color: var(--ink); text-transform: uppercase; letter-spacing: .14em; }
+.slide .title { font-size: 96px; line-height: 1.1; letter-spacing: .07em; max-width: 9ch; }
+.slide .headline { font-size: 64px; line-height: 1.14; max-width: 9ch; }
+.slide .headline.wide { max-width: 100%; }
+.slide .sub { font: 600 36px/1.3 var(--font-text); color: var(--ink); max-width: 24ch; }
+.slide p { margin: 0; }
+.slide .lede { margin-top: 28px; font-size: 30px; line-height: 1.55; color: var(--muted); max-width: 32ch; }
+.slide .close-line { margin-top: 32px; font-size: 30px; line-height: 1.5; color: var(--ink); max-width: 30ch; }
+.slide .close-line b, .slide .close-line strong { color: var(--rose-ink); font-weight: 700; }
+.slide .cap, .slide .source { font: 400 24px/1.4 var(--font-text); color: var(--muted); }
+.slide .big-num { font: 700 64px/1 var(--font-display); color: var(--ink); }
+/* kicker: the reference's small bold label with a little black cube in front of it */
+.slide .kicker { display: inline-flex; align-items: center; gap: 14px; margin: 0; font: 700 30px/1.25 var(--font-text); color: var(--ink); }
+.slide .kicker::before { content: ""; flex: none; width: 18px; height: 18px; background: var(--ink); border-radius: 4px; transform: rotate(45deg); }
+.slide :is(h1, h2, .headline, .title) + .kicker { margin-top: 36px; }
+.slide .kicker + :is(h1, h2, .headline, .title) { margin-top: 28px; }
+/* the ONE emphasis phrase: same tracked capitals, in rose - usually the last word, with its full stop */
+.slide .em, .slide .em.text { color: var(--rose); }
+
+/* ---------------------------------------------------------------- the board and its cells */
+.cg-board { position: absolute; inset: 0; display: grid; }
+.cg-cell { position: relative; min-width: 0; min-height: 0; }
+.cg-cell.txt { display: flex; flex-direction: column; justify-content: center; padding: 96px 88px; }
+.cg-cell.yellow { background: var(--yellow); } .cg-cell.yellow-2 { background: var(--yellow-2); } .cg-cell.orange { background: var(--orange); }
+.cg-cell.pink { background: var(--pink); } .cg-cell.cyan { background: var(--cyan); } .cg-cell.sky { background: var(--sky); }
+.cg-cell.violet { background: var(--violet); } .cg-cell.grad { background: var(--grad); } .cg-cell.black { background: var(--black); }
+/* a disc: a coloured circle laid over cells and seams; it may hold the figure (a holder inside it) or be decoration */
+.cg-disc { position: absolute; border-radius: 50%; background: var(--pink); }
+.cg-disc.yellow { background: var(--yellow); } .cg-disc.orange { background: var(--orange); } .cg-disc.cyan { background: var(--cyan); }
+.cg-disc.sky { background: var(--sky); } .cg-disc.black { background: var(--black); } .cg-disc.violet { background: var(--violet); }
+/* the reference's little dots: a white ring on a colour cell, a rose or yellow dot on white */
+.cg-dot { position: absolute; width: 30px; height: 30px; border-radius: 50%; background: var(--surface); box-shadow: 0 2px 6px rgba(0, 0, 0, .14); z-index: 3; }
+.cg-dot.rose { background: var(--rose); box-shadow: none; } .cg-dot.yellow { background: var(--yellow); box-shadow: none; }
+/* the figure: a live CG3D canvas filling its cell or disc (transparent - the colour behind it shows through) */
+.slide .aura-3d.cg-3d { position: absolute; inset: 0; }
+.slide .aura-3d.cg-3d.pad { inset: 64px; }
+/* inside a disc the holder is the square inscribed in the circle: a labelled holder must sit on ONE colour (the label
+   check reads the holder's commonest colour as its background) */
+.cg-disc > .aura-3d.cg-3d { inset: 14.6%; }    /* keeps labels away from the slide edge when the cell is full bleed */
+/* the render collage: transparent Blender stills of ONE scene, each placed by grid-area over a colour cell; the group
+   (.cg-shots, data-visual="photo", display: contents) is the slide's one main visual */
+.cg-shot { position: relative; z-index: 1; display: block; width: 100%; height: 100%; min-width: 0; min-height: 0;
+  object-fit: contain; padding: 36px; box-sizing: border-box; }
+.cg-shot.fill { object-fit: cover; padding: 0; }
+
+/* footer: the floating pill tag - deck mark and page number - pinned on a seam. The footer is the board's SIBLING,
+   so each board places it with `.b-<name> ~ .cg-foot` */
+.cg-foot { position: absolute; z-index: 4; display: inline-flex; align-items: center; gap: 18px; white-space: nowrap;
+  padding: 12px 30px; border-radius: 999px; background: var(--surface); box-shadow: var(--pill-shadow); left: 96px; bottom: 72px; }
+.cg-mark { font: 400 24px/1.3 var(--font-text); color: var(--ink-2); }
+.cg-pageno { font: 600 24px/1.3 var(--font-text); color: var(--ink); }
+.cg-pageno::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 14px; border-radius: 50%; background: var(--rose); vertical-align: 2px; }
+
+/* ---------------------------------------------------------------- the ten boards */
+/* 1 cover: black bar | figure on yellow | stacked title / names on white | an orange and a cyan block */
+.b-cover { grid-template-columns: 120px 0.9fr 1.3fr 160px; grid-template-rows: 1.25fr 1fr;
+  grid-template-areas: "bar fig title orange" "bar meta cyan cyan"; }
+.b-cover .c-meta { padding-top: 56px; justify-content: flex-start; }
+.b-cover ~ .cg-foot { bottom: auto; top: calc(55.5% - 30px); left: 700px; }   /* on the seam where the picture, the title and the cyan block meet */
+/* 2 orbit: stacked title and a row of stats on white; a black circle off the right edge and a pink disc holding the figure */
+.b-orbit { grid-template-columns: 1fr; }
+.b-orbit .c-text { position: absolute; left: 0; top: 0; bottom: 0; width: 900px; }
+.b-orbit .d-back { width: 860px; height: 860px; right: -200px; top: 110px; }
+.b-orbit .d-fig { width: 640px; height: 640px; right: 470px; top: 220px; }
+.b-orbit ~ .cg-foot { left: auto; right: 120px; bottom: 64px; }
+/* 3 side: a full-height colour panel on the left holding the figure, a disc across its seam, words on the right */
+.b-side { grid-template-columns: 820px 36px 1fr; grid-template-areas: "fig bar text"; }
+.b-side .d-seam { width: 300px; height: 300px; left: 690px; bottom: 120px; z-index: 2; }
+.b-side ~ .cg-foot { left: 100px; bottom: 64px; }
+/* 4 film: stacked title top-left, three discs in a row (the three stations), a step column under each, black base */
+.b-film { grid-template-columns: 1fr; grid-template-rows: 1fr 96px; }
+.b-film .c-head { position: absolute; left: 120px; top: 96px; width: 520px; }
+.b-film .c-stations { position: absolute; left: 640px; right: 96px; top: 80px; height: 540px; }
+.b-film .c-stations .cg-disc { width: 420px; height: 420px; top: 60px; }
+.b-film .c-stations .cg-disc:nth-of-type(1) { left: calc(16.67% - 210px); }
+.b-film .c-stations .cg-disc:nth-of-type(2) { left: calc(50% - 210px); }
+.b-film .c-stations .cg-disc:nth-of-type(3) { left: calc(83.33% - 210px); }
+.b-film .cg-cols { position: absolute; left: 640px; right: 96px; top: 660px; }
+.b-film .c-base { grid-row: 2; }
+.b-film ~ .cg-foot { left: 120px; bottom: 140px; }
+/* 5 split: words on white | a black bar | one colour cell holding both objects side by side, with a small disc on the bar */
+.b-split { grid-template-columns: 1fr 120px 1000px; grid-template-areas: "text bar pair"; }
+.b-split .d-mark { width: 170px; height: 170px; right: 1035px; top: 120px; z-index: 2; }
+.b-split ~ .cg-foot { left: auto; right: 1120px; transform: translateX(50%); bottom: 72px; }
+/* 6 strips: black bar | the user's photo full height | words | a thin colour strip */
+.b-strips { grid-template-columns: 120px 760px 1fr 180px; grid-template-areas: "bar photo text strip"; }
+.b-strips ~ .cg-foot { left: 160px; bottom: 72px; }
+/* 7 mosaic: one big colour cell holding the scene, two smaller colour cells beside it | a black seam | the map and the
+   stacked title on white */
+.b-mosaic { grid-template-columns: 820px 300px 28px 1fr; grid-template-rows: 1fr 1fr;
+  grid-template-areas: "m1 m2 bar side" "m1 m3 bar side"; }
+.b-mosaic .c-side { grid-area: side; justify-content: space-between; }
+.b-mosaic ~ .cg-foot { left: 96px; bottom: 64px; }
+/* 8 chart: words on white | the chart card floating on a full-height yellow cell | a black base bar */
+.b-chart { grid-template-columns: 700px 1fr; grid-template-rows: 1fr 72px; grid-template-areas: "text panel" "base base"; }
+.b-chart .c-panel { padding: 96px 120px 72px 96px; display: flex; }
+.b-chart ~ .cg-foot { left: 96px; bottom: 120px; }
+/* 9 tiles: the checklist on white | a yellow board of tiles with a disc holding the figure */
+.b-tiles { grid-template-columns: 820px 1fr 1fr; grid-template-rows: 1fr 1fr; grid-template-areas: "text t1 t2" "text t3 t4"; }
+.b-tiles .d-fig { width: 760px; height: 760px; right: 170px; top: 160px; z-index: 1; }
+.b-tiles ~ .cg-foot { left: 120px; bottom: 64px; }
+/* 10 close: the statement on white | a black bar | a gradient cell, with a disc holding the figure across the bar */
+.b-close { grid-template-columns: 1fr 120px 640px; grid-template-areas: "text bar grad"; }
+.b-close .d-fig { width: 600px; height: 600px; right: 340px; top: 240px; z-index: 2; }
+.b-close ~ .cg-foot { left: 120px; bottom: 64px; }
+
+/* step columns: the reference's three "Project" columns, a cube label, a bold name, one short line */
+.cg-cols { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--n, 3), 1fr); gap: 48px; text-align: center; }
+.cg-cols > li { display: flex; flex-direction: column; align-items: center; }
+.cg-cols .k { display: inline-flex; align-items: center; gap: 12px; font: 700 30px/1.2 var(--font-text); color: var(--label); transition: color .3s var(--cg-ease); }
+.cg-cols .k::before { content: ""; width: 16px; height: 16px; border-radius: 4px; background: currentColor; transform: rotate(45deg); }
+.cg-cols strong { display: block; margin-top: 10px; font: 700 30px/1.25 var(--font-text); color: var(--ink); }
+.cg-cols p { margin: 4px 0 0; font-size: 30px; line-height: 1.4; color: var(--muted); }
+.cg-cols > li.on .k { color: var(--rose-ink); }
+
+/* ---------------------------------------------------------------- stats: a ROW of side-by-side figures, cube labels */
+.cg-stats { list-style: none; margin: 48px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px; }
+.cg-stats.col { grid-template-columns: 1fr; gap: 32px; }
+.cg-stat { display: block; font: 700 48px/1.05 var(--font-display); color: var(--ink); letter-spacing: .04em; }
+.cg-stats p { margin: 10px 0 0; font-size: 30px; line-height: 1.4; color: var(--muted); }
+.cg-stats p b { color: var(--ink); font-weight: 700; }
+.cg-bar { margin-top: 14px; height: 16px; max-width: 360px; border-radius: 999px; background: var(--groove); }
+.cg-bar > i { display: block; height: 100%; width: var(--v, 50%); border-radius: 999px; background: var(--rose); transform-origin: left center; }
+.cg-bar.grey > i { background: #A9A9B3; }
+
+/* numbered steps (a vertical list, for the side board) */
+.cg-steps { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; gap: 26px; }
+.cg-steps > li { display: grid; grid-template-columns: 60px 1fr; column-gap: 22px; align-items: start; }
+.cg-n { width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font: 700 30px/1 var(--font-text); color: var(--ink); background: var(--groove); }
+.cg-n.on { background: var(--yellow); }
+.cg-steps strong { display: block; font: 700 36px/1.2 var(--font-text); color: var(--ink); }
+.cg-steps p { margin: 4px 0 0; font-size: 30px; line-height: 1.4; color: var(--muted); }
+
+/* zones (photo slides) */
+.cg-zones { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; gap: 28px; }
+.cg-zones > li { display: grid; grid-template-columns: 56px 1fr; column-gap: 20px; align-items: start; }
+.cg-zones .z { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font: 700 30px/1 var(--font-text); color: var(--ink); background: var(--yellow); }
+.cg-zones .n { display: block; font: 700 36px/1.2 var(--font-text); color: var(--ink); }
+.cg-zones .d { display: block; font: 400 30px/1.4 var(--font-text); color: var(--muted); margin-top: 4px; }
+
+/* chips beside a chart: white pills with the soft shadow; .key is the yellow one */
+.cg-chips { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 20px; }
+.cg-chip { font: 600 30px/1.2 var(--font-text); color: var(--ink); background: var(--surface); border-radius: 999px; padding: 14px 30px; box-shadow: var(--pill-shadow); }
+.cg-chip.key { background: var(--yellow); }
+
+/* checklist: round ticks, yellow when done */
+.cg-goals { list-style: none; margin: 44px 0 0; padding: 0; display: flex; flex-direction: column; gap: 22px; }
+.cg-goal { display: grid; grid-template-columns: 60px 1fr; column-gap: 24px; align-items: center; }
+.cg-goal .ic { width: 60px; height: 60px; padding: 14px; box-sizing: border-box; border-radius: 50%; color: var(--label); background: var(--groove); }
+.cg-goal.on .ic { color: var(--ink); background: var(--yellow); }
+.cg-goal.wip .ic { color: var(--ink); background: var(--pink); }
+.cg-goal.no .ic { color: var(--rose-ink); }
+.cg-goal strong { display: block; font: 700 36px/1.2 var(--font-text); color: var(--ink); }
+.cg-goal span.d { display: block; margin-top: 2px; font: 400 30px/1.4 var(--font-text); color: var(--muted); }
+.cg-goal.no strong { color: var(--muted); }
+.cg-goal.is-here strong { color: var(--rose-ink); }
+
+/* ---------------------------------------------------------------- tiles, the user's photo, labels */
+.cg-card { background: var(--surface); border-radius: var(--radius); padding: 40px; box-shadow: var(--pill-shadow); }
+.cg-photo { position: relative; margin: 0; overflow: hidden; background: var(--groove); }
+.cg-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cg-inset { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.cg-inset img { display: block; object-fit: cover; border-radius: 50%; }
+.cg-inset figcaption { font: 400 24px/1.35 var(--font-text); color: var(--muted); }
+/* labels on a figure: white pills with the soft shadow; .key is the ink one */
+.cg-tag { position: absolute; padding: 12px 26px 14px; background: var(--surface); border-radius: 999px; white-space: nowrap; pointer-events: none; z-index: 2;
+  box-shadow: var(--pill-shadow); }
+.cg-tag b { display: block; font: 700 30px/1.15 var(--font-text); color: var(--ink); }
+.cg-tag span { display: block; margin-top: 2px; font: 400 24px/1.3 var(--font-text); color: var(--muted); }
+.cg-tag.key { background: var(--ink); }
+.cg-tag.key b { color: #FFFFFF; } .cg-tag.key span { color: #D8D8E0; }
+.cg-pin { position: absolute; width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font: 700 30px/1 var(--font-text); color: var(--ink); background: var(--surface); box-shadow: var(--pill-shadow); pointer-events: none; z-index: 3; }
+.cg-pill { position: absolute; padding: 10px 26px; border-radius: 999px; white-space: nowrap; pointer-events: none; z-index: 2;
+  font: 700 30px/1.2 var(--font-text); color: #FFFFFF; background: var(--ink); }
+.cg-pill.plain { color: var(--ink); background: var(--surface); box-shadow: var(--pill-shadow); }
+/* the small system map */
+.cg-map { display: flex; flex-direction: column; gap: 12px; padding: 26px 30px; border-radius: var(--radius); background: var(--surface); box-shadow: var(--pill-shadow); }
+.cg-map .node { display: inline-flex; align-items: center; gap: 12px; padding: 6px 18px; border-radius: 999px;
+  font: 600 30px/1.25 var(--font-text); color: var(--ink); background: var(--groove); transition: background .3s var(--cg-ease); }
+.cg-map .node.on { background: var(--yellow); }
+.cg-map ul { list-style: none; margin: 0; padding: 0 0 0 30px; display: flex; flex-direction: column; gap: 10px; }
+.cg-chart { position: relative; flex: 1; min-height: 0; background: var(--surface); border-radius: var(--radius); padding: 40px 44px 28px 48px; box-shadow: var(--pill-shadow); }
+.cg-meta { list-style: none; margin: 40px 0 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.cg-meta li { font-size: 30px; line-height: 1.4; color: var(--muted); }
+.cg-meta b { color: var(--ink); font-weight: 700; }
+.cg-meta .lb { display: block; font: 600 24px/1.3 var(--font-text); letter-spacing: .12em; text-transform: uppercase; color: var(--label); }
+
+/* ---------------------------------------------------------------- closing */
+.cg-thanks { margin: 0; font: 700 132px/1.04 var(--font-display); color: var(--ink); text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
+.cg-thanks.cg-msg { white-space: normal; font-size: 96px; line-height: 1.1; max-width: 9ch; }
+.slide .cg-q { margin: 48px 0 0; font: 600 36px/1.3 var(--font-text); color: var(--ink); max-width: 24ch; }
+.cg-people { list-style: none; margin: 40px 0 0; padding: 0; display: grid; gap: 16px; }
+.cg-people li { display: grid; grid-template-columns: 240px auto 1fr; column-gap: 24px; align-items: baseline; font-size: 30px; }
+.cg-people .lb { font: 600 24px/1.4 var(--font-text); letter-spacing: .12em; text-transform: uppercase; color: var(--label); }
+.cg-people strong { font-weight: 700; color: var(--ink); white-space: nowrap; }
+.cg-people em { font-style: normal; color: var(--label); }
+
+/* ---------------------------------------------------------------- motion: the board ASSEMBLES. Cells wipe open one after
+   another, discs grow from their centre, titles rise, pills and dots pop on last. */
+@keyframes cgRise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+@keyframes cgWipeX { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes cgWipeY { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes cgGrowDisc { from { scale: 0; } to { scale: 1; } }
+@keyframes cgPop { 0% { opacity: 0; scale: .6; } 70% { opacity: 1; scale: 1.08; } 100% { opacity: 1; scale: 1; } }
+@keyframes cgGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+html:not(.aura-still) .slide.is-entering .cg-cell:is(.yellow, .yellow-2, .orange, .pink, .cyan, .sky, .violet, .grad) { animation: cgWipeY .7s var(--cg-ease) .05s both; }
+html:not(.aura-still) .slide.is-entering .cg-cell.black { animation: cgWipeX .6s var(--cg-ease) both; }
+html:not(.aura-still) .slide.is-entering .cg-disc { animation: cgGrowDisc .7s var(--cg-ease) .2s both; }
+html:not(.aura-still) .slide.is-entering :is(h1, h2, .headline, .title, .cg-thanks) { animation: cgRise .6s var(--cg-ease) .15s both; }
+html:not(.aura-still) .slide.is-entering .kicker { animation: cgRise .5s var(--cg-ease) .25s both; }
+html:not(.aura-still) .slide.is-entering :is(.sub, .lede, .close-line, .cg-meta, .cg-q, .cg-people) { animation: cgRise .5s var(--cg-ease) .32s both; }
+html:not(.aura-still) .slide.is-entering :is(.cg-stats, .cg-steps, .cg-zones, .cg-goals, .cg-chips, .cg-cols) > li { animation: cgRise .46s var(--cg-ease) both; }
+html:not(.aura-still) .slide.is-entering :is(.cg-stats, .cg-steps, .cg-zones, .cg-goals, .cg-chips, .cg-cols) > li:nth-child(1) { animation-delay: .38s; }
+html:not(.aura-still) .slide.is-entering :is(.cg-stats, .cg-steps, .cg-zones, .cg-goals, .cg-chips, .cg-cols) > li:nth-child(2) { animation-delay: .46s; }
+html:not(.aura-still) .slide.is-entering :is(.cg-stats, .cg-steps, .cg-zones, .cg-goals, .cg-chips, .cg-cols) > li:nth-child(3) { animation-delay: .54s; }
+html:not(.aura-still) .slide.is-entering :is(.cg-stats, .cg-steps, .cg-zones, .cg-goals, .cg-chips, .cg-cols) > li:nth-child(4) { animation-delay: .62s; }
+html:not(.aura-still) .slide.is-entering :is(.cg-chart, .cg-card, .cg-map) { animation: cgRise .6s var(--cg-ease) .3s both; }
+html:not(.aura-still) .slide.is-entering :is(.cg-tag, .cg-pill, .cg-pin) { animation: cgPop .45s var(--cg-ease) .8s both; }
+html:not(.aura-still) .slide.is-entering :is(.cg-foot, .cg-dot) { animation: cgPop .45s var(--cg-ease) .9s both; }
+.cg-bar > i { animation: none; }
+html:not(.aura-still) .slide.is-entering .cg-bar > i { animation: cgGrow .8s var(--cg-ease) .5s both; }
+
+.aura-progress { height: 6px; border-radius: 0 999px 999px 0; }

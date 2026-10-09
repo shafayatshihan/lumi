@@ -1,0 +1,49 @@
+<!-- archetype: what-it-is | the object in monochrome, its parts floating out as satellites, 2-4 labels | main visual: 3D | companions: <=3 facts, 2-4 projected tags -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="What it is">
+  <div class="safe">
+    <div class="rg-main">
+      <div class="rg-l w5">
+        <p class="kicker" data-edit="s{{N}}-1">02 · What it is</p>
+        <h2 class="headline" data-edit="s{{N}}-2">Three parts, <span class="em">one job</span></h2>
+        <ul class="rg-steps">
+          <li><span class="rg-n on">1</span><div><strong data-edit="s{{N}}-3">The body</strong><p data-edit="s{{N}}-4">holds everything in line</p></div></li>
+          <li><span class="rg-n">2</span><div><strong data-edit="s{{N}}-5">The core</strong><p data-edit="s{{N}}-6">does the work</p></div></li>
+          <li><span class="rg-n">3</span><div><strong data-edit="s{{N}}-7">The cap</strong><p data-edit="s{{N}}-8">seals it shut</p></div></li>
+        </ul>
+      </div>
+      <div class="rg-r w7">
+        <div class="rg-stage">
+          <div class="aura-3d rg-3d" data-scene="s{{N}}-scene" data-period="14" aria-hidden="true">
+            <div class="rg-tag" data-follow="core" data-dx="110"><b data-edit="s{{N}}-9">The core</b><span data-edit="s{{N}}-10">~40 mm across</span></div>
+            <div class="rg-tag" data-follow="cap" data-align="right" data-dx="110"><b data-edit="s{{N}}-11">The cap</b><span data-edit="s{{N}}-12">lifted off</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="rg-foot" data-nonclaim><span class="rg-mark" data-edit="s{{N}}-13">Deck mark</span><span class="rg-label" data-edit="s{{N}}-lb">Deck label</span><span class="rg-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Walk the numbers on the left, then find each on the model.</strong> The parts floating out of the body
+    are its own parts, lifted so the inside can be seen; say so once.</p>
+    <p><strong>Give the real size</strong> - the tag says it - and say what the model leaves out. The model rounds every
+    edge: the real part is sharper than this, and that is fine to say.</p>
+    <p><strong>Prepare the question</strong> "how does the core fit?" - answer by pointing at where it sits in the
+    body, not by describing it.</p>
+  </aside>
+</section>
+<script>
+/* The object, whole, with its parts floating out along the axis they came out of - one object that came apart. Real
+   counts and proportions (LOOK-BASE 4.1); the satellites repeat the primary colour. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const S = RG3D.studio(ctx, { target: [0, 2.1, 0], distance: 14, azimuth: -30, elevation: 14 });
+  const body = S.add(RG3D.puck(THREE, 1.1, 1.6, { color: 'white', bevel: 0.28 }));   body.position.y = 0.8;
+  const core = S.add(RG3D.puck(THREE, 0.55, 0.9, { color: 'ink' }));                core.position.set(0, 2.4, 0);
+  const cap  = S.add(RG3D.puck(THREE, 0.95, 0.24, { color: 'ink', bevel: 0.1 }));   cap.position.set(0, 3.4, 0);
+  const bolt = S.add(RG3D.pill(THREE, 0.1, 0.35, { color: 'black' }));               bolt.position.set(0.8, 3.95, 0.2);
+  S.contact(body, 1.5);
+  S.float(core, { amp: 0.08 }); S.float(cap, { amp: 0.1, phase: 1.2 }); S.float(bolt, { amp: 0.12, phase: 2.4 });
+  RG3D.tags(S, ctx.el, { core: core, cap: cap });
+  return S.api({ update(t) { S.sway(t, { deg: 5 }); } });
+}, { period: 14 });
+</script>

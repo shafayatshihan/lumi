@@ -127,6 +127,16 @@ export function mountStart(host, { audio, setMode, onScene, onStarted, onHome } 
         : 'claude couldn’t start. try again in a moment.', true);
       return;
     }
+    // The look (and the quality that travels with it) was chosen on the page before this one, when no deck existed
+    // yet. Apply it the moment it does. A failure here is not fatal - the deck keeps "Claude chooses" and the plan
+    // page's own look step offers it again - so it never blocks the flow.
+    try {
+      const pick = (await import('./lookpick.js')).takePick();
+      if (pick && (pick.look || pick.quality)) {
+        await api.decks.patch(r.deckId, pick.quality ? { look: pick.look || 'Claude chooses', quality: pick.quality }
+          : { look: pick.look || 'Claude chooses' });
+      }
+    } catch (e) { console.warn('[aura] could not apply the picked look', e); }
     announce('claude is reading your files');
     onStarted && onStarted(r.deckId);
   }

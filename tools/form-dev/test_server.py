@@ -231,7 +231,7 @@ def run_main_suite():
     print('\n[MIME types and ranges]')
     for p, mime in (('/', 'text/html'), ('/js/api.js', 'text/javascript'), ('/assets/gaze-frames.json', 'application/json'),
                     ('/assets/character.mp4', 'video/mp4'), ('/fonts/DMSans-Regular.woff2', 'font/woff2'),
-                    ('/themes/1-pink-punch-1.jpg', 'image/jpeg'), ('/themes/2-bold-blue-4.jpg', 'image/jpeg'),
+                    ('/themes/5-clay-pop-1.jpg', 'image/jpeg'), ('/themes/2-bold-blue-4.jpg', 'image/jpeg'),
                     ('/vendor/three/three.module.js', 'text/javascript'), ('/vendor/three/three.core.js', 'text/javascript')):
         s, h, d = req('HEAD', p)
         check(f'{p} -> {mime}', s == 200 and h.get('content-type', '').startswith(mime), (s, h.get('content-type')))
@@ -308,20 +308,20 @@ def run_main_suite():
              'people': {'presenters': [{'name': 'A. B. Doe', 'id': 1000001, 'role': 'Presenter'}]},
              'audience': {'who': ['Teachers', 'Students'], 'level': 'Some background', 'minutes': 12},
              'work': {'results': [{'what': 'R_th drop', 'value': 38}]},
-             'look': {'theme': 'Pink Punch'}, 'style': {'threeD': 'yes', 'twoD': 'no', 'amount': 75},
+             'look': {'theme': 'Clay Pop'}, 'style': {'threeD': 'yes', 'twoD': 'no', 'amount': 75},
              'extra': {'notes': 'ask-me please'}, 'unknown': {'kept': True}}
     s, j = jpost('/api/brief', brief)
     s2, back = jget('/api/brief')
     check('brief saved', s == 200 and j.get('savedAt'))
     check('brief round trip', back.get('style') == brief['style'] and back.get('unknown') == {'kept': True} and back.get('_savedAt'))
     md = (AURA / 'brief' / 'brief.md').read_text(encoding='utf-8')
-    # Pink Punch has its own LOOK.md now, so the look OVERRIDES the style answers and the brief says so, keeping
+    # Clay Pop has its own LOOK.md now, so the look OVERRIDES the style answers and the brief says so, keeping
     # what the person answered on a separate "they had also answered" row. A look with no spec still reports the
     # raw answers - that case is covered by the 'Claude chooses' post below.
-    for want in ('## Look and motion', '- **Theme:** Pink Punch', '- **3D simulations:** Pink Punch decides',
-                 '- **2D animations:** Pink Punch decides',
-                 '- **Amount of illustration and animation:** Pink Punch decides',
-                 'overridden by Pink Punch', 'A. B. Doe - 1000001 - Presenter',
+    for want in ('## Look and motion', '- **Theme:** Clay Pop', '- **3D simulations:** Clay Pop decides',
+                 '- **2D animations:** Clay Pop decides',
+                 '- **Amount of illustration and animation:** Clay Pop decides',
+                 'overridden by Clay Pop', 'A. B. Doe - 1000001 - Presenter',
                  'R_th drop - 38'):
         check(f'brief.md has {want!r}', want in md, md[:400])
     jpost('/api/brief', dict(brief, look={'theme': 'Claude chooses'}, style={'amount': 10}))
@@ -514,7 +514,7 @@ def run_v3_suite():
     argv = fake_argv(ev)
     check('a record made from the draft brief can still be built in one go', s == 200 and B and B != A and (AURA / 'decks' / f'{B}.json').is_file(), j)
     check('default quality is just right (opus/medium)', flag(argv, '--model') == 'opus' and flag(argv, '--effort') == 'medium', argv)
-    choice = '[[aura:choice id="q1" question="Which look?" options="Bold Blue|Flat-Pack|Claude chooses"]]'
+    choice = '[[aura:choice id="q1" question="Which look?" options="Bold Blue|Clay Pop|Claude chooses"]]'
     check('choice marker passes through untouched', any(e['kind'] == 'say' and choice in e['text'] for e in ev) and
           jget('/api/claude/status')[1].get('waiting') is True, [e['text'][:80] for e in ev if e['kind'] == 'say'])
     recB = jget(f'/api/decks/{B}')[1].get('deck', {})
@@ -662,7 +662,9 @@ def run_v5_suite():
     check('3d gets detail + motion, others none', sl[0]['visual']['detail'] == 'detailed' and sl[0]['visual']['motion'] == 'timed' and
           sl[1]['visual']['detail'] is None, sl)
     check('word cap from hard-rules (per look, and the default for a look with no entry)',
-          fs.word_cap('Bold Blue') == 55 and fs.word_cap('Pink Punch') == 30 and fs.word_cap('Clay Pop') == 40
+          fs.word_cap('Bold Blue') == 55 and fs.word_cap('Red Gallery') == 44 and fs.word_cap('Clay Pop') == 40
+          and fs.word_cap('Red Gallery') == 44
+          and fs.word_cap('Candy Grid') == 42
           and fs.word_cap('No Such Look') == fs.DEFAULT_WORD_CAP)
 
     print('\n[v0.5 planning]')

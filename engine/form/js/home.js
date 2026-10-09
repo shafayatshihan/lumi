@@ -39,7 +39,7 @@ const EMPTY_ART = `<svg viewBox="0 0 300 180" aria-hidden="true">
   <path d="M60 150h200" stroke="var(--lilac)" stroke-width="4" stroke-linecap="round" stroke-dasharray="2 12"/>
   <circle cx="270" cy="34" r="6" fill="var(--pink)"/><circle cx="34" cy="120" r="4" fill="var(--orange)"/>
 </svg>`;
-const LOOK_DOT = { 'Pink Punch': '#e46fa0', 'Bold Blue': '#2f5cf5', 'Flat-Pack': 'var(--orange)', 'Happy Headspace': '#f6c445', 'Clay Pop': '#ff6a13' };
+const LOOK_DOT = { 'Bold Blue': '#2f5cf5', 'Clay Pop': '#ff6a13', 'Red Gallery': '#e31b23', 'Candy Grid': '#ffc72c', 'Violet Lime': '#3d2ee6' };
 
 function when(iso) {
   const d = new Date(iso);
@@ -105,6 +105,35 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
   // a different account appeared while Lumi was open (or it was never confirmed): ask again on the loading screen
   api.claude.status(true).then(st => { if (!alive) return; paintAcct(st); if (st && st.signedIn && st.confirmed === false) toSignin(); });
   const runUpdate = b => startUpdate('update', { say, sfx, alive: () => alive, button: b });
+
+  /* An update used to be a quiet link in the corner, which is easy to miss for weeks. It is announced once per
+     version instead: a small card on first arrival, with a plain choice. 'later' is remembered per version, so a
+     person who says no is not asked again until there is something new. */
+  const UPD_SEEN = 'lumi-update-seen';
+  function announceUpdate() {
+    if (!update || !update.latest) return;
+    const v = String(update.latest);
+    try { if (localStorage.getItem(UPD_SEEN) === v) return; } catch (e) { /* private window: ask anyway */ }
+    const later = h('button', { type: 'button', class: 'pl-big pl-big-s1', 'data-nosfx': '' },
+      h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'later')));
+    const now = h('button', { type: 'button', class: 'pl-big pl-ink pl-big-s1', 'data-nosfx': '' },
+      h('span', { class: 'pl-big-t' }, h('span', { class: 'pl-big-h' }, 'update now')));
+    const card = h('div', { class: 'pl-dlg hm-updlg', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'an update is ready' },
+      h('h2', { class: 'pl-dlg-h' }, 'lumi ' + v.replace(/^v/, '') + ' is ready'),
+      h('p', { class: 'pl-dlg-p' }, 'it installs itself and this window comes back on its own. nothing you have made is touched.'),
+      h('div', { class: 'pl-dlg-b' }, later, now));
+    const host = h('div', { class: 'hm-modal' }, card);
+    el.append(host);
+    const rel = openDialog(card, { host, onEsc: () => close(false) });
+    function close(doIt) {
+      try { localStorage.setItem(UPD_SEEN, v); } catch (e) { /* private window */ }
+      if (rel) rel();
+      host.remove();
+      if (doIt) runUpdate(null);
+    }
+    later.addEventListener('click', () => { sfx('back'); close(false); });
+    now.addEventListener('click', () => { sfx('launch'); close(true); });
+  }
   // F-15: the soft custom pointer can be switched off for the normal Windows pointer (remembered on this computer)
   const pointerB = h('button', { type: 'button', class: 'hm-pointer', 'data-nosfx': '', 'aria-pressed': 'false', title: 'mouse pointer style', 'aria-label': 'mouse pointer: switch between lumi’s soft pointer and the normal one' });
   const paintPointer = native => { pointerB.textContent = native ? 'soft pointer' : 'normal pointer'; pointerB.setAttribute('aria-pressed', native ? 'true' : 'false'); };
@@ -233,18 +262,18 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
     return box;
   }
   function statusPill(dk) {
-    if (dk.finalizing) return h('span', { class: 'hm-status', 'data-k': 'run' }, h('i'), 'finalizing…');
+    if (dk.finalizing) return h('span', { class: 'hm-status', 'data-k': 'run' }, h('i'), 'saving…');
     if (dk.status === 'building') return h('span', { class: 'hm-status', 'data-k': 'run' }, h('i'), dk.flow === 'plan' && dk.planState === 'planning' ? 'planning' : 'claude is working');
     if (dk.flow === 'plan' && dk.planCount && dk.builtCount < dk.planCount)
       return h('span', { class: 'hm-status', 'data-k': 'wait' }, h('i'), dk.builtCount ? `built ${dk.builtCount} of ${dk.planCount}` : 'planned, not built');
     if (dk.flow === 'plan' && !dk.planCount && !dk.exists) return h('span', { class: 'hm-status', 'data-k': 'wait' }, h('i'), 'planning');
     if (dk.exists && (!dk.finalized || dk.changedSinceFinalize)) {
-      const b = h('button', { type: 'button', class: 'hm-status hm-fin', 'data-k': 'wait', 'data-cursor-label': 'finalize', 'data-nosfx': '' }, h('i'),
-        dk.finalized ? 'changed · ' : 'not finalized yet · ', h('span', { class: 'hm-fin-go' }, dk.finalized ? 'finalize again' : 'finalize'));
+      const b = h('button', { type: 'button', class: 'hm-status hm-fin', 'data-k': 'wait', 'data-cursor-label': 'save and export', 'data-nosfx': '' }, h('i'),
+        dk.finalized ? 'changed · ' : 'not saved yet · ', h('span', { class: 'hm-fin-go' }, dk.finalized ? 'save again' : 'save and export'));
       b.addEventListener('click', e => { e.stopPropagation(); sfx('launch'); onFinalize && onFinalize(dk); });
       return b;
     }
-    const map = { ready: ['finalized', 'ok'], missing: ['file missing', 'bad'], draft: ['not finished', 'wait'] };
+    const map = { ready: ['saved', 'ok'], missing: ['file missing', 'bad'], draft: ['not finished', 'wait'] };
     const [t, k] = map[dk.status] || [dk.status, 'wait'];
     return h('span', { class: 'hm-status', 'data-k': k }, h('i'), t);
   }
@@ -256,7 +285,7 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
     const presentB = h('button', { type: 'button', class: 'hm-b hm-ico', 'aria-label': 'present', title: 'present', html: SVG.play, 'data-cursor-label': 'present' });
     const folderB = h('button', { type: 'button', class: 'hm-b hm-ico', 'aria-label': 'open the folder', title: 'open the folder', html: SVG.folder, 'data-cursor-label': 'folder' });
     presentB.disabled = !dk.final;
-    presentB.title = dk.final ? 'present' : 'finalize it first';
+    presentB.title = dk.final ? 'present' : 'save and export it first';
     const moreB = h('button', { type: 'button', class: 'hm-b hm-ico hm-more', 'aria-label': 'more: rename, archive or delete', title: 'rename, archive or delete', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'data-cursor-label': 'more',
       html: '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/></g></svg>' });
     const card = h('div', { class: 'hm-card', role: 'listitem', style: `--i:${i}`, 'data-id': dk.id },
@@ -323,5 +352,8 @@ export function mountHome(el, { audio, onNew, onResume, onOpen, onFinalize, onSi
     pollT = setTimeout(refresh, fails ? api.pace(3000, fails, { max: 10000 }) : hot ? api.pace(3000, idle, { max: 8000 }) : api.pace(15000, idle, { max: 30000, hidden: 30000 }));
   }
   paint(); refresh();
+  // after the first paint, so the card lands on a page that already looks like itself
+  setTimeout(() => { if (alive) announceUpdate(); }, 900);
+
   return { refresh, destroy() { alive = false; clearTimeout(pollT); clearTimeout(toastT); clearTimeout(undoT); clearTimeout(acctArm); closeMenu(); document.removeEventListener('pointerdown', onDocDown, true); el.replaceChildren(); } };
 }

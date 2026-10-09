@@ -5,7 +5,7 @@
 .route{position:absolute;inset:0;z-index:3;visibility:hidden;pointer-events:none}
 .route > *{pointer-events:auto}
 #stage[data-route=loading] #loading,#stage[data-route=home] #home,#stage[data-route=start] #start,
-#stage[data-route=editor] #editor{visibility:visible}
+#stage[data-route=look] #look,#stage[data-route=editor] #editor{visibility:visible}
 
 /* character modes for the new screens (bottom aligned, like stage mode) */
 /* P5.4: home had this at left:0, 480 wide - flush into the corner, so the page edge cut Lumi down the side and she
@@ -15,6 +15,13 @@
    to the 400x225 the editor already uses. Still 16:9, so object-fit:cover still crops nothing. */
 #stage[data-mode=home] #char{left:96px;top:675px;width:400px;height:225px}
 #stage[data-mode=edit] #char{left:521px;top:675px;width:400px;height:225px}
+
+/* the update card: announced once per version, over the library it is about to replace */
+.hm-modal{position:absolute;inset:0;z-index:30;display:grid;place-items:center;
+  background:rgba(20,18,32,.38);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);animation:hmFade .25s var(--ease) both}
+.hm-updlg{width:620px}
+@keyframes hmFade{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion: reduce){.hm-modal{animation:none}}
 
 /* top bar extras */
 .home-pill{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 16px 0 13px;border-radius:100px;background:var(--pill);font-size:15px;

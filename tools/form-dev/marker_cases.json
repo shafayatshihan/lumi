@@ -309,14 +309,14 @@
   },
   {
    "name": "choice, no multi and no default",
-   "text": "[[aura:choice id=\"q1\" question=\"Which look?\" options=\"Bold Blue|Flat-Pack|Claude chooses\"]]",
+   "text": "[[aura:choice id=\"q1\" question=\"Which look?\" options=\"Bold Blue|Clay Pop|Claude chooses\"]]",
    "markers": [
     {
      "name": "choice",
      "attrs": {
       "id": "q1",
       "question": "Which look?",
-      "options": "Bold Blue|Flat-Pack|Claude chooses"
+      "options": "Bold Blue|Clay Pop|Claude chooses"
      },
      "line": 1,
      "choice": {
@@ -324,7 +324,7 @@
       "question": "Which look?",
       "options": [
        "Bold Blue",
-       "Flat-Pack",
+       "Clay Pop",
        "Claude chooses"
       ],
       "multi": false,

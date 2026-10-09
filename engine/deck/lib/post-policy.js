@@ -222,14 +222,6 @@
      slide: <section class="slide" data-post="showpiece">. */
   register('bold-blue', { hero: 'clinical', body: 'clinical', closing: 'hero', heroSlides: 2, allowOnMeasured: false });
 
-  /* Flat-Pack is a DRAWING, not a photograph: orthographic, no lights, flat fills, constant-weight ink outline. Bloom
-     on an ink line is a mistake, not a style. Off in every tier, and `allowOnMeasured` is moot. */
-  register('flat-pack', { hero: 'off', body: 'off', closing: 'off', heroSlides: 0, allowOnMeasured: false });
-
-  /* Pink Punch is a screen print and Happy Headspace a soft-lit form: neither takes post. Stated, not inherited. */
-  register('pink-punch', { hero: 'off', body: 'off', closing: 'off', heroSlides: 0, allowOnMeasured: false });
-  register('happy-headspace', { hero: 'off', body: 'off', closing: 'off', heroSlides: 0, allowOnMeasured: false });
-
   /* Clay Pop is a RENDER look: crease AO is half of what makes clay read as clay, so every tier keeps it (clinical).
      The opening gets `showpiece` (adds FXAA; the bloom threshold stays 3.2, and matte clay emits nothing, so bloom stays
      dark). Never depth of field: a clay set is shot sharp, and the measured-values gate stays closed. */

@@ -54,6 +54,14 @@ is what makes it read as lit clay. Black clay `#2A2724`, grey clay `#B9B6B3`, wh
 - **The emphasis phrase is an orange clay KEY with ink letters** (`.em`): lit from above, pressed into the line. White
   letters on orange fail contrast; the letters are always ink. Exactly one per headline. `.em.text` is orange words
   without the key, for a closing line or a sub-line that must stay quiet.
+- **The key takes the START or the END of the headline, never the middle.** The key is a solid block the width of its
+  words, so wherever it sits it sets that line's length. At the start or the end it either opens or closes the
+  headline and the lines stay even; in the middle it splits the sentence, and the tail that follows wraps to the next
+  line with no key on it - two ragged lines with a block floating between them. Measured on a real ten-slide deck:
+  seven of eight headlines put the key at an edge and read clean (`Export to / **PowerPoint and PDF**`,
+  `**Real 3D** / not clip art`); the one that put it in the middle (`Say what **the talk** is about`) is the one that
+  looks broken. If the phrase you want to key is genuinely mid-sentence, rewrite the headline so it moves to an edge -
+  `Say what **the talk is about**` - rather than keying it where it falls.
 - No second accent colour, ever. A failing thing is shown by *being* the orange part, not by turning red.
 
 **Type.** Plus Jakarta Sans (800 display, 700 labels and numbers, 500 text) and DM Mono (the small retro-terminal
@@ -323,7 +331,8 @@ The full pre-flight list is in the base, section 10. On top of it:
 
 - [ ] The studio colour on every slide; figures straight on it, never in a card; white only for tiles.
 - [ ] One orange dominance per slide; black, grey, white and cream only as punctuation. No second accent.
-- [ ] Exactly one `.em` clay key per headline, ink letters. Orange as text only in `--clay-ink`.
+- [ ] Exactly one `.em` clay key per headline, ink letters, **at the start or the end of the headline, never mid-sentence**.
+      Orange as text only in `--clay-ink`.
 - [ ] Plus Jakarta Sans + DM Mono only; sizes from `hard-rules.json`; the micro size only in DM Mono and only for
       the roles in section 1.
 - [ ] Every figure: chunky and bevelled, a contact shadow under it, satellites that are its own parts, **exactly one

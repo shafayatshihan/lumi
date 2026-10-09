@@ -146,14 +146,14 @@ def handoff_suite(check, fs, C):
         finally:
             fs.RUNNER = old
     # the hand-off message must be self-contained: everything the old conversation held that is not already on disk
-    rec = {'id': 'h4', 'look': 'Flat-Pack', 'quality': 'balanced',
+    rec = {'id': 'h4', 'look': 'Clay Pop', 'quality': 'balanced',
            'plan': {'slides': [{'id': 's1', 'title': 'Why fins', 'built': True, 'visual': {'main': 'text'}},
                                {'id': 's2', 'title': 'The rig', 'visual': {'main': '3d'}}], 'doubts': []}}
     msg = fs.recovery_message(rec, 'carry on please', handoff=True)
     check('P5 the hand-off says plainly that the fresh conversation is on purpose', '[context-handoff]' in msg
           and 'grew too large' in msg, msg[:160])
     check('P5 it restates the plan file, the look, the quality and which slides are built',
-          'plan.json' in msg and 'Flat-Pack' in msg and 'balanced' in msg
+          'plan.json' in msg and 'Clay Pop' in msg and 'balanced' in msg
           and 'Why fins' in msg and 'The rig' in msg, msg[:400])
     check('P5 it never asks the person to repeat anything', 'do not ask the person to repeat' in msg)
     check('P5 the original message is still the last thing in it', msg.rstrip().endswith('carry on please'))

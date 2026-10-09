@@ -1,0 +1,61 @@
+<!-- archetype: process-film | step-arrows: the picture left, three cards with arrows between them right, the live card lime and driven by Aura.sync so the deck's one picture and the cards move together. WHITE ground | main visual: picture | companions: 3 flow cards (the live one lime) -->
+<section class="slide" data-kind="content" data-minutes="1.75" data-title="How it works">
+  <div class="vl-deco-layer" aria-hidden="true"><i class="vl-deco d3"></i></div>
+  <div class="safe">
+    <div class="vl-main stack">
+      <div class="vl-head">
+        <p class="kicker" data-edit="s{{N}}-1">Step by step</p>
+        <h2 class="headline wide" data-edit="s{{N}}-2">Three moves, <span class="em">one pass.</span></h2>
+      </div>
+      <div style="display:grid; grid-template-columns:5fr 7fr; gap:56px; align-items:center; flex:1; min-height:0">
+        <!-- THE PICTURE: one picture through N states (LOOK-BASE section 2). A photograph of the real process goes
+             in this frame; with none it is the drawn figure below, which is the honest picture here because a
+             process is a thing you can draw. -->
+        <figure class="vl-frame wide is-drawn">
+          <div class="aura-3d vl-3d" data-scene="s{{N}}-scene" data-period="18" aria-hidden="true"></div>
+        </figure>
+        <ul class="vl-flow">
+          <li><div class="vl-card"><p class="ct" data-edit="s{{N}}-3">Load</p><p data-edit="s{{N}}-4">what goes in, and in what state</p></div></li>
+          <li class="arrow" aria-hidden="true"><svg class="vl-arrow" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h12M12 6l6 6-6 6" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></li>
+          <li><div class="vl-card" data-step="1"><p class="ct" data-edit="s{{N}}-5">Act</p><p data-edit="s{{N}}-6">what the machine actually does to it</p></div></li>
+          <li class="arrow" aria-hidden="true"><svg class="vl-arrow" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h12M12 6l6 6-6 6" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></li>
+          <li><div class="vl-card" data-step="2"><p class="ct" data-edit="s{{N}}-7">Leave</p><p data-edit="s{{N}}-8">what comes out, and how it differs</p></div></li>
+        </ul>
+      </div>
+    </div>
+    <footer class="vl-foot" data-nonclaim><span class="vl-mark" data-edit="s{{N}}-9">Deck mark</span><span class="vl-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Let the picture reach a step before you name it.</strong> The cards light in time with the figure; talk
+    at the pace of the loop rather than ahead of it, and the room will follow the object instead of your words.</p>
+    <p><strong>Say what moves and what stays still</strong> at each step, and give the real rate - how long the step
+    takes in the real world, not how long the animation takes. State the loop as a schematic where it is one.</p>
+    <p><strong>Finish on what has changed</strong> between the first card and the last: that difference is the whole
+    point of the process. Honesty caveat: name any step compressed or idealised for the picture. Prepare the question
+    "what happens when it goes wrong at step two?".</p>
+  </aside>
+  <script>
+  /* the three cards light in step with the figure. One state per third of the loop, closed form (LOOK-BASE 4.3). */
+  Aura.scene('s{{N}}-scene', (ctx) => {
+    const { THREE } = ctx;
+    const S = VL3D.stage(ctx, { target: [0, 0.9, 0], distance: 9.4, azimuth: -20, elevation: 15 });
+    const body = S.add(VL3D.block(THREE, 2.6, 1.3, 1.5, { color: 'white' })); body.position.y = 0.75;
+    const work = S.add(VL3D.puck(THREE, 0.42, 0.34, { color: 'lime' }));      // the ONE lime part: the thing moving through
+    return S.api({ update(t) {
+      const st = VL3D.steps(t, ctx.period, 3, 0.34);
+      const lane = [-1.9, 0, 1.9];
+      const from = lane[st.i], to = lane[st.next];
+      work.position.set(from + (to - from) * st.k, 1.55, 0.2);
+      work.rotation.y = VL3D.phase(t, ctx.period);
+      S.sway(t, { deg: 4 });
+    } });
+  }, { period: 18 });
+  Aura.sync('s{{N}}-scene', (t) => {
+    const n = 3, i = Math.floor(((t % 18) / 18) * n) % n;
+    document.querySelectorAll('[data-scene="s{{N}}-scene"]').forEach(h => {
+      const slide = h.closest('.slide'); if (!slide) return;
+      slide.querySelectorAll('.vl-flow .vl-card').forEach((c, k) => c.classList.toggle('on', k === i));
+    });
+  });
+  </script>
+</section>

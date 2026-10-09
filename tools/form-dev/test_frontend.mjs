@@ -128,7 +128,7 @@ const jsFiles = fs.readdirSync(jsDir).filter(f => f.endsWith('.js'));
   check('blender: fixVisual drops engine for other pictures and unknown values (absent = lumi decides)', !('engine' in fv({ main: 'chart', engine: 'blender' })) && !('engine' in fv({ main: '3d', engine: 'pov' })) && !('engine' in fv({ main: '3d' })));
   const E = (v, look = 'Bold Blue', av = true) => B.effEngine(v, look, av);
   check('blender: default = the server\'s rule (Bold Blue + still 3D + Blender -> blender; moving -> three.js)', E({ main: '3d', motion: 'still' }) === 'blender' && E({ main: '3d', motion: 'timed' }) === 'threejs');
-  check('blender: other looks never auto-pick blender; no Blender -> three.js even when chosen', E({ main: '3d', motion: 'still' }, 'Pink Punch') === 'threejs' && E({ main: '3d', motion: 'still', engine: 'blender' }, 'Bold Blue', false) === 'threejs');
+  check('blender: other looks never auto-pick blender; no Blender -> three.js even when chosen', E({ main: '3d', motion: 'still' }, 'An Unlisted Look') === 'threejs' && E({ main: '3d', motion: 'still', engine: 'blender' }, 'Bold Blue', false) === 'threejs');
   check('blender: an explicit choice wins over the default', E({ main: '3d', motion: 'still', engine: 'threejs' }) === 'threejs' && E({ main: '3d', motion: 'timed', engine: 'blender' }) === 'blender' && E({ main: 'chart' }) === null);
   check('blender: the two named options with plain notes', B.ENGINE.blender.name === 'studio render' && B.ENGINE.blender.tool === 'blender' && B.ENGINE.threejs.name === 'live 3D' && /instant, animated, editable/.test(B.engineNotes('still').threejs));
   const n0 = B.engineNotes('still'), n1 = B.engineNotes('still', { still: 95, 720: 1500, 1080: 3300 }), n2 = B.engineNotes('animation', { still: 95, 720: 1500, 1080: 3300 });
@@ -151,7 +151,7 @@ const jsFiles = fs.readdirSync(jsDir).filter(f => f.endsWith('.js'));
   // batch 6 Part B: a moving figure on a Blender look is a BAKED studio render in a new deck; it never holds up the next slide
   check('blender B.2: a new deck bakes moving figures on Bold Blue and Clay Pop; an older deck keeps them live',
     B.effEngine({ main: '3d', motion: 'timed' }, 'Bold Blue', true, true) === 'blender' && B.effEngine({ main: '3d', motion: 'timed' }, 'Clay Pop', true, true) === 'blender'
-    && B.effEngine({ main: '3d', motion: 'timed' }, 'Bold Blue', true, false) === 'threejs' && B.effEngine({ main: '3d', motion: 'timed' }, 'Flat-Pack', true, true) === 'threejs');
+    && B.effEngine({ main: '3d', motion: 'timed' }, 'Bold Blue', true, false) === 'threejs' && B.effEngine({ main: '3d', motion: 'timed' }, 'An Unlisted Look', true, true) === 'threejs');
   check('blender B.5: a baked slide never blocks the next one', B.nextGate({ a: V(1, 'preview', { baked: true }), b: V(2, 'rendering', { baked: true }) }, 2).ok);
   check('blender B.5: a baked slide shows ONE time, no resolution choice',
     /≈ 3 min$/.test(B.engineNotes('animation', { baked: true, 720: 170, 1080: 170 }).blender)

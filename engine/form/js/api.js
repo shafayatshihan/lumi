@@ -99,6 +99,8 @@ export const brief = {
   // for the last gasp when the page closes: keepalive lets the request finish after the page is gone
   saveOnExit: body => { try { fetch('/api/brief', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body }); } catch (e) { /* closing */ } },
 };
+// the look page runs before any deck exists, so the quality tiers come from a deckless endpoint
+export const qualityOptions = () => getJSON('/api/quality');
 export const files = deck => getJSON('/api/files' + (deck ? '?deck=' + encodeURIComponent(deck) : ''));
 export const removeFile = (path, deck) => postJSON('/api/remove', deck ? { path, deck } : { path });
 

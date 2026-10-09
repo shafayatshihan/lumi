@@ -1,0 +1,70 @@
+<!-- archetype: system-tour | the mosaic board: one big yellow cell holding ONE scene that glides part to part, two small colour cells beside it | a black seam | the small map and the stacked title on white; the pill on the mosaic seam | main visual: 3D (live: it drives the map) | companions: one following label + the map -->
+<section class="slide" data-kind="content" data-minutes="1.75" data-title="The whole system">
+  <div class="safe">
+    <div class="cg-board b-mosaic">
+      <div class="cg-cell cyan" style="grid-area:m2"></div><div class="cg-cell pink" style="grid-area:m3"></div>
+      <div class="cg-cell yellow" style="grid-area:m1">
+        <div class="aura-3d cg-3d pad" data-scene="s{{N}}-scene" data-period="21" aria-hidden="true">
+          <div class="cg-tag key" data-follow="here" data-align="center" data-dy="-110"><b id="s{{N}}-lbl" data-edit="s{{N}}-3">The inlet</b><span id="s{{N}}-sub" data-edit="s{{N}}-4">where it starts</span></div>
+        </div>
+      </div>
+      <div class="cg-cell black" style="grid-area:bar"></div>
+      <div class="cg-cell txt c-side">
+        <div class="cg-map">
+          <span class="node root" data-edit="s{{N}}-5">The system</span>
+          <ul>
+            <li><span class="node" data-node="0" data-edit="s{{N}}-6">Inlet</span></li>
+            <li><span class="node" data-node="1" data-edit="s{{N}}-7">Core</span></li>
+            <li><span class="node" data-node="2" data-edit="s{{N}}-8">Outlet</span></li>
+          </ul>
+        </div>
+        <div>
+          <h2 class="headline" data-edit="s{{N}}-2">Three parts, <span class="em">one path.</span></h2>
+          <p class="kicker" data-edit="s{{N}}-1">The whole thing</p>
+        </div>
+      </div>
+    </div>
+    <footer class="cg-foot" data-nonclaim><span class="cg-mark" data-edit="s{{N}}-9">Deck mark</span><span class="cg-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Follow the dark label.</strong> One part is named at a time and the map on the right lights up with it; say what each part does as the camera reaches it.</p>
+    <p><strong>Point at the picture.</strong> The figure on the colour block is the subject itself, modelled from its
+    real parts and shown as a clean product shot; say which proportions are to scale and which are schematic.</p>
+    <p><strong>Then say the one thing this slide must leave behind</strong>, in a single sentence, and move on. Give the
+    source of every number as you say it.</p>
+  </aside>
+</section>
+<script>
+/* The camera glides between parts and holds on each; replace the three placeholders with the system's own parts. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx;
+  const P = ctx.period;
+  const NAMES = [['The inlet', 'where it starts'], ['The core', 'where the work happens'], ['The outlet', 'where it leaves']];
+  const S = CG3D.studio(ctx, { target: [-2.4, 0.7, 0], distance: 15, azimuth: -20, elevation: 22 });
+  const parts = [
+    S.add(CG3D.block(THREE, 1.2, 1.0, 1.2, { color: 'white' })),
+    S.add(CG3D.puck(THREE, 0.9, 1.6, { color: 'rose' })),
+    S.add(CG3D.block(THREE, 1.0, 1.4, 1.0, { color: 'ink' })),
+  ];
+  parts[0].position.set(-2.8, 0.5, 0); parts[1].position.set(0, 0.8, 0); parts[2].position.set(2.8, 0.7, 0);
+  parts.forEach(p => S.contact(p, 1.0));
+  S.add(CG3D.cable(THREE, [[-2.2, 0.35, 0.2], [-1.4, 0.18, 0.7], [-0.8, 0.3, 0.4]], 0.09, { color: 'ink' }));
+  S.add(CG3D.cable(THREE, [[0.8, 0.3, 0.4], [1.4, 0.18, 0.7], [2.3, 0.35, 0.2]], 0.09, { color: 'ink' }));
+  const lbl = document.getElementById('s{{N}}-lbl'), sub = document.getElementById('s{{N}}-sub');
+  const nodes = ctx.el.closest('.cg-board').querySelectorAll('.cg-map .node[data-node]');
+  let shown = -1, hereIdx = 0;
+  const tops = parts.map(p => { const o = new THREE.Object3D(); o.position.y = 0.9; p.add(o); return o; });
+  CG3D.tags(S, ctx.el, { here: () => tops[hereIdx].getWorldPosition(new THREE.Vector3()).toArray() });
+  return S.api({ update(t) {
+    const s = CG3D.steps(t, P, 3, 0.35);
+    hereIdx = s.k < 0.5 ? s.i : s.next;
+    S.target.lerpVectors(parts[s.i].position, parts[s.next].position, s.k).setY(0.7);
+    S.sway(t, { deg: 2 });
+    if (hereIdx !== shown) {
+      shown = hereIdx;
+      lbl.textContent = NAMES[hereIdx][0]; sub.textContent = NAMES[hereIdx][1];
+      nodes.forEach((n, k) => n.classList.toggle('on', k === hereIdx));
+    }
+  } });
+}, { period: 21 });
+</script>

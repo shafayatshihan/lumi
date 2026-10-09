@@ -1,0 +1,58 @@
+<!-- archetype: objectives-tour | the tiles board: the checklist on white | a yellow board of four tiles with a cyan disc in which the goals climb as a staircase (S4); the ball lights the row it stands on | main visual: 3D (live) | companions: checklist <=4 rows -->
+<section class="slide" data-kind="content" data-minutes="1.5" data-title="Objectives">
+  <div class="safe">
+    <div class="cg-board b-tiles">
+      <div class="cg-cell txt" style="grid-area:text">
+        <p class="kicker" data-edit="s{{N}}-1">Objectives</p>
+        <h2 class="headline" data-edit="s{{N}}-2">Four steps, <span class="em">three done.</span></h2>
+        <ul class="cg-goals">
+          <li class="cg-goal on"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-3">Measure it</strong><span class="d" data-edit="s{{N}}-4">done</span></div></li>
+          <li class="cg-goal on"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-5">Explain it</strong><span class="d" data-edit="s{{N}}-6">done, one model</span></div></li>
+          <li class="cg-goal on"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-7">Build it</strong><span class="d" data-edit="s{{N}}-8">done, two rigs</span></div></li>
+          <li class="cg-goal wip"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v6l4 2" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><strong data-edit="s{{N}}-9">Prove it</strong><span class="d" data-edit="s{{N}}-10">in progress</span></div></li>
+        </ul>
+      </div>
+      <div class="cg-cell yellow" style="grid-area:t1"></div><div class="cg-cell yellow-2" style="grid-area:t2"></div>
+      <div class="cg-cell yellow-2" style="grid-area:t3"></div><div class="cg-cell yellow" style="grid-area:t4"></div>
+      <div class="cg-disc cyan d-fig">
+        <div class="aura-3d cg-3d" data-scene="s{{N}}-scene" data-period="16" aria-hidden="true">
+          <span class="cg-pill" data-follow="goal" data-align="center" data-dy="-110" data-edit="s{{N}}-11">The goal</span>
+        </div>
+      </div>
+    </div>
+    <footer class="cg-foot" data-nonclaim><span class="cg-mark" data-edit="s{{N}}-12">Deck mark</span><span class="cg-pageno"></span></footer>
+  </div>
+  <aside class="notes" data-aura-notes>
+    <p><strong>Follow the ball.</strong> Each tread is one objective; the row the ball stands on lights up. Say which are done and which are still in progress.</p>
+    <p><strong>Point at the picture.</strong> The figure on the colour block is the subject itself, modelled from its
+    real parts and shown as a clean product shot; say which proportions are to scale and which are schematic.</p>
+    <p><strong>Then say the one thing this slide must leave behind</strong>, in a single sentence, and move on. Give the
+    source of every number as you say it.</p>
+  </aside>
+</section>
+<script>
+/* S4: the goals as a staircase that climbs; the goal block in rose. */
+Aura.scene('s{{N}}-scene', (ctx) => {
+  const { THREE } = ctx, P = ctx.period, N = 4;
+  const S = CG3D.studio(ctx, { target: [0, 1.2, 0], distance: 13.5, azimuth: -24, elevation: 20 });
+  const stair = CG3D.climb(THREE, N, { tread: 1.15, rise: 0.55, depth: 1.1, goal: 'rose' });
+  S.add(stair.group);
+  stair.blocks.forEach(b => S.contact(b, 0.8, 0.7));
+  const bead = S.add(CG3D.ball(THREE, 0.24, { color: 'ink' }));
+  const rows = ctx.el.closest('.cg-board').querySelectorAll('.cg-goal');
+  CG3D.tags(S, ctx.el, { goal: stair.tops[N - 1].toArray() });
+  let at = -1;
+  return S.api({ update(t) {
+    S.sway(t, { deg: 3 });
+    const s = CG3D.steps(t, P, N, 0.3);
+    bead.position.lerpVectors(stair.tops[s.i], stair.tops[s.next], s.k);
+    bead.position.y += 0.24 + Math.sin(Math.PI * s.k) * 0.7;
+    const here = s.k < 0.5 ? s.i : s.next;
+    if (here !== at) { at = here; rows.forEach((r, k) => r.classList.toggle('is-here', k === here)); }
+  } });
+}, { period: 16 });
+</script>

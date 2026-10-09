@@ -301,12 +301,12 @@ def run_live(T, fs):
     size_list = len(json.dumps(lst))
     check('F-02: payload size per deck dropped (list row far smaller than the full record)', len(json.dumps(row)) < len(json.dumps(rec)) * 0.7, (len(json.dumps(row)), len(json.dumps(rec))))
     # S-08
-    s, j = req('PATCH', f'/api/decks/{P}', {'look': 'Pink Punch'})[0], None
+    s, j = req('PATCH', f'/api/decks/{P}', {'look': 'An Unlisted Look'})[0], None
     check('S-08: the look cannot change once slides are built (409 look-locked)', s == 409 and jget(f'/api/decks/{P}')[1]['deck'].get('look') == 'Bold Blue', s)
     s = req('PATCH', f'/api/decks/{P}', {'look': 'Bold Blue', 'title': 'Same look is fine'})[0]
     check('S-08: sending the same look is not an error', s == 200, s)
     d2 = jpost('/api/decks', {})[1]['id']
-    check('S-08: a deck with nothing built may still change its look', req('PATCH', f'/api/decks/{d2}', {'look': 'Pink Punch'})[0] == 200)
+    check('S-08: a deck with nothing built may still change its look', req('PATCH', f'/api/decks/{d2}', {'look': 'An Unlisted Look'})[0] == 200)
     jpost(f'/api/decks/{P}/build', {'mode': 'next'})
     time.sleep(0.15)
     s = req('PATCH', f'/api/decks/{P}', {'quality': 'maximum'})[0]       # must DIFFER from the deck's own (it is 'balanced')
@@ -369,8 +369,8 @@ def run_live(T, fs):
           v.get('finalized') and v['final'].get('htmlBytes') > 0 and v['final'].get('pdfBytes') > 0 and v['final'].get('light') is False and
           v['final'].get('warnings') == [] and v.get('changedSinceFinalize') is False, v.get('final'))
     js = (T.REPO / 'engine' / 'form' / 'js' / 'finalizing.js').read_text(encoding='utf-8')
-    check('W-05: finalizing.js looks at the deck before it starts, and shows "already finalized" with a finalize-again button',
-          "api.decks.get(deckId)" in js and "'already finalized'" in js and "'finalize again'" in js and 'rec.finalized && !rec.changedSinceFinalize' in js)
+    check('W-05: finalizing.js looks at the deck before it starts, and shows "already saved" with a save-again button',
+          "api.decks.get(deckId)" in js and "'already saved'" in js and "'save again'" in js and 'rec.finalized && !rec.changedSinceFinalize' in js)
     check('D-01: the finalize page has the explicit PowerPoint action and says 3D becomes a still image', 'make a powerpoint copy' in js and '3d scenes become a still image' in js)
 
 
