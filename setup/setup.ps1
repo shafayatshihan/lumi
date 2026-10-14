@@ -127,7 +127,11 @@ function Run([string]$what, [string]$exe, [string]$argsLine) {
 
 function Refresh-Path {
   $m = [Environment]::GetEnvironmentVariable('Path', 'Machine'); $u = [Environment]::GetEnvironmentVariable('Path', 'User')
+  # Node is listed three times on purpose: a machine-scope winget install lands in %ProgramFiles%\nodejs, a
+  # non-admin one in %LOCALAPPDATA%\Programs\nodejs, and nvm-windows points NVM_SYMLINK at whichever it made
+  # current. Only the first was here before, so a non-admin install finished and then "could not be found".
   $extra = @("$env:USERPROFILE\.local\bin", "$env:ProgramFiles\Git\cmd", "$env:ProgramFiles\nodejs",
+             "$env:LOCALAPPDATA\Programs\nodejs", $env:NVM_SYMLINK,
              "$env:LOCALAPPDATA\Programs\Python\Python312", "$env:LOCALAPPDATA\Programs\Python\Python312\Scripts", "$env:APPDATA\npm")
   $env:Path = (@($env:Path, $m, $u) + $extra | Where-Object { $_ }) -join ';'
 }
@@ -212,10 +216,25 @@ function Step-Git {
   if (-not (Winget 'Git.Git' '')) { throw 'Git could not be installed.' }
   if (-not (Has 'git')) { throw 'Git installed but not found.' }; 'installed'
 }
+function Node-Version { if (-not (Has 'node')) { return $null }; try { return ((& node --version) -replace '^v', '').Trim() } catch { return $null } }
 function Step-Node {
   if (Node-Ok) { return 'HAVE' }
-  if (-not (Winget 'OpenJS.NodeJS.LTS' '')) { throw 'Node.js could not be installed.' }
-  if (-not (Node-Ok)) { throw 'Node.js installed but not found.' }; 'installed'
+  $had = Node-Version
+  # An older Node already on the machine was the awkward case. `winget install` answers "already installed" and
+  # changes nothing, so this step used to report success while the app still refused to start. Upgrade first.
+  if ($had) {
+    Run 'updating Node.js' 'winget' 'upgrade --id OpenJS.NodeJS.LTS -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity' | Out-Null
+    Refresh-Path
+  }
+  if (-not (Node-Ok)) { if (-not (Winget 'OpenJS.NodeJS.LTS' '')) { throw 'Node.js could not be installed. Install it from nodejs.org, then run this again.' } }
+  if (-not (Node-Ok)) {
+    # Both endings are actionable now. "installed but not found" on its own sent people round in circles.
+    $now = Node-Version
+    if ($now) { throw "Node.js $now is here but Lumi needs v20.19 or newer (or any v22+). Update it from nodejs.org, then run this again." }
+    throw 'Node.js was installed but this installer cannot see it yet. Sign out of Windows and back in, then run this again.'
+  }
+  if ($had) { return "updated from $had" }
+  'installed'
 }
 function Step-Python {
   if (Base-Python) { return 'HAVE' }

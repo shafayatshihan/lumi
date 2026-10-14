@@ -1215,6 +1215,8 @@ def run_health_suite():
         auth.unlink(missing_ok=True)
     import test_signin                      # sign-in fix: private window, confirmation per install, every plan allowed
     test_signin.run(sys.modules[__name__])
+    import test_node_pick                   # choosing Node.js: the fixes behind "Node.js needs a hand"
+    test_node_pick.run(sys.modules[__name__])
     print('  [claude fixes and explains a failing check]')
     def help_run(body):
         s, j = jpost('/api/fix/claude', body)

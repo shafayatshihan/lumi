@@ -1219,8 +1219,125 @@ def patch_text(src, edit_id, text):
     return src[:m.end()] + body + src[m.start() + end:]
 
 
+# ---------------------------------------------------------------- Node.js
+# WHY THIS IS NOT JUST shutil.which('node').
+# It was, and that one line made "Node.js needs a hand" the most common first-run failure. Three ways a machine
+# with a perfectly good Node still failed the check:
+#   1. A STALE ENVIRONMENT. The installer puts Node on PATH, but Windows never pushes an environment change into
+#      a process that is already running - Explorer included. So Node is on disk, and on the new PATH, and
+#      invisible to a Lumi started from a shortcut whose parent predates the install. Signing out and back in
+#      "fixed" it, which is a miserable thing to have to tell someone.
+#   2. A PLACE PATH DOES NOT COVER. A non-admin winget install lands outside %ProgramFiles%\nodejs, and nvm and
+#      fnm keep their versions somewhere else again.
+#   3. THE WRONG NODE FIRST. An old Node 18 on PATH shadows a newer one installed beside it. winget then reports
+#      "already installed" and changes nothing, so the installer step passes and the app still refuses to start.
+# So: look on PATH, then in every place a Windows installer actually puts Node, and choose the NEWEST one that
+# runs and meets the floor - PATH order only breaks ties. The answer is cached because this is called on every
+# build step; a miss is re-probed after a minute, so installing Node while Lumi is open fixes it without a
+# restart, which is the whole point of (1).
+NODE_FLOOR_TEXT = 'v20.19 or newer (or any v22+)'
+_node_cache = {'at': 0.0, 'exe': None, 'v': None}
+_node_lock = threading.Lock()
+
+
+def node_min_ok(v):
+    """Lumi's floor. One definition, used by both the picker and the health check so they cannot disagree."""
+    return bool(v) and (v[0] >= 22 or (v[0] == 20 and len(v) > 1 and v[1] >= 19))
+
+
+def node_version_of(exe):
+    """(major, minor, ...) for one node binary, or None when it will not run at all (blocked, broken, too slow)."""
+    try:
+        out = subprocess.run([str(exe), '--version'], capture_output=True, timeout=5, stdin=subprocess.DEVNULL,
+                             creationflags=NO_WINDOW).stdout.decode('utf-8', 'replace').strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return None                      # cannot read it: node_exe() still returns the binary, see the note there
+    return version_tuple(out)
+
+
+def node_places():
+    """Every node.exe worth trying, PATH first. Existence is checked here; the version decides the winner."""
+    seen, out = set(), []
+
+    def add(c):
+        if not c: return
+        q = Path(c)
+        k = str(q).lower()
+        if k in seen: return
+        seen.add(k)
+        if q.is_file(): out.append(q)
+
+    add(shutil.which('node.exe'))
+    add(shutil.which('node'))
+    for base in (os.environ.get('ProgramFiles'), os.environ.get('ProgramW6432'), os.environ.get('ProgramFiles(x86)'),
+                 os.environ.get('LOCALAPPDATA'), os.environ.get('APPDATA')):
+        if not base: continue
+        add(Path(base) / 'nodejs' / 'node.exe')
+        add(Path(base) / 'Programs' / 'nodejs' / 'node.exe')       # user-scope winget, and the .msi "just me" option
+    home = os.environ.get('USERPROFILE') or ''
+    # nvm-windows and fnm keep one folder per version side by side; newest first so a tie goes the sensible way
+    roots = [os.environ.get('NVM_HOME'), os.environ.get('NVM_SYMLINK')]
+    if home:
+        roots += [Path(home) / 'AppData' / 'Roaming' / 'nvm', Path(home) / '.fnm' / 'node-versions',
+                  Path(home) / 'scoop' / 'apps' / 'nodejs' / 'current']
+    for r in roots:
+        if not r: continue
+        r = Path(r)
+        add(r / 'node.exe')
+        try:
+            kids = sorted((d for d in r.iterdir() if d.is_dir()), reverse=True)
+        except OSError:
+            continue
+        for d in kids:
+            add(d / 'node.exe')
+            add(d / 'installation' / 'node.exe')                   # fnm's layout
+    return out
+
+
 def node_exe():
-    return shutil.which('node.exe') or shutil.which('node')
+    """The best Node on this machine, or None. See the note above; the result is cached."""
+    now = time.time()
+    with _node_lock:
+        c = _node_cache
+        if c['exe'] and Path(c['exe']).is_file():
+            return c['exe']
+        if not c['exe'] and c['at'] and now - c['at'] < 60:
+            return None
+        places = node_places()
+        best, bestv, runnable = None, None, []
+        for q in places:
+            v = node_version_of(q)
+            if v: runnable.append((v, str(q)))
+            if node_min_ok(v) and (bestv is None or v > bestv):
+                best, bestv = str(q), v
+        if best is None and runnable:
+            # Nothing meets the floor. Hand back the newest that at least RUNS, so check_node can name the version
+            # the person actually has instead of claiming Node is missing - "you have v18.20" is a fixable message,
+            # "Node.js is missing" sends them to reinstall something they already have.
+            runnable.sort(reverse=True)
+            bestv, best = runnable[0]
+        if best is None and places:
+            # A node.exe is right there but would not say its version: a busy machine, or antivirus holding its
+            # first run. Hand back what PATH would have given, which is exactly what this did before it learned to
+            # choose. Failing to READ a version is not evidence that Node is missing, and telling someone who has
+            # Node that it is missing is the worst answer available - it sends them to install it twice.
+            best, bestv = str(places[0]), None
+        c.update(at=now, exe=best, v=bestv)
+        return best
+
+
+def node_dir(probe=False):
+    """The folder holding the chosen Node, so children get the SAME one this process picked (npm, npx, claude).
+
+    Reads the cache and does NOT resolve, unless asked to. child_env() runs on every single spawn, and resolving
+    there would put a `node --version` in front of every subprocess Lumi makes: slow, and a surprise to anything
+    that counts the spawns. Nothing is lost by waiting - the startup health check calls node_exe() long before any
+    child runs, so the cache is warm by the time this matters, and a cold answer here just leaves PATH alone,
+    which is what happened before any of this existed.
+    """
+    n = node_exe() if probe else _node_cache.get('exe')
+    return str(Path(n).parent) if n else None
+
 
 
 def check_rules(packed):
@@ -1444,6 +1561,13 @@ def child_env():
         key = next((k for k in env if k.upper() == 'PATH'), 'PATH')
         env[key] = str(Path(hit['exe']).parent) + os.pathsep + env.get(key, '')
     env['LUMI_BPY'] = str(BLENDER_HELPER)
+    # The Node this process chose goes on the child's PATH too, so npm, npx and Claude all use the SAME one. Without
+    # this a child inherits the stale PATH that made node_exe() go looking in the first place, and an old Node that
+    # node_exe() deliberately passed over would win again in the child.
+    nd = node_dir()
+    if nd:
+        key = next((k for k in env if k.upper() == 'PATH'), 'PATH')
+        env[key] = nd + os.pathsep + env.get(key, '')
     return env
 
 
@@ -2952,16 +3076,17 @@ def check_engine():
 
 
 def check_node():
+    # node_exe() already ran `--version` while choosing, so the version is known: say it rather than re-running it.
     node = node_exe()
-    if not node: return _chk('node', False, 'Node.js is missing', 'Lumi uses Node.js to check and export slides.', 'update')
-    try:
-        v = subprocess.run([node, '--version'], capture_output=True, timeout=15, stdin=subprocess.DEVNULL,
-                           creationflags=NO_WINDOW).stdout.decode('utf-8', 'replace').strip()
-    except (OSError, subprocess.TimeoutExpired):
-        v = ''
-    t = version_tuple(v) or (0,)
-    ok = t[0] >= 22 or (t[0] == 20 and len(t) > 1 and t[1] >= 19)
-    return _chk('node', ok, 'Node.js is ready' if ok else 'Node.js needs an update', v or 'not working', 'update')
+    v = _node_cache.get('v')
+    if not node:
+        return _chk('node', False, 'Node.js is missing', 'Lumi uses Node.js to check and export slides.', 'update')
+    if not v:
+        return _chk('node', False, 'Node.js is not working', f'found at {node} but it would not run', 'update')
+    shown = 'v' + '.'.join(str(x) for x in v)
+    if node_min_ok(v):
+        return _chk('node', True, 'Node.js is ready', shown, 'update')
+    return _chk('node', False, 'Node.js needs an update', f'you have {shown}; Lumi needs {NODE_FLOOR_TEXT}', 'update')
 
 
 def check_modules():
@@ -3109,6 +3234,10 @@ class Fixer:
             return [([sys.executable, '-c', code], ENGINE)]
         if name == 'npm':
             npm = shutil.which('npm.cmd') or shutil.which('npm')
+            if not npm:                      # same stale-PATH story as node: npm.cmd ships beside node.exe
+                nd = node_dir(probe=True)      # a button press, not a hot path: resolve properly
+                beside = Path(nd) / 'npm.cmd' if nd else None
+                npm = str(beside) if beside and beside.is_file() else None
             if not npm: raise RuntimeError('Node.js (npm) is missing. Use "Update Lumi" instead.')
             return [([npm, 'install', '--no-audit', '--no-fund', '--loglevel=error'], ENGINE)]
         if name == 'pip':
